@@ -53,7 +53,7 @@ def _scrub_unicode_dashes(value: Any) -> Any:
 
 
 class ToolRegistry:
-    """Central registry of all OpenMontage tools."""
+    """Central registry of all Video Production Buddy tools."""
 
     def __init__(self) -> None:
         self._tools: dict[str, BaseTool] = {}
@@ -87,20 +87,10 @@ class ToolRegistry:
     def _load_dotenv() -> None:
         """Load .env file into os.environ if present, so tools can find API keys."""
         from pathlib import Path
-        import os
-        env_path = Path(__file__).resolve().parent.parent / ".env"
-        if not env_path.is_file():
-            return
-        with open(env_path, encoding="utf-8", errors="ignore") as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#") or "=" not in line:
-                    continue
-                key, _, value = line.partition("=")
-                key = key.strip()
-                value = value.strip().strip("'\"")
-                if key and key not in os.environ:
-                    os.environ[key] = value
+
+        from lib.dotenv_loader import load_dotenv as _load
+
+        _load(Path(__file__).resolve().parent.parent / ".env")
 
     def discover(self, package_name: str = "tools") -> list[str]:
         """Import a package tree and register any concrete tools it defines."""
@@ -270,6 +260,7 @@ class ToolRegistry:
                 "runtime": tool.runtime.value,
                 "best_for": tool.best_for,
                 "install_instructions": tool.install_instructions,
+                "dependencies": tool.dependencies,
                 "status": status.value,
             }
             for extra_key in (
@@ -386,14 +377,28 @@ class ToolRegistry:
         for cap, bucket in menu.items():
             for entry in bucket.get("unavailable", []):
                 hint = entry.get("install_instructions") or ""
+                dependencies = entry.get("dependencies", [])
+                env_dependencies = [
+                    dep
+                    for dep in dependencies
+                    if str(dep).startswith(("env:", "env_any:"))
+                ]
                 # Heuristic: 1-minute fixes mention an env var or API key.
-                if any(k in hint.lower() for k in ["api key", "env", "_key=", "_api"]):
+                if (
+                    entry.get("runtime") in {"api", "hybrid"}
+                    and env_dependencies
+                    and any(
+                        k in hint.lower()
+                        for k in ["api key", "env", "_key=", "_api"]
+                    )
+                ):
                     setup_offers.append(
                         {
                             "capability": cap,
                             "tool": entry.get("name"),
                             "provider": entry.get("provider"),
                             "install_instructions": hint,
+                            "dependencies": dependencies,
                         }
                     )
 

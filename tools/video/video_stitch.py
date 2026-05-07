@@ -26,6 +26,11 @@ from tools.base_tool import (
 )
 
 
+def _ffconcat_quote(path: str) -> str:
+    """Quote a path for FFmpeg concat demuxer file-list syntax."""
+    return "'" + str(path).replace("'", "'\\''") + "'"
+
+
 class VideoStitch(BaseTool):
     name = "video_stitch"
     version = "0.1.0"
@@ -55,6 +60,10 @@ class VideoStitch(BaseTool):
         "spatial_vertical_stack",
         "spatial_picture_in_picture",
     ]
+    best_for = [
+        "Stitching multiple local clips with deterministic FFmpeg transitions",
+        "Creating preview stitches and spatial comparison layouts",
+    ]
 
     input_schema = {
         "type": "object",
@@ -67,6 +76,7 @@ class VideoStitch(BaseTool):
             "clips": {
                 "type": "array",
                 "items": {"type": "string"},
+                "minItems": 1,
                 "description": "List of input video file paths",
             },
             "output_path": {"type": "string"},
@@ -90,15 +100,32 @@ class VideoStitch(BaseTool):
             },
             "target_resolution": {
                 "type": "string",
+                "pattern": "^\\d+x\\d+$",
                 "description": "Target resolution for normalization (e.g. '1920x1080')",
             },
             "target_fps": {
                 "type": "integer",
+                "minimum": 1,
+                "maximum": 120,
                 "description": "Target FPS for normalization",
             },
             "codec": {"type": "string", "default": "libx264"},
-            "crf": {"type": "integer", "default": 23},
-            "preset": {"type": "string", "default": "medium"},
+            "crf": {"type": "integer", "minimum": 0, "maximum": 51, "default": 23},
+            "preset": {
+                "type": "string",
+                "enum": [
+                    "ultrafast",
+                    "superfast",
+                    "veryfast",
+                    "faster",
+                    "fast",
+                    "medium",
+                    "slow",
+                    "slower",
+                    "veryslow",
+                ],
+                "default": "medium",
+            },
             "profile": {
                 "type": "string",
                 "description": "Media profile name from media_profiles.py",
@@ -123,6 +150,7 @@ class VideoStitch(BaseTool):
             },
             "pip_margin": {
                 "type": "integer",
+                "minimum": 0,
                 "default": 10,
                 "description": "Margin in pixels for PiP overlay from edges",
             },
@@ -132,6 +160,33 @@ class VideoStitch(BaseTool):
                 "description": "If true, return what would be done without executing",
             },
         },
+        "allOf": [
+            {
+                "if": {"properties": {"operation": {"const": "stitch"}}},
+                "then": {
+                    "required": ["clips"],
+                    "properties": {"clips": {"minItems": 2}},
+                },
+            },
+            {
+                "if": {"properties": {"operation": {"const": "validate"}}},
+                "then": {"required": ["clips"]},
+            },
+            {
+                "if": {"properties": {"operation": {"const": "preview_stitch"}}},
+                "then": {
+                    "required": ["clips"],
+                    "properties": {"clips": {"minItems": 2}},
+                },
+            },
+            {
+                "if": {"properties": {"operation": {"const": "spatial"}}},
+                "then": {
+                    "required": ["clips", "layout"],
+                    "properties": {"clips": {"minItems": 2}},
+                },
+            },
+        ],
     }
 
     resource_profile = ResourceProfile(
@@ -139,7 +194,24 @@ class VideoStitch(BaseTool):
     )
     retry_policy = RetryPolicy(max_retries=1, retryable_errors=["Conversion failed"])
     resume_support = ResumeSupport.FROM_START
-    idempotency_key_fields = ["operation", "clips", "transition", "layout"]
+    idempotency_key_fields = [
+        "operation",
+        "clips",
+        "output_path",
+        "transition",
+        "transition_duration",
+        "auto_normalize",
+        "target_resolution",
+        "target_fps",
+        "codec",
+        "crf",
+        "preset",
+        "profile",
+        "layout",
+        "pip_position",
+        "pip_scale",
+        "pip_margin",
+    ]
     side_effects = ["writes video file to output_path"]
     user_visible_verification = [
         "Play the stitched output and verify clip ordering, transitions, and A/V sync",
@@ -416,7 +488,7 @@ class VideoStitch(BaseTool):
                 from lib.media_profiles import get_profile
                 profile = get_profile(profile_name)
                 return (profile.width, profile.height, profile.fps, profile.codec, profile.audio_codec)
-            except (ImportError, ValueError):
+            except ImportError:
                 pass
 
         # Explicit target overrides
@@ -594,7 +666,7 @@ class VideoStitch(BaseTool):
         with open(concat_list, "w", encoding="utf-8") as f:
             for clip in clips:
                 safe_path = str(Path(clip).resolve()).replace("\\", "/")
-                f.write(f"file '{safe_path}'\n")
+                f.write(f"file {_ffconcat_quote(safe_path)}\n")
 
         cmd = [
             "ffmpeg", "-y",

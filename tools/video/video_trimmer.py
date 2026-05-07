@@ -25,6 +25,11 @@ from tools.base_tool import (
 )
 
 
+def _ffconcat_quote(path: str) -> str:
+    """Quote a path for FFmpeg concat demuxer file-list syntax."""
+    return "'" + str(path).replace("'", "'\\''") + "'"
+
+
 class VideoTrimmer(BaseTool):
     name = "video_trimmer"
     version = "0.1.0"
@@ -45,6 +50,10 @@ class VideoTrimmer(BaseTool):
     agent_skills = ["ffmpeg", "video_toolkit"]
 
     capabilities = ["cut", "trim", "speed_adjust", "concat"]
+    best_for = [
+        "Cutting, trimming, speeding, or concatenating local clips",
+        "Preparing source segments before edit or compose stages",
+    ]
 
     input_schema = {
         "type": "object",
@@ -79,7 +88,16 @@ class VideoTrimmer(BaseTool):
     )
     retry_policy = RetryPolicy(max_retries=1, retryable_errors=["FFmpeg error"])
     resume_support = ResumeSupport.FROM_START
-    idempotency_key_fields = ["operation", "input_path", "start_seconds", "end_seconds", "speed_factor"]
+    idempotency_key_fields = [
+        "operation",
+        "input_path",
+        "output_path",
+        "start_seconds",
+        "end_seconds",
+        "speed_factor",
+        "segments",
+        "codec",
+    ]
     side_effects = ["writes video file to output_path"]
     user_visible_verification = ["Play trimmed output and verify cut points"]
 
@@ -190,6 +208,7 @@ class VideoTrimmer(BaseTool):
         temp_files: list[Path] = []
         temp_dir = output_path.parent / ".concat_tmp"
         temp_dir.mkdir(parents=True, exist_ok=True)
+        list_path: Path | None = None
 
         try:
             for i, seg in enumerate(segments):
@@ -219,7 +238,7 @@ class VideoTrimmer(BaseTool):
                 for tf in temp_files:
                     # FFmpeg concat demuxer needs forward slashes and escaped quotes
                     safe_path = str(tf.resolve()).replace("\\", "/")
-                    f.write(f"file '{safe_path}'\n")
+                    f.write(f"file {_ffconcat_quote(safe_path)}\n")
 
             cmd = [
                 "ffmpeg", "-y",
@@ -244,7 +263,7 @@ class VideoTrimmer(BaseTool):
             for tf in temp_files:
                 if tf.parent == temp_dir and tf.exists():
                     tf.unlink()
-            if list_path.exists():
+            if list_path is not None and list_path.exists():
                 list_path.unlink()
             if temp_dir.exists():
                 try:

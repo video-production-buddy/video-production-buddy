@@ -20,6 +20,10 @@ class ImageSelector(BaseTool):
     provider = "selector"
     stability = ToolStability.BETA
     runtime = ToolRuntime.HYBRID
+    install_instructions = (
+        "Routes to discovered image providers. Use provider_menu_summary() to see "
+        "configured generators, stock sources, and per-provider setup steps."
+    )
     agent_skills = ["flux-best-practices", "bfl-api"]
 
     capabilities = [
@@ -35,6 +39,25 @@ class ImageSelector(BaseTool):
         "preflight routing — pick the best image provider for the task",
         "switching between generated and stock images",
         "automatic fallback when preferred provider is unavailable",
+    ]
+    idempotency_key_fields = [
+        "prompt",
+        "negative_prompt",
+        "width",
+        "height",
+        "seed",
+        "n",
+        "aspect_ratio",
+        "resolution",
+        "generation_mode",
+        "image_url",
+        "image_path",
+        "image_urls",
+        "image_paths",
+        "output_path",
+        "preferred_provider",
+        "allowed_providers",
+        "operation",
     ]
 
     input_schema = {
@@ -137,10 +160,12 @@ class ImageSelector(BaseTool):
 
         logger = logging.getLogger(__name__)
         task_context = self._prepare_task_context(inputs)
+        wants_edit = self._wants_edit(inputs)
         candidates = self._filter_candidates(inputs, self._providers())
 
         # Rank mode — return scored provider rankings without generating
         if inputs.get("operation") == "rank":
+            candidates = _allowed_candidates(inputs, candidates)
             rankings = rank_providers(candidates, task_context)
             return ToolResult(
                 success=True,
@@ -154,6 +179,8 @@ class ImageSelector(BaseTool):
         # Normal generation — use scored selection
         tool, score = self._select_best_tool(inputs, candidates, task_context)
         if tool is None:
+            if wants_edit:
+                return ToolResult(success=False, error="No edit-capable image provider available.")
             return ToolResult(success=False, error="No image provider available.")
 
         # Adapt input keys: stock tools use 'query' while generators use 'prompt'
@@ -166,6 +193,36 @@ class ImageSelector(BaseTool):
         # Strip selector-only keys that downstream tools don't understand
         adapted.pop("preferred_provider", None)
         adapted.pop("allowed_providers", None)
+
+        if hasattr(tool, 'input_schema'):
+            props = tool.input_schema.get("properties", {})
+            operation = adapted.get("operation")
+            if operation == "generate" and "operation" in props:
+                adapted["operation"] = "text_to_image"
+
+            if adapted.get("generation_mode") == "edit":
+                ref_images = []
+                has_extra_refs = bool(adapted.get("image_urls") or adapted.get("image_paths"))
+                if has_extra_refs:
+                    if adapted.get("image_url"):
+                        ref_images.append(adapted["image_url"])
+                    if adapted.get("image_path"):
+                        ref_images.append(adapted["image_path"])
+                ref_images.extend(adapted.get("image_urls") or [])
+                ref_images.extend(adapted.get("image_paths") or [])
+
+                if ref_images and "ref_images" in props:
+                    adapted["ref_images"] = ref_images
+                    adapted["operation"] = "multi_image_reference"
+                else:
+                    if adapted.get("image_url") and "base_image_url" in props:
+                        adapted["base_image_url"] = adapted["image_url"]
+                    if adapted.get("image_path") and "base_image_path" in props:
+                        adapted["base_image_path"] = adapted["image_path"]
+                    if "operation" in props:
+                        adapted["operation"] = "image_editing"
+
+            adapted.pop("generation_mode", None)
 
         # Pass through generation params only to tools that accept them.
         if hasattr(tool, 'input_schema'):
@@ -217,26 +274,27 @@ class ImageSelector(BaseTool):
         from lib.scoring import rank_providers
 
         preferred = inputs.get("preferred_provider", "auto")
-        allowed = set(inputs.get("allowed_providers") or [])
-        if allowed:
-            candidates = [tool for tool in candidates if tool.provider in allowed]
+        candidates = _allowed_candidates(inputs, candidates)
         candidates = self._filter_candidates(inputs, candidates)
 
         rankings = rank_providers(candidates, task_context)
 
-        tool_by_provider: dict[str, BaseTool] = {}
+        available_by_name: dict[str, BaseTool] = {}
         for tool in candidates:
-            if tool.provider not in tool_by_provider and tool.get_status() == ToolStatus.AVAILABLE:
-                tool_by_provider[tool.provider] = tool
+            if tool.get_status() == ToolStatus.AVAILABLE:
+                available_by_name[tool.name] = tool
 
         if preferred != "auto":
             for score_item in rankings:
-                if score_item.provider == preferred and score_item.provider in tool_by_provider:
-                    return tool_by_provider[score_item.provider], score_item
+                if score_item.provider == preferred or score_item.tool_name == preferred:
+                    tool = available_by_name.get(score_item.tool_name)
+                    if tool is not None:
+                        return tool, score_item
 
         for score_item in rankings:
-            if score_item.provider in tool_by_provider:
-                return tool_by_provider[score_item.provider], score_item
+            tool = available_by_name.get(score_item.tool_name)
+            if tool is not None:
+                return tool, score_item
 
         return None, None
 
@@ -272,18 +330,22 @@ class ImageSelector(BaseTool):
                 item["usage_location"] = info.get("usage_location")
                 item["best_for"] = info.get("best_for", [])
                 item["supports"] = info.get("supports", {})
-                item["status"] = str(tool.get_status())
+                item["status"] = tool.get_status().value
             serialized.append(item)
         return serialized
 
-    def _filter_candidates(self, inputs: dict[str, Any], candidates: list[BaseTool]) -> list[BaseTool]:
-        wants_edit = (
+    @staticmethod
+    def _wants_edit(inputs: dict[str, Any]) -> bool:
+        return (
             inputs.get("generation_mode") == "edit"
             or inputs.get("image_url")
             or inputs.get("image_path")
             or inputs.get("image_urls")
             or inputs.get("image_paths")
         )
+
+    def _filter_candidates(self, inputs: dict[str, Any], candidates: list[BaseTool]) -> list[BaseTool]:
+        wants_edit = self._wants_edit(inputs)
         if not wants_edit:
             return candidates
 
@@ -292,7 +354,30 @@ class ImageSelector(BaseTool):
             props = getattr(tool, "input_schema", {}).get("properties", {})
             supports = getattr(tool, "supports", {})
             if supports.get("image_edit") or any(
-                key in props for key in ("image", "images", "image_url", "image_path", "image_urls", "image_paths")
+                key in props for key in (
+                    "image",
+                    "images",
+                    "image_url",
+                    "image_path",
+                    "image_urls",
+                    "image_paths",
+                    "base_image_url",
+                    "base_image_path",
+                    "ref_images",
+                )
             ):
                 filtered.append(tool)
-        return filtered or candidates
+        return filtered
+
+
+def _allowed_candidates(
+    inputs: dict[str, Any],
+    candidates: list[BaseTool],
+) -> list[BaseTool]:
+    allowed = set(inputs.get("allowed_providers") or [])
+    if not allowed:
+        return candidates
+    return [
+        tool for tool in candidates
+        if tool.provider in allowed or tool.name in allowed
+    ]

@@ -37,7 +37,7 @@ class TalkingHead(BaseTool):
     determinism = Determinism.STOCHASTIC
     runtime = ToolRuntime.LOCAL_GPU
 
-    dependencies = []  # checked dynamically via get_status()
+    dependencies = ["env:SADTALKER_PATH"]
     install_instructions = (
         "Clone https://github.com/OpenTalker/SadTalker and set SADTALKER_PATH env var\n"
         "Requires: PyTorch with CUDA, ffmpeg\n"
@@ -51,6 +51,10 @@ class TalkingHead(BaseTool):
         "photo_to_video",
         "face_animation",
         "audio_driven_animation",
+    ]
+    best_for = [
+        "Animating a still portrait into a local talking-head clip",
+        "Producing avatar narration when SadTalker is installed",
     ]
 
     input_schema = {
@@ -71,7 +75,7 @@ class TalkingHead(BaseTool):
             },
             "model": {
                 "type": "string",
-                "enum": ["sadtalker", "musetalk"],
+                "enum": ["sadtalker"],
                 "default": "sadtalker",
                 "description": "Model to use for face animation",
             },
@@ -97,7 +101,15 @@ class TalkingHead(BaseTool):
     resource_profile = ResourceProfile(
         cpu_cores=2, ram_mb=4096, vram_mb=4096, disk_mb=2000
     )
-    idempotency_key_fields = ["image_path", "audio_path", "model", "expression_scale", "still_mode"]
+    idempotency_key_fields = [
+        "image_path",
+        "audio_path",
+        "output_path",
+        "model",
+        "expression_scale",
+        "still_mode",
+        "preprocess",
+    ]
     side_effects = ["writes video file to output_path"]
     user_visible_verification = [
         "Watch generated video for lip-sync accuracy",

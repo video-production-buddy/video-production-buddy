@@ -6,7 +6,7 @@ import {
   useVideoConfig,
 } from "remotion";
 
-interface HeroTitleProps {
+export interface HeroTitleProps extends Record<string, unknown> {
   title: string;
   subtitle?: string;
 }

@@ -1,0 +1,288 @@
+{
+  "version": "1.0",
+  "description": "Canonical registry of every valid scene_type. scene-director MUST pick from this list. asset-director and compose-director MUST validate cuts against this registry. If a beat needs a motif not listed here, request a new component before continuing.",
+  "scene_types": {
+    "text_card": {
+      "component": "TextCard",
+      "description": "Large-typography beat with optional background. Use for declarative single-line statements.",
+      "required_props": ["text"],
+      "optional_props": ["fontSize", "color", "backgroundColor", "backgroundVideo", "backgroundOverlay"],
+      "motion_primitives": ["text_entrance_scale", "text_entrance_fade"],
+      "recommended_for_beats": ["B2-build", "B3-flash"],
+      "anti_patterns": ["narration duplication: do not put the same line in `text` AND in subtitles"]
+    },
+    "hero_title": {
+      "component": "HeroTitle",
+      "description": "Title or end card with optional subtitle.",
+      "required_props": ["text"],
+      "optional_props": ["heroSubtitle", "backgroundVideo", "backgroundOverlay"],
+      "motion_primitives": ["text_entrance_fade", "letter_stagger"],
+      "recommended_for_beats": ["B5-cta"]
+    },
+    "stat_card": {
+      "component": "StatCard",
+      "description": "A single big number with optional subtitle.",
+      "required_props": ["stat"],
+      "optional_props": ["subtitle", "accentColor", "backgroundVideo"],
+      "motion_primitives": ["digit_fade", "subtitle_fade"],
+      "recommended_for_beats": ["B4-reveal"]
+    },
+    "callout": {
+      "component": "CalloutBox",
+      "description": "Boxed message with optional bullets.",
+      "required_props": ["text"],
+      "optional_props": ["callout_type", "title", "backgroundVideo"],
+      "motion_primitives": ["box_entrance_scale", "bullet_stagger"],
+      "recommended_for_beats": ["B2-build", "B4-reveal"]
+    },
+    "comparison": {
+      "component": "ComparisonCard",
+      "description": "Side-by-side compare of two values.",
+      "required_props": ["leftLabel", "leftValue", "rightLabel", "rightValue"],
+      "optional_props": ["title", "backgroundColor"],
+      "motion_primitives": ["split_panel_entrance"],
+      "recommended_for_beats": ["B2-build", "B4-reveal"]
+    },
+    "bar_chart": {
+      "component": "BarChart",
+      "required_props": ["chartData"],
+      "optional_props": ["chartAnimation", "showValues", "showGrid", "backgroundVideo"],
+      "motion_primitives": ["bar_grow", "value_count_up"],
+      "recommended_for_beats": ["B4-reveal"]
+    },
+    "line_chart": {
+      "component": "LineChart",
+      "required_props": ["chartSeries"],
+      "optional_props": ["chartAnimation", "xLabel", "yLabel", "showMarkers"],
+      "motion_primitives": ["line_draw", "marker_pop"],
+      "recommended_for_beats": ["B4-reveal"]
+    },
+    "pie_chart": {
+      "component": "PieChart",
+      "required_props": ["chartData"],
+      "optional_props": ["donut", "centerLabel", "centerValue", "showLegend"],
+      "motion_primitives": ["wedge_sweep"],
+      "recommended_for_beats": ["B4-reveal"]
+    },
+    "kpi_grid": {
+      "component": "KPIGrid",
+      "required_props": ["chartData"],
+      "optional_props": ["title", "columns", "chartAnimation"],
+      "motion_primitives": ["card_stagger", "value_count_up"],
+      "recommended_for_beats": ["B4-reveal"]
+    },
+    "progress_bar": {
+      "component": "ProgressBar",
+      "required_props": ["progress"],
+      "optional_props": ["progressLabel", "progressColor", "progressSegments"],
+      "motion_primitives": ["bar_fill"],
+      "recommended_for_beats": ["B4-reveal"]
+    },
+    "anime_scene": {
+      "component": "AnimeScene",
+      "description": "Still-image anime scene with particles and camera motion. AD-VIDEO RESTRICTION: do NOT use for hook/product/brand beats — use notification_scene/dashboard_scene/brand_card instead.",
+      "required_props": ["images"],
+      "optional_props": ["particles", "lightingFrom", "lightingTo", "vignette"],
+      "motion_primitives": ["camera_pan", "particle_emit"],
+      "recommended_for_beats": ["B2-build (lifestyle/environment only)"],
+      "anti_patterns": ["B1 hook", "B3/B4 reveal", "B5 cta"]
+    },
+    "notification_scene": {
+      "component": "NotificationScene",
+      "description": "Animated app-icon grid with spring-entrance icons, badge counters, and notification banners. Use for hook/chaos beats.",
+      "required_props": [],
+      "optional_props": ["badgeStart", "badgeEnd", "badgeColor", "banners", "backgroundColor", "sceneDurationSeconds", "styleLayers"],
+      "motion_primitives": ["icon_spring_in", "badge_counter_roll", "banner_cascade", "ambient_glow_pulse"],
+      "recommended_for_beats": ["B1-hook"]
+    },
+    "creator_workflow_scene": {
+      "component": "CreatorWorkflowScene",
+      "description": "Product-visible creator workflow scene with approved product image, animated timeline, floating workflow chips, progress rails, and connection lines. Use for premium hardware ads where generic notification/browser metaphors feel too static or unrelated. The visible product must come from productImage; do not substitute generic hardware.",
+      "required_props": [],
+      "required_cut_props": ["productImage"],
+      "optional_props": ["productImage", "text", "subtitle", "banners", "sidebarItems", "animation", "accentColor", "backgroundColor", "sceneDurationSeconds", "styleLayers"],
+      "motion_primitives": ["product_scale_reveal", "timeline_playhead_sweep", "workflow_chip_orbit", "light_sweep", "panel_cascade", "progress_bar_race", "connection_line_draw", "product_parallax", "cursor_blink"],
+      "recommended_for_beats": ["B1-hook", "B2-build", "B4-reveal"]
+    },
+    "dashboard_scene": {
+      "component": "DashboardScene",
+      "description": "Animated product-UI: sidebar items spring in, task cards scale up, toast slides from right. Use for product-reveal beats.",
+      "required_props": [],
+      "optional_props": ["primaryColor", "accentColor", "toastText", "toastDelay", "sidebarItems", "panelTitle", "sceneDurationSeconds", "styleLayers"],
+      "motion_primitives": ["sidebar_spring", "card_stagger", "toast_slide"],
+      "recommended_for_beats": ["B3-reveal", "B4-reveal"]
+    },
+    "brand_card": {
+      "component": "BrandCardScene",
+      "description": "Animated end card: letter spring, accent underline draw, tagline fade, CTA, wordmark pulse. Use for CTA/brand beats. Text-only by default; render an approved product only when productImage is provided, and render synthetic laptop hardware only when hardwareTreatment is explicitly set.",
+      "required_props": [],
+      "optional_props": ["brandName", "tagline", "ctaText", "productImage", "hardwareTreatment", "accentColor", "backgroundColor", "sceneDurationSeconds", "styleLayers"],
+      "motion_required_cut_props": {
+        "product_scale_reveal": {
+          "any_of": ["productImage", "hardwareTreatment"],
+          "description": "BrandCardScene only renders product-scale motion when an approved product image or explicit hardware treatment is provided."
+        }
+      },
+      "motion_primitives": ["letter_spring", "underline_draw", "tagline_fade", "cta_appear", "wordmark_pulse", "product_scale_reveal"],
+      "recommended_for_beats": ["B5-cta"]
+    },
+    "terminal_scene": {
+      "component": "TerminalScene",
+      "description": "Synthetic terminal animation — no real screen capture needed.",
+      "required_props": ["steps"],
+      "optional_props": ["terminalTitle", "prompt", "accentColor"],
+      "motion_primitives": ["cmd_type", "output_print", "pause_hold"],
+      "recommended_for_beats": ["B2-build (developer audience)"]
+    },
+    "screenshot_scene": {
+      "component": "ScreenshotScene",
+      "description": "Synthetic UI recording scene: animates cursor movement, clicks, typing, highlights, and callouts over a static screenshot backdrop. Use when a focused app/dashboard flow is better represented by deterministic overlay animation than live screen capture.",
+      "required_props": ["backgroundImage", "screenshotSteps"],
+      "optional_props": ["screenshotSize", "cursorStartAt", "accentColor", "sceneDurationSeconds"],
+      "motion_primitives": ["cursor_move", "click_pulse", "type_into", "bubble_append", "typing_dots", "highlight_box", "callout_balloon"],
+      "recommended_for_beats": ["B2-build (software workflow)", "B4-reveal (UI proof)"]
+    },
+    "checkmark_scene": {
+      "component": "CheckmarkScene",
+      "description": "Mint checkmark SVG draw + radial ripple + spring pop. The first moment of visual resolution. Use when a task/project completes or a value lands.",
+      "required_props": [],
+      "optional_props": ["accentColor", "backgroundColor", "label", "sceneDurationSeconds", "styleLayers"],
+      "motion_primitives": ["checkmark_draw", "radial_ripple", "spring_pop", "label_fade"],
+      "recommended_for_beats": ["B3-reveal", "B4-reveal"]
+    },
+    "browser_tabs_scene": {
+      "component": "BrowserTabsScene",
+      "description": "Synthetic browser with crowded tab bar, blinking cursor, and optional Cmd+W pill. Visualizes multi-tool overload.",
+      "required_props": [],
+      "optional_props": ["tabCount", "showKeyboardPill", "keyShortcut", "backgroundColor", "sceneDurationSeconds", "styleLayers"],
+      "motion_primitives": ["tab_overflow", "cursor_blink", "keyboard_pill", "tab_close_slide"],
+      "recommended_for_beats": ["B2-build"]
+    },
+    "badge_freeze_scene": {
+      "component": "BadgeFreezeScene",
+      "description": "Extreme close-up badge counter rolling 87→102 with thumb silhouette swiping in then freezing mid-swipe. The recognition trigger.",
+      "required_props": [],
+      "optional_props": ["startCount", "endCount", "accentColor", "backgroundColor", "freezeAtSeconds", "showThumb", "sceneDurationSeconds", "styleLayers"],
+      "motion_primitives": ["counter_roll", "thumb_silhouette_swipe", "freeze_pulse"],
+      "recommended_for_beats": ["B1-hook"]
+    },
+    "line_connection_scene": {
+      "component": "LineConnectionScene",
+      "description": "Two anchor points (e.g., a task card and a message card) draw a connecting mint line; both anchors highlight in sync. Use for data-flow / sync visualization.",
+      "required_props": ["leftLabel", "rightLabel"],
+      "optional_props": ["leftSubLabel", "rightSubLabel", "accentColor", "backgroundColor", "drawDelay", "sceneDurationSeconds", "styleLayers"],
+      "motion_primitives": ["line_draw_between_anchors", "mutual_highlight_pulse"],
+      "recommended_for_beats": ["B4-reveal"]
+    },
+    "stat_roll_scene": {
+      "component": "StatRollScene",
+      "description": "Number rolls up from 0 to target with comma separators and a unit label fade.",
+      "required_props": ["targetValue"],
+      "optional_props": ["unitLabel", "subtitle", "accentColor", "backgroundColor", "rollDurationSeconds", "sceneDurationSeconds", "styleLayers"],
+      "motion_primitives": ["digit_roll_up", "comma_separators", "unit_label_fade"],
+      "recommended_for_beats": ["B4-reveal"]
+    }
+  },
+  "style_layers": {
+    "grain": {
+      "props": {
+        "intensity": "0..1 (default 0.06)",
+        "scale": "number (default 1.5)",
+        "blendMode": "soft-light | overlay | multiply (default soft-light)"
+      }
+    },
+    "vignette": {
+      "props": {
+        "strength": "0..1 (default 0.25)",
+        "color": "hex (default #000000)"
+      }
+    },
+    "ambient_glow": {
+      "props": {
+        "color": "hex",
+        "intensity": "0..1",
+        "position": "center | top-left | top-right | bottom-left | bottom-right",
+        "radius": "number (px or %)",
+        "pulse": "boolean"
+      }
+    },
+    "particle_field": {
+      "props": {
+        "count": "integer",
+        "type": "dust | sparkle | fog",
+        "velocity": "number"
+      }
+    },
+    "light_rays": {
+      "props": {
+        "color": "hex",
+        "angle": "degrees",
+        "count": "integer"
+      }
+    }
+  },
+  "motion_primitives_index": {
+    "text_entrance_scale": "Text block springs from 0.92 to 1.0 scale while fading in",
+    "text_entrance_fade": "Text opacity interpolates from 0 to 1 during the opening beat",
+    "letter_stagger": "Title letters or words reveal sequentially with short staggered offsets",
+    "digit_fade": "Statistic value fades in with a brief scale emphasis",
+    "subtitle_fade": "Subtitle opacity ramps in after the main statistic resolves",
+    "box_entrance_scale": "Callout container scales up from 0.96 to 1.0 while fading in",
+    "bullet_stagger": "Callout bullet lines appear one after another with short staggered delays",
+    "split_panel_entrance": "Comparison panels slide or scale in from opposite sides before settling",
+    "bar_grow": "Bar chart bars scale from zero height or width to their final values",
+    "value_count_up": "Numeric chart or KPI values interpolate upward to the target value",
+    "line_draw": "Line chart path reveals over time using a draw-on animation",
+    "marker_pop": "Line chart markers scale in after the line reaches each point",
+    "wedge_sweep": "Pie or donut wedges sweep around the circle from zero angle to final proportions",
+    "bar_fill": "Progress bar fill interpolates from 0 to the configured progress value",
+    "camera_pan": "Still scene camera framing drifts horizontally or vertically across the image",
+    "particle_emit": "Particle overlay emits drifting particles such as fireflies, petals, sparkles, or mist",
+    "cmd_type": "Terminal command characters reveal left-to-right as if typed",
+    "output_print": "Terminal output lines appear after commands with a print or fade cadence",
+    "pause_hold": "Timeline intentionally holds the current state without adding new visual elements",
+    "cursor_move": "Synthetic UI cursor moves between normalized screenshot coordinates with eased deceleration",
+    "click_pulse": "Cursor click emits an expanding ring that fades at the target coordinate",
+    "type_into": "Text appears character-by-character inside a normalized screenshot region",
+    "bubble_append": "Chat or message bubble springs into a normalized screenshot region and can stream text",
+    "typing_dots": "Three-dot typing indicator pulses near a normalized screenshot coordinate",
+    "highlight_box": "Region outline pulses around a normalized screenshot rectangle",
+    "callout_balloon": "Callout bubble appears near an anchor point with a directional pointer tail",
+    "checkmark_draw": "SVG checkmark path stroke-dashoffset interpolation 0→full over 0.2s ease-in",
+    "radial_ripple": "Concentric circle scale 0→3 with opacity 0.6→0 over 0.8s",
+    "spring_pop": "Element scale 0→1.2→1.0 via spring(damping=14, stiffness=200) over 0.3s",
+    "label_fade": "Optional label fades in after the checkmark spring-pop resolves",
+    "counter_roll": "Numeric value interpolated start→end with Math.round per frame; spring-eased",
+    "thumb_silhouette_swipe": "SVG thumb translates from bottom into frame, swipes right, decelerates to 0 mid-swipe",
+    "freeze_pulse": "After freeze, the focal element scales 1.0→1.15→1.0 once over 0.4s",
+    "tab_overflow": "9+ truncated tab chips in a row; '+N more' overflow indicator on the right",
+    "cursor_blink": "Cursor opacity toggles 0/1 every 16 frames (530ms at 30fps)",
+    "keyboard_pill": "Pill badge with keyboard shortcut text fades in 0.1s, holds 0.5s, fades out 0.2s",
+    "tab_close_slide": "One tab slides out right (0.25s ease-in); subsequent tabs spring-expand with 40ms stagger",
+    "line_draw_between_anchors": "Path between two anchor points draws via stroke-dashoffset over 0.4s",
+    "mutual_highlight_pulse": "Both anchor anchors highlight (border + glow) simultaneously at end of line draw",
+    "digit_roll_up": "Number animates 0→target with spring; comma separators inserted as value crosses thousands",
+    "comma_separators": "Rolling number output inserts thousands separators as the displayed value grows",
+    "unit_label_fade": "Unit label fades in near the rolling number after the primary value is readable",
+    "icon_spring_in": "Icons enter via spring with stagger (idx * 1.2 frames delay)",
+    "badge_counter_roll": "Badge value interpolates start→end via Math.round; ambient glow breathes",
+    "banner_cascade": "Notification banners slide in from top, each pushing previous down",
+    "ambient_glow_pulse": "Background radial gradient breathes via Math.sin(frame / period)",
+    "product_scale_reveal": "Approved product image springs into frame with scale, glow, and depth-preserving product geometry",
+    "timeline_playhead_sweep": "A vertical timeline playhead sweeps across animated clip blocks during the hook",
+    "workflow_chip_orbit": "Workflow chips drift and spring around the product image to imply active creator work",
+    "light_sweep": "A diagonal light pass scans across the frame to prevent a static packshot feel",
+    "panel_cascade": "Workflow panels enter in staggered rows with spring translation and opacity",
+    "progress_bar_race": "Multiple progress rails fill at different speeds with visible numeric motion",
+    "connection_line_draw": "Curved connection lines draw between product and workflow panels using stroke-dashoffset",
+    "product_parallax": "Product reference image floats subtly while surrounding UI moves at a different depth",
+    "sidebar_spring": "Sidebar items translate in from left via spring (idx * 5 frame stagger)",
+    "card_stagger": "Cards scale 0.94→1.0 with stagger (idx * 8 frame stagger)",
+    "toast_slide": "Toast translates from right (440px → 0) via spring at toastDelay",
+    "letter_spring": "Each brand letter springs up (idx * 2 frame stagger) translateY(40→0)",
+    "underline_draw": "Accent underline width 0→340 via spring after letters settle",
+    "tagline_fade": "Tagline springs in at 1.0s",
+    "cta_appear": "CTA springs in at 2.5s in accent color",
+    "wordmark_pulse": "Wordmark scales 1.0→1.03→1.0 once at 4.0s"
+  }
+}

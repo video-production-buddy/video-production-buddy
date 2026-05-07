@@ -14,6 +14,7 @@ Approach: MediaPipe/OpenCV face detection → smoothed bounding box trajectory
 from __future__ import annotations
 
 import json
+import shutil
 import time
 from pathlib import Path
 from typing import Any
@@ -41,6 +42,11 @@ ASPECT_PRESETS = {
 }
 
 
+def _ffmpeg_filter_path(path: Path) -> str:
+    """Escape a filesystem path embedded inside an FFmpeg filter argument."""
+    return str(path).replace("\\", "/").replace(":", "\\:").replace("'", "\\'")
+
+
 class AutoReframe(BaseTool):
     name = "auto_reframe"
     version = "0.1.0"
@@ -64,6 +70,10 @@ class AutoReframe(BaseTool):
         "face_tracked_crop",
         "smart_reframe",
         "center_crop",
+    ]
+    best_for = [
+        "Converting landscape videos to portrait, square, or custom aspect ratios",
+        "Keeping faces centered when creating social derivative exports",
     ]
 
     input_schema = {
@@ -119,8 +129,17 @@ class AutoReframe(BaseTool):
     retry_policy = RetryPolicy(max_retries=1, retryable_errors=["FFmpeg error"])
     resume_support = ResumeSupport.FROM_START
     idempotency_key_fields = [
-        "input_path", "target_aspect", "target_width", "target_height",
-        "smoothing_window", "face_padding",
+        "input_path",
+        "output_path",
+        "target_aspect",
+        "target_width",
+        "target_height",
+        "face_tracking_json",
+        "smoothing_window",
+        "face_padding",
+        "sample_fps",
+        "codec",
+        "crf",
     ]
     side_effects = ["writes reframed video to output_path"]
     user_visible_verification = [
@@ -141,14 +160,30 @@ class AutoReframe(BaseTool):
             return ToolResult(success=False, error="Could not read video dimensions")
 
         # Determine target crop dimensions (in source pixel space)
+        aspect_name = inputs.get("target_aspect", "portrait")
+        has_explicit_size = "target_width" in inputs and "target_height" in inputs
+        if not has_explicit_size and aspect_name not in ASPECT_PRESETS:
+            return ToolResult(success=False, error=f"Unknown target_aspect: {aspect_name}")
+
         target_w, target_h = self._compute_crop_size(inputs, src_w, src_h)
+        output_path = Path(
+            inputs.get("output_path", str(input_path.with_stem(f"{input_path.stem}_{aspect_name}")))
+        )
 
         # If source already matches target aspect, no crop needed
         if target_w == src_w and target_h == src_h:
+            artifact_path = input_path
+            if output_path != input_path:
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(input_path, output_path)
+                artifact_path = output_path
             return ToolResult(
                 success=True,
-                data={"message": "Source already matches target aspect ratio", "output": str(input_path)},
-                artifacts=[str(input_path)],
+                data={
+                    "message": "Source already matches target aspect ratio",
+                    "output": str(artifact_path),
+                },
+                artifacts=[str(artifact_path)],
             )
 
         # Get face tracking data
@@ -173,10 +208,6 @@ class AutoReframe(BaseTool):
         out_w, out_h = self._compute_output_resolution(inputs, target_w, target_h, src_w, src_h)
 
         # Build output path
-        aspect_name = inputs.get("target_aspect", "portrait")
-        output_path = Path(
-            inputs.get("output_path", str(input_path.with_stem(f"{input_path.stem}_{aspect_name}")))
-        )
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Render via FFmpeg
@@ -484,8 +515,9 @@ class AutoReframe(BaseTool):
         sendcmd_path.write_text("\n".join(lines), encoding="utf-8")
 
         # Use crop with sendcmd for dynamic positioning
+        sendcmd_escaped = _ffmpeg_filter_path(sendcmd_path)
         vf = (
-            f"sendcmd=f='{str(sendcmd_path).replace(chr(92), '/')}':flags=enter,"
+            f"sendcmd=f='{sendcmd_escaped}':flags=enter,"
             f"crop={crop_w}:{crop_h}:{crop_xs[0]}:{crop_ys[0]},"
             f"scale={out_w}:{out_h}"
         )

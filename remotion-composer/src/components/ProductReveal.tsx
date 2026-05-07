@@ -5,11 +5,11 @@ import {
   spring,
   useCurrentFrame,
   useVideoConfig,
-  staticFile,
   Easing,
 } from "remotion";
+import { resolveAsset } from "../assetPath";
 
-export interface ProductRevealProps {
+export interface ProductRevealProps extends Record<string, unknown> {
   productImage: string;
   productName: string;
   price: string;
@@ -146,7 +146,7 @@ export const ProductReveal: React.FC<ProductRevealProps> = ({
           }}
         >
           <Img
-            src={staticFile(productImage)}
+            src={resolveAsset(productImage)}
             style={{
               width: "100%",
               height: "100%",
@@ -172,7 +172,7 @@ export const ProductReveal: React.FC<ProductRevealProps> = ({
           }}
         >
           <Img
-            src={staticFile(productImage)}
+            src={resolveAsset(productImage)}
             style={{
               width: "100%",
               height: 260,

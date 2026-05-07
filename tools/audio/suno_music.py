@@ -37,7 +37,7 @@ class SunoMusic(BaseTool):
     determinism = Determinism.STOCHASTIC
     runtime = ToolRuntime.API
 
-    dependencies = []  # checked dynamically via env var
+    dependencies = ["env:SUNO_API_KEY"]
     install_instructions = (
         "Set the SUNO_API_KEY environment variable:\n"
         "  export SUNO_API_KEY=your_key_here\n"
@@ -121,7 +121,16 @@ class SunoMusic(BaseTool):
         cpu_cores=1, ram_mb=256, vram_mb=0, disk_mb=100, network_required=True
     )
     retry_policy = RetryPolicy(max_retries=2, retryable_errors=["rate_limit", "timeout"])
-    idempotency_key_fields = ["prompt", "style", "instrumental", "model"]
+    idempotency_key_fields = [
+        "prompt",
+        "output_path",
+        "style",
+        "title",
+        "instrumental",
+        "custom_mode",
+        "model",
+        "track_index",
+    ]
     side_effects = ["writes audio file to output_path", "calls Suno API via sunoapi.org"]
     user_visible_verification = [
         "Listen to generated music for mood, genre accuracy, and quality",
@@ -149,6 +158,14 @@ class SunoMusic(BaseTool):
             return ToolResult(
                 success=False,
                 error="No Suno API key. " + self.install_instructions,
+            )
+
+        if inputs.get("custom_mode", False) and (
+            not inputs.get("style") or not inputs.get("title")
+        ):
+            return ToolResult(
+                success=False,
+                error="custom_mode requires style and title before submitting to Suno.",
             )
 
         start = time.time()

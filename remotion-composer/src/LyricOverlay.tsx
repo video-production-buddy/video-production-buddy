@@ -3,26 +3,17 @@ import {
   Audio,
   OffthreadVideo,
   interpolate,
-  staticFile,
   useCurrentFrame,
   useVideoConfig,
 } from "remotion";
 import React from "react";
 import { loadFont as loadPlayfair } from "@remotion/google-fonts/PlayfairDisplay";
+import { resolveAsset } from "./assetPath";
 
 const { fontFamily: playfairItalic } = loadPlayfair("italic", {
   weights: ["400", "700"],
   subsets: ["latin"],
 });
-
-function resolveAsset(src: string): string {
-  if (src.startsWith("http://") || src.startsWith("https://") || src.startsWith("data:")) return src;
-  const clean = src.replace(/^file:\/\/\/?/, "");
-  if (clean.startsWith("/") || /^[A-Za-z]:[\\/]/.test(clean)) {
-    return `file:///${clean.replace(/\\/g, "/")}`;
-  }
-  return staticFile(clean);
-}
 
 export interface Lyric {
   text: string;
@@ -30,7 +21,7 @@ export interface Lyric {
   outSeconds: number;
 }
 
-export interface LyricOverlayProps {
+export interface LyricOverlayProps extends Record<string, unknown> {
   videoSrc: string;
   lyrics: Lyric[];
   bottomY?: number; // 0..1, vertical center of subtitle band
@@ -161,10 +152,10 @@ export const LyricOverlay: React.FC<LyricOverlayProps> = ({
   lyrics,
   bottomY = 0.88,
 }) => {
-  const { durationInFrames } = useVideoConfig();
+  const hasVideo = videoSrc.trim().length > 0;
   return (
     <AbsoluteFill style={{ backgroundColor: "#000" }}>
-      <OffthreadVideo src={resolveAsset(videoSrc)} />
+      {hasVideo && <OffthreadVideo src={resolveAsset(videoSrc)} />}
       {lyrics.map((l, i) => (
         <LyricLine key={i} lyric={l} bottomY={bottomY} />
       ))}

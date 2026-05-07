@@ -24,6 +24,9 @@ from tools.base_tool import (
 )
 
 
+MODELS = ["u2net", "u2net_human_seg", "isnet-general-use"]
+
+
 class BgRemove(BaseTool):
     name = "bg_remove"
     version = "0.1.0"
@@ -48,6 +51,10 @@ class BgRemove(BaseTool):
         "batch_processing",
         "custom_background",
     ]
+    best_for = [
+        "Removing backgrounds from product, presenter, or frame images",
+        "Preparing transparent cutouts for composites and motion graphics",
+    ]
 
     input_schema = {
         "type": "object",
@@ -63,7 +70,7 @@ class BgRemove(BaseTool):
             },
             "model": {
                 "type": "string",
-                "enum": ["u2net", "u2net_human_seg", "isnet-general-use"],
+                "enum": MODELS,
                 "default": "u2net",
             },
             "bg_color": {
@@ -82,7 +89,7 @@ class BgRemove(BaseTool):
         cpu_cores=2, ram_mb=2048, vram_mb=0, disk_mb=500
     )
 
-    idempotency_key_fields = ["input_path", "model", "bg_color", "alpha_matting"]
+    idempotency_key_fields = ["input_path", "output_path", "model", "bg_color", "alpha_matting"]
     side_effects = ["writes background-removed image to output_path"]
     user_visible_verification = [
         "Inspect output for clean edges around the subject",
@@ -90,11 +97,7 @@ class BgRemove(BaseTool):
     ]
 
     def get_status(self) -> ToolStatus:
-        try:
-            import rembg  # noqa: F401
-            return ToolStatus.AVAILABLE
-        except ImportError:
-            return ToolStatus.UNAVAILABLE
+        return super().get_status()
 
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
         input_path = Path(inputs["input_path"])
@@ -107,6 +110,8 @@ class BgRemove(BaseTool):
         model_name = inputs.get("model", "u2net")
         bg_color = inputs.get("bg_color")
         alpha_matting = inputs.get("alpha_matting", False)
+        if model_name not in MODELS:
+            return ToolResult(success=False, error=f"Unknown model: {model_name}")
 
         try:
             import rembg

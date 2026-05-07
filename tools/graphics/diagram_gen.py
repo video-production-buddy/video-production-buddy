@@ -49,6 +49,10 @@ class DiagramGen(BaseTool):
         "generate_flowchart",
         "generate_box_diagram",
     ]
+    best_for = [
+        "Rendering Mermaid or simple box diagrams for explainers",
+        "Creating deterministic diagram assets for Remotion or HyperFrames scenes",
+    ]
 
     input_schema = {
         "type": "object",
@@ -97,7 +101,17 @@ class DiagramGen(BaseTool):
     }
 
     resource_profile = ResourceProfile(cpu_cores=1, ram_mb=256, vram_mb=0, disk_mb=50)
-    idempotency_key_fields = ["diagram_type", "definition", "boxes"]
+    idempotency_key_fields = [
+        "diagram_type",
+        "output_path",
+        "definition",
+        "boxes",
+        "connections",
+        "title",
+        "theme",
+        "width",
+        "height",
+    ]
     side_effects = ["writes diagram image to output_path"]
     user_visible_verification = [
         "Verify diagram accurately represents the described structure",
@@ -167,6 +181,12 @@ class DiagramGen(BaseTool):
             finally:
                 temp_mmd.unlink(missing_ok=True)
                 config_path.unlink(missing_ok=True)
+
+            if not output_path.exists():
+                return ToolResult(
+                    success=False,
+                    error=f"Expected output was not created: {output_path}",
+                )
 
             return ToolResult(
                 success=True,

@@ -27,6 +27,7 @@ from tools.base_tool import (
 
 
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi"}
+VALID_SCALES = {2, 4}
 
 MODELS = {
     "RealESRGAN_x4plus": {
@@ -64,6 +65,10 @@ class Upscale(BaseTool):
         "video_upscale",
         "face_aware_upscale",
     ]
+    best_for = [
+        "Upscaling stills or short clips with local Real-ESRGAN models",
+        "Preparing low-resolution assets for HD or social derivatives",
+    ]
 
     input_schema = {
         "type": "object",
@@ -97,7 +102,14 @@ class Upscale(BaseTool):
     }
 
     resource_profile = ResourceProfile(cpu_cores=2, ram_mb=4096, vram_mb=2048, disk_mb=2000)
-    idempotency_key_fields = ["input_path", "scale", "model", "face_enhance", "denoise_strength"]
+    idempotency_key_fields = [
+        "input_path",
+        "output_path",
+        "scale",
+        "model",
+        "face_enhance",
+        "denoise_strength",
+    ]
     side_effects = ["writes upscaled file to output_path"]
     user_visible_verification = [
         "Compare upscaled output with original for detail and artifact quality",
@@ -109,11 +121,7 @@ class Upscale(BaseTool):
     # ------------------------------------------------------------------
 
     def get_status(self) -> ToolStatus:
-        try:
-            import realesrgan  # noqa: F401
-            return ToolStatus.AVAILABLE
-        except ImportError:
-            return ToolStatus.UNAVAILABLE
+        return super().get_status()
 
     # ------------------------------------------------------------------
     # Execution
@@ -134,6 +142,10 @@ class Upscale(BaseTool):
         model_name = inputs.get("model", "RealESRGAN_x4plus")
         face_enhance = inputs.get("face_enhance", False)
         denoise_strength = inputs.get("denoise_strength", 0.5)
+        if scale not in VALID_SCALES:
+            return ToolResult(success=False, error=f"Unknown scale: {scale}")
+        if model_name not in MODELS:
+            return ToolResult(success=False, error=f"Unknown model: {model_name}")
 
         start = time.time()
 
@@ -190,7 +202,8 @@ class Upscale(BaseTool):
             raise ValueError(f"Could not read image: {input_path}")
 
         output, _ = upsampler.enhance(img, outscale=scale)
-        cv2.imwrite(str(output_path), output)
+        if not cv2.imwrite(str(output_path), output) or not output_path.exists():
+            raise ValueError(f"Expected output was not created: {output_path}")
 
         h, w = output.shape[:2]
         return {"output_width": w, "output_height": h}
@@ -231,11 +244,17 @@ class Upscale(BaseTool):
             # Upscale each frame
             frame_files = sorted(frames_dir.glob("*.png"))
             total_frames = len(frame_files)
+            if total_frames == 0:
+                raise ValueError(f"No frames extracted from video: {input_path}")
 
             for frame_file in frame_files:
                 img = cv2.imread(str(frame_file), cv2.IMREAD_UNCHANGED)
+                if img is None:
+                    raise ValueError(f"Could not read extracted frame: {frame_file}")
                 output, _ = upsampler.enhance(img, outscale=scale)
-                cv2.imwrite(str(upscaled_dir / frame_file.name), output)
+                frame_output = upscaled_dir / frame_file.name
+                if not cv2.imwrite(str(frame_output), output) or not frame_output.exists():
+                    raise ValueError(f"Expected upscaled frame was not created: {frame_output}")
 
             # Reassemble with ffmpeg, copy audio from original
             reassemble_cmd = [
@@ -251,6 +270,8 @@ class Upscale(BaseTool):
                 str(output_path),
             ]
             self.run_command(reassemble_cmd)
+            if not output_path.exists():
+                raise ValueError(f"Expected output was not created: {output_path}")
 
         return {"total_frames": total_frames, "fps": fps}
 

@@ -98,6 +98,10 @@ class AudioEnhance(BaseTool):
         "eq",
         "speech_cleanup",
     ]
+    best_for = [
+        "Cleaning narration or source audio with deterministic FFmpeg filters",
+        "Normalizing speech tracks before mix, subtitle, or compose stages",
+    ]
 
     input_schema = {
         "type": "object",
@@ -120,7 +124,14 @@ class AudioEnhance(BaseTool):
     }
 
     resource_profile = ResourceProfile(cpu_cores=1, ram_mb=512, vram_mb=0, disk_mb=500)
-    idempotency_key_fields = ["input_path", "preset", "custom_af"]
+    idempotency_key_fields = [
+        "input_path",
+        "preset",
+        "custom_af",
+        "audio_codec",
+        "audio_bitrate",
+        "output_path",
+    ]
     side_effects = ["writes enhanced audio/video to output_path"]
     user_visible_verification = [
         "Listen to enhanced audio and compare with original",
@@ -135,6 +146,7 @@ class AudioEnhance(BaseTool):
         output_path = Path(
             inputs.get("output_path", str(input_path.with_stem(f"{input_path.stem}_enhanced")))
         )
+        output_path.parent.mkdir(parents=True, exist_ok=True)
         audio_codec = inputs.get("audio_codec", "aac")
         audio_bitrate = inputs.get("audio_bitrate", "192k")
 
@@ -165,6 +177,12 @@ class AudioEnhance(BaseTool):
             self.run_command(cmd)
         except Exception as e:
             return ToolResult(success=False, error=f"FFmpeg failed: {e}")
+
+        if not output_path.exists():
+            return ToolResult(
+                success=False,
+                error=f"Expected output was not created: {output_path}",
+            )
 
         elapsed = time.time() - start
 

@@ -26,6 +26,9 @@ from tools.base_tool import (
 
 
 class MusicGen(BaseTool):
+    # NOTE: Routes exclusively to ElevenLabs Music API (ELEVENLABS_API_KEY).
+    # For MiniMax music use `minimax_music`; for Suno use `suno_music`.
+    # The generic name is kept for backward compatibility.
     name = "music_gen"
     version = "0.1.0"
     tier = ToolTier.GENERATE
@@ -36,7 +39,7 @@ class MusicGen(BaseTool):
     determinism = Determinism.STOCHASTIC
     runtime = ToolRuntime.API
 
-    dependencies = []  # checked dynamically via API key
+    dependencies = ["env:ELEVENLABS_API_KEY"]
     install_instructions = (
         "Set the ELEVENLABS_API_KEY environment variable:\n"
         "  export ELEVENLABS_API_KEY=your_key_here\n"
@@ -48,6 +51,10 @@ class MusicGen(BaseTool):
     capabilities = [
         "generate_background_music",
         "generate_sfx",
+    ]
+    best_for = [
+        "Generating custom background music through ElevenLabs Music",
+        "Creating ad, explainer, or trailer music beds when no library track is approved",
     ]
 
     input_schema = {
@@ -76,16 +83,21 @@ class MusicGen(BaseTool):
         cpu_cores=1, ram_mb=256, vram_mb=0, disk_mb=50, network_required=True
     )
     retry_policy = RetryPolicy(max_retries=2, retryable_errors=["rate_limit", "timeout"])
-    idempotency_key_fields = ["prompt", "duration_seconds"]
+    idempotency_key_fields = ["prompt", "output_path", "duration_seconds"]
     side_effects = ["writes audio file to output_path", "calls ElevenLabs API"]
     user_visible_verification = [
         "Listen to generated music for mood and quality",
     ]
 
+    _AUTH_FAILED_KEY_PREFIXES: set[str] = set()
+
     def get_status(self) -> ToolStatus:
-        if os.environ.get("ELEVENLABS_API_KEY"):
-            return ToolStatus.AVAILABLE
-        return ToolStatus.UNAVAILABLE
+        key = os.environ.get("ELEVENLABS_API_KEY", "")
+        if not key:
+            return ToolStatus.UNAVAILABLE
+        if key[:8] in self.__class__._AUTH_FAILED_KEY_PREFIXES:
+            return ToolStatus.UNAVAILABLE
+        return ToolStatus.AVAILABLE
 
     def estimate_cost(self, inputs: dict[str, Any]) -> float:
         # ElevenLabs music generation pricing is per generation
@@ -115,6 +127,8 @@ class MusicGen(BaseTool):
             return ToolResult(success=False, error=f"Music generation failed: {e}")
 
         result.duration_seconds = round(time.time() - start, 2)
+        if not result.success:
+            return result
         result.cost_usd = self.estimate_cost(inputs)
         return result
 
@@ -152,6 +166,8 @@ class MusicGen(BaseTool):
         response = requests.post(
             url, headers=headers, json=payload, timeout=180
         )
+        if response.status_code == 401:
+            self.__class__._AUTH_FAILED_KEY_PREFIXES.add(api_key[:8])
         response.raise_for_status()
 
         output_path = Path(inputs.get("output_path", "music_output.mp3"))

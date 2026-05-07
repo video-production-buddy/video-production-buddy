@@ -32,7 +32,7 @@ class PexelsVideo(BaseTool):
     determinism = Determinism.DETERMINISTIC
     runtime = ToolRuntime.API
 
-    dependencies = []
+    dependencies = ["env:PEXELS_API_KEY"]
     install_instructions = (
         "Set PEXELS_API_KEY to your Pexels API key.\n"
         "  Get one free at https://www.pexels.com/api/"
@@ -94,7 +94,7 @@ class PexelsVideo(BaseTool):
         cpu_cores=1, ram_mb=256, vram_mb=0, disk_mb=200, network_required=True
     )
     retry_policy = RetryPolicy(max_retries=2, retryable_errors=["rate_limit", "timeout"])
-    idempotency_key_fields = ["query", "orientation", "size", "page"]
+    idempotency_key_fields = ["query", "output_path", "orientation", "size", "page"]
     side_effects = ["writes video file to output_path", "calls Pexels API"]
     user_visible_verification = ["Watch downloaded clip to verify it matches the intended scene"]
 

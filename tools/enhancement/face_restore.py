@@ -19,9 +19,11 @@ from tools.base_tool import (
     ToolResult,
     ToolRuntime,
     ToolStability,
-    ToolStatus,
     ToolTier,
 )
+
+
+MODELS = ["CodeFormer", "GFPGAN"]
 
 
 class FaceRestore(BaseTool):
@@ -35,7 +37,7 @@ class FaceRestore(BaseTool):
     determinism = Determinism.DETERMINISTIC
     runtime = ToolRuntime.LOCAL_GPU
 
-    dependencies = ["python:gfpgan", "python:torch"]
+    dependencies = ["python:gfpgan", "python:torch", "python:cv2"]
     install_instructions = (
         "pip install gfpgan  # Includes CodeFormer support. Requires PyTorch."
     )
@@ -46,6 +48,10 @@ class FaceRestore(BaseTool):
         "face_restoration",
         "face_detection",
         "quality_enhancement",
+    ]
+    best_for = [
+        "Restoring low-quality face images when local GPU models are installed",
+        "Improving source portrait quality before avatar or talking-head generation",
     ]
 
     input_schema = {
@@ -62,7 +68,7 @@ class FaceRestore(BaseTool):
             },
             "model": {
                 "type": "string",
-                "enum": ["CodeFormer", "GFPGAN"],
+                "enum": MODELS,
                 "default": "CodeFormer",
                 "description": "Restoration model to use",
             },
@@ -89,19 +95,19 @@ class FaceRestore(BaseTool):
     resource_profile = ResourceProfile(
         cpu_cores=2, ram_mb=2048, vram_mb=2048, disk_mb=1000
     )
-    idempotency_key_fields = ["input_path", "model", "fidelity", "upscale"]
+    idempotency_key_fields = [
+        "input_path",
+        "output_path",
+        "model",
+        "fidelity",
+        "upscale",
+        "bg_upsampler",
+    ]
     side_effects = ["writes restored image to output_path"]
     user_visible_verification = [
         "Compare restored face with original for natural appearance",
         "Verify face identity is preserved after restoration",
     ]
-
-    def get_status(self) -> ToolStatus:
-        try:
-            import gfpgan  # noqa: F401
-            return ToolStatus.AVAILABLE
-        except ImportError:
-            return ToolStatus.UNAVAILABLE
 
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
         input_path = Path(inputs["input_path"])
@@ -118,6 +124,8 @@ class FaceRestore(BaseTool):
         fidelity = inputs.get("fidelity", 0.5)
         upscale = inputs.get("upscale", 2)
         bg_upsampler_flag = inputs.get("bg_upsampler", False)
+        if model_name not in MODELS:
+            return ToolResult(success=False, error=f"Unknown model: {model_name}")
 
         try:
             import cv2
@@ -209,7 +217,11 @@ class FaceRestore(BaseTool):
 
         # Save restored output
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        cv2.imwrite(str(output_path), restored_img)
+        if not cv2.imwrite(str(output_path), restored_img) or not output_path.exists():
+            return ToolResult(
+                success=False,
+                error=f"Expected output was not created: {output_path}",
+            )
 
         elapsed = time.time() - start
         faces_detected = len(restored_faces) if restored_faces else 0

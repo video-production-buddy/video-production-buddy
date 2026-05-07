@@ -82,6 +82,10 @@ class CodeSnippet(BaseTool):
         "syntax_highlight",
         "themed_code_card",
     ]
+    best_for = [
+        "Rendering readable code cards for explainer and screen-demo scenes",
+        "Creating syntax-highlighted still assets without browser capture",
+    ]
 
     input_schema = {
         "type": "object",
@@ -105,7 +109,17 @@ class CodeSnippet(BaseTool):
     }
 
     resource_profile = ResourceProfile(cpu_cores=1, ram_mb=256, vram_mb=0, disk_mb=50)
-    idempotency_key_fields = ["code", "language", "theme", "font_size"]
+    idempotency_key_fields = [
+        "code",
+        "language",
+        "theme",
+        "font_size",
+        "padding",
+        "line_numbers",
+        "title",
+        "width",
+        "output_path",
+    ]
     side_effects = ["writes image to output_path"]
     user_visible_verification = [
         "Verify code is readable and syntax highlighting is correct",
@@ -168,6 +182,8 @@ class CodeSnippet(BaseTool):
         # Add title bar if requested
         if title:
             self._add_title_bar(output_path, title, theme, font_size)
+        if inputs.get("width"):
+            self._resize_to_width(output_path, int(inputs["width"]))
 
         elapsed = time.time() - start
         img = Image.open(output_path)
@@ -226,6 +242,20 @@ class CodeSnippet(BaseTool):
         # Paste original image below title bar
         new_img.paste(img, (0, bar_height))
         new_img.save(image_path)
+
+    @staticmethod
+    def _resize_to_width(image_path: Path, width: int) -> None:
+        if width <= 0:
+            raise ValueError("width must be a positive integer")
+
+        from PIL import Image
+
+        img = Image.open(image_path)
+        if img.width == width:
+            return
+        height = max(1, round(img.height * (width / img.width)))
+        resampling = getattr(Image, "Resampling", Image).LANCZOS
+        img.resize((width, height), resampling).save(image_path)
 
     @staticmethod
     def list_themes() -> dict[str, str]:

@@ -20,6 +20,7 @@ from typing import Any
 
 from tools.base_tool import (
     BaseTool,
+    DependencyError,
     Determinism,
     ExecutionMode,
     ResourceProfile,
@@ -42,6 +43,9 @@ RIGHT_EYE = [263, 249, 390, 373, 374, 380, 381, 382, 362, 398, 384, 385, 386, 38
 # Iris landmarks (available when refine_landmarks=True, indices 468-477):
 LEFT_IRIS = [468, 469, 470, 471, 472]
 RIGHT_IRIS = [473, 474, 475, 476, 477]
+
+VALID_OPERATIONS = ["dark_circles", "brighten_eyes", "sharpen_eyes"]
+DEFAULT_OPERATIONS = ["dark_circles", "brighten_eyes"]
 
 
 class EyeEnhance(BaseTool):
@@ -68,6 +72,10 @@ class EyeEnhance(BaseTool):
         "eye_sharpening",
         "eye_brightening",
     ]
+    best_for = [
+        "Subtle eye-region cleanup for talking-head footage",
+        "Brightening or sharpening eyes before final presenter polish",
+    ]
 
     input_schema = {
         "type": "object",
@@ -79,9 +87,9 @@ class EyeEnhance(BaseTool):
                 "type": "array",
                 "items": {
                     "type": "string",
-                    "enum": ["dark_circles", "brighten_eyes", "sharpen_eyes"],
+                    "enum": VALID_OPERATIONS,
                 },
-                "default": ["dark_circles", "brighten_eyes"],
+                "default": DEFAULT_OPERATIONS,
                 "description": "Which enhancements to apply",
             },
             "dark_circle_intensity": {
@@ -116,6 +124,7 @@ class EyeEnhance(BaseTool):
     idempotency_key_fields = [
         "input_path", "operations", "dark_circle_intensity",
         "eye_brighten_intensity", "sharpen_intensity",
+        "output_path", "codec", "crf",
     ]
     side_effects = ["writes enhanced video to output_path"]
     user_visible_verification = [
@@ -140,18 +149,26 @@ class EyeEnhance(BaseTool):
             return False
 
     def get_status(self) -> ToolStatus:
+        try:
+            self.check_dependencies()
+        except DependencyError:
+            return ToolStatus.UNAVAILABLE
         if self._has_mediapipe() and self._has_opencv():
             return ToolStatus.AVAILABLE
         if self._has_opencv():
             return ToolStatus.DEGRADED
-        return ToolStatus.UNAVAILABLE
+        return ToolStatus.DEGRADED
 
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
         input_path = Path(inputs["input_path"])
         if not input_path.exists():
             return ToolResult(success=False, error=f"Input not found: {input_path}")
 
-        operations = inputs.get("operations", ["dark_circles", "brighten_eyes"])
+        try:
+            operations = self._validate_operations(inputs.get("operations", DEFAULT_OPERATIONS))
+        except ValueError as e:
+            return ToolResult(success=False, error=str(e))
+        inputs = {**inputs, "operations": operations}
         output_path = Path(
             inputs.get("output_path", str(input_path.with_stem(f"{input_path.stem}_eye_enhanced")))
         )
@@ -181,11 +198,11 @@ class EyeEnhance(BaseTool):
         import numpy as np
         import mediapipe as mp
 
-        operations = inputs.get("operations", ["dark_circles", "brighten_eyes"])
+        operations = inputs.get("operations", DEFAULT_OPERATIONS)
         dark_intensity = inputs.get("dark_circle_intensity", 0.4)
         brighten_intensity = inputs.get("eye_brighten_intensity", 0.3)
         sharpen_intensity = inputs.get("sharpen_intensity", 0.3)
-        codec_fourcc = inputs.get("codec", "libx264")
+        codec = inputs.get("codec", "libx264")
         crf = inputs.get("crf", 18)
 
         mp_face_mesh = mp.solutions.face_mesh
@@ -239,7 +256,7 @@ class EyeEnhance(BaseTool):
             "ffmpeg", "-y",
             "-i", str(temp_video),
             "-i", str(input_path),
-            "-c:v", "libx264", "-crf", str(crf), "-preset", "fast",
+            "-c:v", str(codec), "-crf", str(crf), "-preset", "fast",
             "-c:a", "aac", "-b:a", "192k",
             "-map", "0:v:0", "-map", "1:a:0?",
             "-shortest",
@@ -253,6 +270,9 @@ class EyeEnhance(BaseTool):
         finally:
             if temp_video.exists():
                 temp_video.unlink()
+
+        if not output_path.exists():
+            return self._missing_output_result(output_path)
 
         return ToolResult(
             success=True,
@@ -429,8 +449,9 @@ class EyeEnhance(BaseTool):
         import cv2
         import numpy as np
 
-        operations = inputs.get("operations", ["dark_circles", "brighten_eyes"])
+        operations = inputs.get("operations", DEFAULT_OPERATIONS)
         dark_intensity = inputs.get("dark_circle_intensity", 0.4)
+        codec = inputs.get("codec", "libx264")
         crf = inputs.get("crf", 18)
 
         face_cascade = cv2.CascadeClassifier(
@@ -507,7 +528,7 @@ class EyeEnhance(BaseTool):
             "ffmpeg", "-y",
             "-i", str(temp_video),
             "-i", str(input_path),
-            "-c:v", "libx264", "-crf", str(crf), "-preset", "fast",
+            "-c:v", str(codec), "-crf", str(crf), "-preset", "fast",
             "-c:a", "aac", "-b:a", "192k",
             "-map", "0:v:0", "-map", "1:a:0?",
             "-shortest",
@@ -521,6 +542,9 @@ class EyeEnhance(BaseTool):
         finally:
             if temp_video.exists():
                 temp_video.unlink()
+
+        if not output_path.exists():
+            return self._missing_output_result(output_path)
 
         return ToolResult(
             success=True,
@@ -539,6 +563,7 @@ class EyeEnhance(BaseTool):
         self, input_path: Path, output_path: Path, inputs: dict[str, Any]
     ) -> ToolResult:
         """Last resort: FFmpeg-only. Applies general face-area enhancement (not eye-specific)."""
+        codec = inputs.get("codec", "libx264")
         crf = inputs.get("crf", 18)
         intensity = inputs.get("dark_circle_intensity", 0.4)
 
@@ -551,7 +576,7 @@ class EyeEnhance(BaseTool):
             "ffmpeg", "-y",
             "-i", str(input_path),
             "-vf", f"eq=brightness={brightness}:contrast={contrast}",
-            "-c:v", "libx264", "-crf", str(crf), "-preset", "fast",
+            "-c:v", str(codec), "-crf", str(crf), "-preset", "fast",
             "-c:a", "copy",
             str(output_path),
         ]
@@ -560,6 +585,9 @@ class EyeEnhance(BaseTool):
             self.run_command(cmd, timeout=600)
         except Exception as e:
             return ToolResult(success=False, error=f"FFmpeg fallback failed: {e}")
+
+        if not output_path.exists():
+            return self._missing_output_result(output_path)
 
         return ToolResult(
             success=True,
@@ -576,3 +604,19 @@ class EyeEnhance(BaseTool):
     def estimate_runtime(self, inputs: dict[str, Any]) -> float:
         """Eye enhancement is roughly 0.5x-1x realtime depending on resolution."""
         return 90.0
+
+    @staticmethod
+    def _missing_output_result(output_path: Path) -> ToolResult:
+        return ToolResult(
+            success=False,
+            error=f"Expected output was not created: {output_path}",
+        )
+
+    @staticmethod
+    def _validate_operations(operations: Any) -> list[str]:
+        if not isinstance(operations, list):
+            raise ValueError("operations must be a list of operation names")
+        for operation in operations:
+            if operation not in VALID_OPERATIONS:
+                raise ValueError(f"Unknown operation: {operation}")
+        return operations

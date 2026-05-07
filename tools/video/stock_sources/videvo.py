@@ -22,7 +22,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from .base import Candidate, SearchFilters
+from .base import Candidate, SearchFilters, stable_source_id
 
 _log = logging.getLogger(__name__)
 
@@ -123,8 +123,12 @@ class VidevoSource:
             lic_type = (v.get("license_type", "") or "").lower()
             lic = _LICENSE_CC if "creative commons" in lic_type or "cc" in lic_type else _LICENSE_ATTR
 
-            clip_id = str(v.get("id", "") or "")
-            source_url = v.get("page_url", "") or v.get("url", "") or f"https://www.videvo.net/video/{clip_id}/"
+            clip_id = str(v.get("id", "") or "").strip()
+            source_url = v.get("page_url", "") or v.get("url", "") or (
+                f"https://www.videvo.net/video/{clip_id}/" if clip_id else download_url
+            )
+            if not clip_id:
+                clip_id = stable_source_id(self.name, source_url)
 
             out.append(
                 Candidate(

@@ -415,7 +415,8 @@ class CapRecorder(BaseTool):
         source = Path(latest["path"])
 
         if output_dir:
-            dest = Path(output_dir) / source.name
+            requested = Path(output_dir)
+            dest = requested if requested.suffix else requested / source.name
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, dest)
             return ToolResult(

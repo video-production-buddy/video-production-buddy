@@ -22,6 +22,7 @@ from tools.base_tool import (
     ToolStatus,
     ToolTier,
 )
+from tools.video._shared import validate_video_operation
 
 
 class MiniMaxVideo(BaseTool):
@@ -35,7 +36,7 @@ class MiniMaxVideo(BaseTool):
     determinism = Determinism.STOCHASTIC
     runtime = ToolRuntime.API
 
-    dependencies = []
+    dependencies = ["env_any:FAL_KEY,FAL_AI_API_KEY"]
     install_instructions = (
         "Set FAL_KEY to your fal.ai API key.\n"
         "  Get one at https://fal.ai/dashboard/keys"
@@ -83,7 +84,13 @@ class MiniMaxVideo(BaseTool):
         cpu_cores=1, ram_mb=512, vram_mb=0, disk_mb=500, network_required=True
     )
     retry_policy = RetryPolicy(max_retries=2, retryable_errors=["rate_limit", "timeout"])
-    idempotency_key_fields = ["prompt", "model_variant", "operation"]
+    idempotency_key_fields = [
+        "prompt",
+        "output_path",
+        "model_variant",
+        "operation",
+        "image_url",
+    ]
     side_effects = ["writes video file to output_path", "calls fal.ai API"]
     user_visible_verification = ["Watch generated clip for motion coherence and prompt adherence"]
 
@@ -117,10 +124,16 @@ class MiniMaxVideo(BaseTool):
                 error="FAL_KEY not set. " + self.install_instructions,
             )
 
+        operation = inputs.get("operation", "text_to_video")
+        operation_error = validate_video_operation(operation, {"text_to_video", "image_to_video"})
+        if operation_error:
+            return ToolResult(success=False, error=operation_error)
+        if operation == "image_to_video" and not inputs.get("image_url"):
+            return ToolResult(success=False, error="image_to_video requires image_url")
+
         import requests
 
         start = time.time()
-        operation = inputs.get("operation", "text_to_video")
         variant = inputs.get("model_variant", "hailuo-02/pro")
 
         # Build fal.ai model path
@@ -134,7 +147,7 @@ class MiniMaxVideo(BaseTool):
                 model_path = "minimax/video-01/image-to-video"
 
         payload: dict[str, Any] = {"prompt": inputs["prompt"]}
-        if operation == "image_to_video" and inputs.get("image_url"):
+        if operation == "image_to_video":
             payload["image_url"] = inputs["image_url"]
 
         headers = {
@@ -185,13 +198,20 @@ class MiniMaxVideo(BaseTool):
         except Exception as e:
             return ToolResult(success=False, error=f"MiniMax video generation failed: {e}")
 
+        from tools.video._shared import probe_output
+
+        probed = probe_output(output_path)
         return ToolResult(
             success=True,
             data={
                 "provider": "minimax",
                 "model": f"fal-ai/{model_path}",
                 "prompt": inputs["prompt"],
+                "operation": operation,
                 "output": str(output_path),
+                "output_path": str(output_path),
+                "format": "mp4",
+                **probed,
             },
             artifacts=[str(output_path)],
             cost_usd=self.estimate_cost(inputs),

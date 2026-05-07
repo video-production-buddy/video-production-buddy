@@ -29,10 +29,15 @@ export const ProviderChip: React.FC<ProviderChipProps> = ({
 }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
+  const visibleProviders = providers.filter((provider) => provider.trim().length > 0);
+
+  if (visibleProviders.length === 0) {
+    return null;
+  }
 
   const cycleFrames = Math.max(1, Math.round(cycleSeconds * fps));
-  const idx = Math.floor(frame / cycleFrames) % providers.length;
-  const current = providers[idx];
+  const idx = Math.floor(frame / cycleFrames) % visibleProviders.length;
+  const current = visibleProviders[idx];
   const framesIntoCycle = frame % cycleFrames;
 
   // Spring in on cycle start
@@ -53,7 +58,7 @@ export const ProviderChip: React.FC<ProviderChipProps> = ({
   const translateY = interpolate(springIn, [0, 1], [12, 0]);
 
   return (
-    <AbsoluteFill pointerEvents="none">
+    <AbsoluteFill style={{ pointerEvents: "none" }}>
       <div
         style={{
           position: "absolute",

@@ -34,8 +34,12 @@ class ScreenCaptureSelector(BaseTool):
     execution_mode = ExecutionMode.SYNC
     determinism = Determinism.DETERMINISTIC
     runtime = ToolRuntime.HYBRID
+    install_instructions = (
+        "Routes to available screen capture tools. FFmpeg capture needs ffmpeg; "
+        "Cap capture needs the local Cap recorder setup when available."
+    )
 
-    agent_skills = ["screen-demo"]
+    agent_skills: list[str] = []
 
     capabilities = [
         "screen_recording",
@@ -134,13 +138,26 @@ class ScreenCaptureSelector(BaseTool):
 
     @property
     def fallback_tools(self) -> list[str]:
-        return list(self._providers().keys())
+        return [tool.name for tool in self._providers().values()]
 
     def get_status(self) -> ToolStatus:
         providers = self._providers()
-        if any(t.get_status() == ToolStatus.AVAILABLE for t in providers.values()):
-            return ToolStatus.AVAILABLE
+        for provider, tool in providers.items():
+            if provider == "cap":
+                if self._cap_provider_installed(tool):
+                    return ToolStatus.AVAILABLE
+                continue
+            if tool.get_status() == ToolStatus.AVAILABLE:
+                return ToolStatus.AVAILABLE
         return ToolStatus.UNAVAILABLE
+
+    @staticmethod
+    def _cap_provider_installed(tool: BaseTool) -> bool:
+        try:
+            result = tool.execute({"operation": "detect"})
+        except Exception:
+            return False
+        return bool(result.success and result.data.get("installed"))
 
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
         operation = inputs["operation"]

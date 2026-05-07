@@ -34,7 +34,7 @@ class DoubaoTTS(BaseTool):
     determinism = Determinism.STOCHASTIC
     runtime = ToolRuntime.API
 
-    dependencies = []
+    dependencies = ["env:DOUBAO_SPEECH_API_KEY"]
     install_instructions = (
         "Set DOUBAO_SPEECH_API_KEY to a Volcengine Doubao Speech API Key.\n"
         "Optional: set DOUBAO_SPEECH_VOICE_TYPE to the default speaker voice.\n"
@@ -157,7 +157,18 @@ class DoubaoTTS(BaseTool):
         backoff_seconds=2.0,
         retryable_errors=["timeout", "rate_limit", "quota exceeded for types: concurrency"],
     )
-    idempotency_key_fields = ["text", "voice_id", "resource_id", "speech_rate", "sample_rate"]
+    idempotency_key_fields = [
+        "text",
+        "output_path",
+        "voice_id",
+        "resource_id",
+        "format",
+        "sample_rate",
+        "speech_rate",
+        "enable_timestamp",
+        "disable_markdown_filter",
+        "return_usage",
+    ]
     side_effects = [
         "writes audio file to output_path",
         "writes Doubao query metadata JSON next to output_path",
@@ -320,7 +331,7 @@ class DoubaoTTS(BaseTool):
             "disable_markdown_filter": bool(inputs.get("disable_markdown_filter", False)),
         }
         return {
-            "user": {"uid": inputs.get("user_id", "openmontage")},
+            "user": {"uid": inputs.get("user_id", "video-production-buddy")},
             "unique_id": request_id,
             "req_params": {
                 "text": inputs["text"],

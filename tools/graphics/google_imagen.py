@@ -55,7 +55,7 @@ class GoogleImagen(BaseTool):
     determinism = Determinism.STOCHASTIC
     runtime = ToolRuntime.API
 
-    dependencies = []  # checked dynamically via env var
+    dependencies = ["env_any:GOOGLE_API_KEY,GEMINI_API_KEY"]
     install_instructions = (
         "Set GOOGLE_API_KEY (or GEMINI_API_KEY) to your Google AI API key.\n"
         "  Get one at https://aistudio.google.com/apikey"
@@ -123,7 +123,15 @@ class GoogleImagen(BaseTool):
         cpu_cores=1, ram_mb=512, vram_mb=0, disk_mb=100, network_required=True
     )
     retry_policy = RetryPolicy(max_retries=2, retryable_errors=["rate_limit", "timeout"])
-    idempotency_key_fields = ["prompt", "aspect_ratio", "model"]
+    idempotency_key_fields = [
+        "prompt",
+        "output_path",
+        "aspect_ratio",
+        "width",
+        "height",
+        "number_of_images",
+        "model",
+    ]
     side_effects = ["writes image file to output_path", "calls Google Generative AI API"]
     user_visible_verification = ["Inspect generated image for relevance and quality"]
 

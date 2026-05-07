@@ -33,7 +33,10 @@ No CLIP model. No embeddings. No corpus index. Just files on disk.
 """
 from __future__ import annotations
 
+import os
+import shutil
 import subprocess
+import tempfile
 import time
 import urllib.parse
 from pathlib import Path
@@ -51,6 +54,7 @@ from tools.base_tool import (
     ToolStatus,
     ToolTier,
 )
+from tools.video.stock_sources import safe_clip_file_name
 
 
 class DirectClipSearch(BaseTool):
@@ -58,7 +62,7 @@ class DirectClipSearch(BaseTool):
     version = "0.1.0"
     tier = ToolTier.SOURCE
     capability = "clip_acquisition"
-    provider = "openmontage"
+    provider = "video_production_buddy"
     stability = ToolStability.BETA
     execution_mode = ExecutionMode.SYNC
     determinism = Determinism.DETERMINISTIC
@@ -185,6 +189,15 @@ class DirectClipSearch(BaseTool):
         cpu_cores=1, ram_mb=512, vram_mb=0, disk_mb=2000, network_required=True
     )
     retry_policy = RetryPolicy(max_retries=1, retryable_errors=["timeout", "rate_limit"])
+    idempotency_key_fields = [
+        "output_dir",
+        "queries",
+        "sources",
+        "clips_per_query",
+        "filters",
+        "extract_thumbnails",
+        "skip_existing",
+    ]
     side_effects = [
         "downloads clips to <output_dir>/clips/",
         "extracts thumbnails to <output_dir>/thumbnails/",
@@ -332,13 +345,27 @@ class DirectClipSearch(BaseTool):
 
                         clip_id = cand.clip_id
                         ext = _guess_ext(cand)
-                        clip_path = clips_dir / f"{clip_id}{ext}"
+                        clip_path = clips_dir / safe_clip_file_name(clip_id, ext)
+                        thumb_ext = ".jpg" if cand.kind == "video" else ext
+                        thumb_path = thumbs_dir / safe_clip_file_name(clip_id, thumb_ext)
 
                         # Skip if already downloaded
                         if skip_existing and clip_path.exists() and clip_path.stat().st_size > 1024:
+                            thumb_path_str = ""
+                            if extract_thumbs:
+                                if cand.kind == "image":
+                                    if thumb_path.exists() or _copy_image_thumbnail(clip_path, thumb_path):
+                                        thumb_path_str = str(thumb_path)
+                                elif cand.kind == "video":
+                                    if not thumb_path.exists():
+                                        try:
+                                            _extract_mid_thumbnail(clip_path, thumb_path)
+                                        except Exception:
+                                            pass
+                                    if thumb_path.exists():
+                                        thumb_path_str = str(thumb_path)
                             skipped += 1
                             # Still record it in results so the agent knows it's there
-                            thumb_path = thumbs_dir / f"{clip_id}.jpg"
                             downloaded.append({
                                 "clip_id": clip_id,
                                 "source": cand.source,
@@ -348,7 +375,7 @@ class DirectClipSearch(BaseTool):
                                 "slot_id": slot_id,
                                 "kind": cand.kind,
                                 "path": str(clip_path),
-                                "thumbnail": str(thumb_path) if thumb_path.exists() else "",
+                                "thumbnail": thumb_path_str,
                                 "duration": cand.duration,
                                 "width": cand.width,
                                 "height": cand.height,
@@ -360,10 +387,15 @@ class DirectClipSearch(BaseTool):
                             collected_for_query += 1
                             continue
 
-                        # Download
+                        # Download to a sibling temp file first. Source adapters stream
+                        # bytes directly to the path they receive; replacing only after
+                        # success keeps interrupted downloads from becoming reusable
+                        # "existing" clips on a later run.
+                        tmp_clip_path = _temp_sibling(clip_path)
                         try:
-                            src.download(cand, clip_path)
+                            src.download(cand, tmp_clip_path)
                         except Exception as e:
+                            _unlink_quietly(tmp_clip_path)
                             errors.append({
                                 "phase": "download",
                                 "clip_id": clip_id,
@@ -372,30 +404,30 @@ class DirectClipSearch(BaseTool):
                             })
                             continue
 
-                        if not clip_path.exists() or clip_path.stat().st_size < 1024:
+                        if not tmp_clip_path.exists() or tmp_clip_path.stat().st_size < 1024:
                             errors.append({
                                 "phase": "download",
                                 "clip_id": clip_id,
                                 "source": src.name,
                                 "error": "Download produced empty or tiny file",
                             })
-                            try:
-                                if clip_path.exists():
-                                    clip_path.unlink()
-                            except OSError:
-                                pass
+                            _unlink_quietly(tmp_clip_path)
                             continue
+                        tmp_clip_path.replace(clip_path)
 
                         # Extract thumbnail
                         thumb_path_str = ""
-                        if extract_thumbs and cand.kind == "video":
-                            thumb_path = thumbs_dir / f"{clip_id}.jpg"
-                            try:
-                                _extract_mid_thumbnail(clip_path, thumb_path)
-                                if thumb_path.exists():
+                        if extract_thumbs:
+                            if cand.kind == "video":
+                                try:
+                                    _extract_mid_thumbnail(clip_path, thumb_path)
+                                    if thumb_path.exists():
+                                        thumb_path_str = str(thumb_path)
+                                except Exception:
+                                    pass  # thumbnail failure is non-fatal
+                            elif cand.kind == "image":
+                                if _copy_image_thumbnail(clip_path, thumb_path):
                                     thumb_path_str = str(thumb_path)
-                            except Exception:
-                                pass  # thumbnail failure is non-fatal
 
                         per_source_counts[src.name] = per_source_counts.get(src.name, 0) + 1
                         collected_for_query += 1
@@ -460,6 +492,38 @@ def _guess_ext(cand) -> str:
     if ext in known:
         return ".jpg" if ext == ".jpeg" else ext
     return ".mp4" if cand.kind == "video" else ".jpg"
+
+
+def _temp_sibling(path: Path) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=f".{path.name}.",
+        suffix=f"{path.suffix}.download.tmp",
+        dir=path.parent,
+    )
+    try:
+        os.close(fd)
+    finally:
+        _unlink_quietly(Path(tmp_name))
+    return Path(tmp_name)
+
+
+def _unlink_quietly(path: Path) -> None:
+    try:
+        if path.exists():
+            path.unlink()
+    except OSError:
+        pass
+
+
+def _copy_image_thumbnail(image_path: Path, thumb_path: Path) -> bool:
+    """Materialize an image candidate's review thumbnail without ffmpeg."""
+    try:
+        thumb_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(image_path, thumb_path)
+        return thumb_path.exists()
+    except OSError:
+        return False
 
 
 def _extract_mid_thumbnail(video_path: Path, thumb_path: Path) -> None:

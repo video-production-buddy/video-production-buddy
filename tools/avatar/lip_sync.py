@@ -16,6 +16,7 @@ from typing import Any
 from tools.base_tool import (
     BaseTool,
     Determinism,
+    DependencyError,
     ExecutionMode,
     ResourceProfile,
     ToolResult,
@@ -57,6 +58,10 @@ class LipSync(BaseTool):
         "lip_sync",
         "audio_video_alignment",
         "dubbing_support",
+    ]
+    best_for = [
+        "Synchronizing an existing face video to replacement speech audio",
+        "Creating local lip-sync clips when Wav2Lip assets are installed",
     ]
 
     input_schema = {
@@ -100,7 +105,14 @@ class LipSync(BaseTool):
     resource_profile = ResourceProfile(
         cpu_cores=2, ram_mb=4096, vram_mb=4096, disk_mb=2000
     )
-    idempotency_key_fields = ["video_path", "audio_path", "model", "face_padding", "resize_factor"]
+    idempotency_key_fields = [
+        "video_path",
+        "audio_path",
+        "output_path",
+        "model",
+        "face_padding",
+        "resize_factor",
+    ]
     side_effects = ["writes lip-synced video to output_path"]
     user_visible_verification = [
         "Watch output video to verify lip movements match the new audio",
@@ -109,6 +121,11 @@ class LipSync(BaseTool):
 
     def get_status(self) -> ToolStatus:
         """Check Wav2Lip availability via env var or Python import."""
+        try:
+            self.check_dependencies()
+        except DependencyError:
+            return ToolStatus.UNAVAILABLE
+
         # Check WAV2LIP_PATH environment variable
         wav2lip_path = os.environ.get("WAV2LIP_PATH")
         if wav2lip_path and Path(wav2lip_path).is_dir():
@@ -164,6 +181,14 @@ class LipSync(BaseTool):
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         model_variant = inputs.get("model", "wav2lip")
+        if model_variant not in MODEL_CHECKPOINTS:
+            return ToolResult(
+                success=False,
+                error=(
+                    f"Unknown model: {model_variant}. "
+                    f"Supported: {', '.join(MODEL_CHECKPOINTS)}"
+                ),
+            )
         face_padding = inputs.get("face_padding", [0, 10, 0, 0])
         resize_factor = inputs.get("resize_factor", 1)
 

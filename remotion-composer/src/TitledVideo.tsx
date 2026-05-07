@@ -5,12 +5,12 @@ import {
   Sequence,
   interpolate,
   spring,
-  staticFile,
   useCurrentFrame,
   useVideoConfig,
 } from "remotion";
 import { getVideoMetadata } from "@remotion/media-utils";
 import { loadFont } from "@remotion/google-fonts/PlayfairDisplay";
+import { resolveAsset } from "./assetPath";
 
 // Editorial serif for the tagline — Playfair Display at its boldest weight.
 // Loaded once at module scope so every render reuses the same font face.
@@ -19,7 +19,7 @@ const { fontFamily } = loadFont("normal", {
   subsets: ["latin"],
 });
 
-export interface TitledVideoProps {
+export interface TitledVideoProps extends Record<string, unknown> {
   videoSrc: string;
   tagline: string;
   // When the tagline starts animating in, in seconds from the start of the video.
@@ -32,23 +32,6 @@ export interface TitledVideoProps {
   fontSize?: number;
   // Accent color used for the underline and the glow halo.
   accentColor?: string;
-}
-
-// Resolve asset path — handle URLs, absolute paths, and public/ relative paths.
-// Mirrors the helper in Explainer.tsx so absolute Windows/Unix paths work.
-function resolveAsset(src: string): string {
-  if (
-    src.startsWith("http://") ||
-    src.startsWith("https://") ||
-    src.startsWith("data:")
-  ) {
-    return src;
-  }
-  const clean = src.replace(/^file:\/\/\/?/, "");
-  if (clean.startsWith("/") || /^[A-Za-z]:[\\/]/.test(clean)) {
-    return `file:///${clean.replace(/\\/g, "/")}`;
-  }
-  return staticFile(clean);
 }
 
 // ---------------------------------------------------------------------------
@@ -201,6 +184,7 @@ export const TitledVideo: React.FC<TitledVideoProps> = ({
   accentColor = "#F5C470",
 }) => {
   const { fps, durationInFrames } = useVideoConfig();
+  const hasVideo = videoSrc.trim().length > 0;
 
   const inFrame = Math.max(0, Math.round(taglineInSeconds * fps));
   const endFrame =
@@ -214,14 +198,16 @@ export const TitledVideo: React.FC<TitledVideoProps> = ({
       {/* Full-bleed background video — no fades, no vignette, no color shift.
           The source is already color-graded final.mp4 with music baked in;
           we play it through untouched, audio included. */}
-      <OffthreadVideo
-        src={resolveAsset(videoSrc)}
-        style={{
-          width: "100%",
-          height: "100%",
-          objectFit: "cover",
-        }}
-      />
+      {hasVideo && (
+        <OffthreadVideo
+          src={resolveAsset(videoSrc)}
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+          }}
+        />
+      )}
 
       {/* Tagline overlay in its own Sequence so it mounts exactly on the
           fade-in frame and carries its own local frame counter. */}
@@ -244,6 +230,15 @@ export const TitledVideo: React.FC<TitledVideoProps> = ({
 export const calculateTitledVideoMetadata: CalculateMetadataFunction<
   TitledVideoProps
 > = async ({ props }) => {
+  if (!props.videoSrc?.trim()) {
+    return {
+      durationInFrames: 30 * 60,
+      fps: 30,
+      width: 1920,
+      height: 1080,
+    };
+  }
+
   try {
     const meta = await getVideoMetadata(resolveAsset(props.videoSrc));
     return {

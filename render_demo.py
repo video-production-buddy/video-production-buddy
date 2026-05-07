@@ -46,21 +46,38 @@ def find_command(*names: str) -> str | None:
     return None
 
 
+def install_composer_dependencies(npx_cmd: str) -> None:
+    print("Installing Remotion dependencies...")
+
+    if (COMPOSER_DIR / "pnpm-lock.yaml").exists():
+        pnpm_cmd = find_command("pnpm", "pnpm.cmd", "pnpm.exe")
+        if pnpm_cmd:
+            command = [pnpm_cmd, "install", "--frozen-lockfile"]
+        else:
+            corepack_cmd = find_command("corepack", "corepack.cmd", "corepack.exe")
+            if corepack_cmd:
+                command = [corepack_cmd, "pnpm", "install", "--frozen-lockfile"]
+            else:
+                command = [npx_cmd, "--yes", "pnpm", "install", "--frozen-lockfile"]
+    else:
+        npm_cmd = find_command("npm.cmd", "npm", "npm.exe")
+        if not npm_cmd:
+            raise SystemExit("Error: npm is required to install Remotion dependencies.")
+        command = [npm_cmd, "install"]
+
+    subprocess.run(command, cwd=COMPOSER_DIR, check=True)
+
+
 def ensure_demo_environment() -> str:
     if not find_command("node", "node.exe"):
         raise SystemExit("Error: Node.js is required. Install it from https://nodejs.org/")
 
-    npm_cmd = find_command("npm.cmd", "npm", "npm.exe")
-    if not npm_cmd:
-        raise SystemExit("Error: npm is required but was not found on PATH.")
-
-    npx_cmd = find_command("npx.cmd", "npx", "npx.exe")
+    npx_cmd = find_command("npx", "npx.cmd", "npx.exe")
     if not npx_cmd:
         raise SystemExit("Error: npx is required but was not found on PATH.")
 
     if not (COMPOSER_DIR / "node_modules").exists():
-        print("Installing Remotion dependencies...")
-        subprocess.run([npm_cmd, "install"], cwd=COMPOSER_DIR, check=True)
+        install_composer_dependencies(npx_cmd)
 
     return npx_cmd
 
@@ -110,7 +127,7 @@ def render_demo(name: str, props_path: Path, npx_cmd: str) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Render zero-key OpenMontage demo videos from checked-in Remotion props."
+        description="Render zero-key Video Production Buddy demos from checked-in Remotion props."
     )
     parser.add_argument("demo", nargs="?", help="Render one named demo instead of all demos.")
     parser.add_argument("--list", action="store_true", help="List available demo fixtures and exit.")

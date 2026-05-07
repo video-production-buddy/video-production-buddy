@@ -29,7 +29,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from .base import Candidate, SearchFilters
+from .base import Candidate, SearchFilters, url_path_has_extension
 
 _log = logging.getLogger(__name__)
 
@@ -126,15 +126,17 @@ class NARASource:
 
             # Determine kind from mime type or file extension
             mime = (obj.get("mimeType", "") or "").lower()
-            ext = file_url.rsplit(".", 1)[-1].lower() if "." in file_url else ""
-
             is_video = (
                 "video" in mime
-                or ext in ("mp4", "mov", "avi", "wmv", "mkv", "webm")
+                or url_path_has_extension(
+                    file_url, (".mp4", ".mov", ".avi", ".wmv", ".mkv", ".webm")
+                )
             )
             is_image = (
                 "image" in mime
-                or ext in ("jpg", "jpeg", "png", "tif", "tiff", "gif")
+                or url_path_has_extension(
+                    file_url, (".jpg", ".jpeg", ".png", ".tif", ".tiff", ".gif")
+                )
             )
 
             if kind == "video" and not is_video:
@@ -159,7 +161,7 @@ class NARASource:
             out.append(
                 Candidate(
                     source=self.name,
-                    source_id=f"{naid}_{obj.get('objectId', len(out))}",
+                    source_id=f"{naid}_{obj.get('objectId') or len(out)}",
                     source_url=source_url,
                     download_url=file_url,
                     kind=candidate_kind,

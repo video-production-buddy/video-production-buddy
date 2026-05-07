@@ -75,7 +75,7 @@ class Pond5PublicDomainSource:
 
         import os
         headers: dict[str, str] = {
-            "User-Agent": "OpenMontage/1.0 (stock source adapter)",
+            "User-Agent": "Video Production Buddy/1.0 (stock source adapter)",
         }
         api_key = os.environ.get("POND5_API_KEY")
         if api_key:

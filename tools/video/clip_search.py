@@ -55,7 +55,7 @@ class ClipSearch(BaseTool):
     version = "0.1.0"
     tier = ToolTier.ANALYZE
     capability = "clip_retrieval"
-    provider = "openmontage"
+    provider = "video_production_buddy"
     stability = ToolStability.EXPERIMENTAL
     execution_mode = ExecutionMode.SYNC
     determinism = Determinism.DETERMINISTIC

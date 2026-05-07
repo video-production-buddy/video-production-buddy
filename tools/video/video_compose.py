@@ -40,6 +40,33 @@ from tools.base_tool import (
     ToolStability,
     ToolTier,
 )
+from tools.validation.runtime_consistency_check import check_runtime_consistency
+
+
+def _ffconcat_quote(path: str) -> str:
+    """Quote a path for FFmpeg concat demuxer file-list syntax."""
+    return "'" + str(path).replace("'", "'\\''") + "'"
+
+
+def _media_profile(profile_name: str | None) -> Any | None:
+    """Resolve a media profile, preserving unknown-profile errors."""
+    if not profile_name:
+        return None
+    try:
+        from lib.media_profiles import get_profile
+    except ImportError:
+        return None
+    return get_profile(profile_name)
+
+
+def _ffmpeg_filter_path(path: str | Path) -> str:
+    """Escape a filesystem path embedded inside an FFmpeg filter argument."""
+    return (
+        str(Path(path).resolve())
+        .replace("\\", "/")
+        .replace(":", "\\:")
+        .replace("'", "\\'")
+    )
 
 
 class VideoCompose(BaseTool):
@@ -84,13 +111,17 @@ class VideoCompose(BaseTool):
             "input_path": {"type": "string"},
             "output_path": {"type": "string"},
             "edit_decisions": {
-                "type": "object",
-                "description": "Full edit_decisions artifact (required for compose/render)",
+                "oneOf": [{"type": "object"}, {"type": "string"}],
+                "description": (
+                    "Full edit_decisions artifact or a path to its JSON file "
+                    "(required for compose/render). Passing the object is preferred."
+                ),
             },
             "asset_manifest": {
-                "type": "object",
+                "oneOf": [{"type": "object"}, {"type": "string"}],
                 "description": (
-                    "Full asset_manifest artifact (required for render). "
+                    "Full asset_manifest artifact or a path to its JSON file "
+                    "(required for render). "
                     "Used to resolve asset IDs in cuts[].source to file paths."
                 ),
             },
@@ -103,6 +134,33 @@ class VideoCompose(BaseTool):
                     "edit_decisions.render_runtime and flags runtime_swap_detected. "
                     "Without it, runtime-swap detection falls back to checking "
                     "edit_decisions.metadata.proposal_render_runtime."
+                ),
+            },
+            "production_proposal": {
+                "type": "object",
+                "description": (
+                    "Full ad-video production_proposal artifact. Optional but "
+                    "STRONGLY recommended for ad-video — when present, "
+                    "final_review compares production_proposal.render_runtime "
+                    "against edit_decisions.render_runtime and flags "
+                    "runtime_swap_detected."
+                ),
+            },
+            "brief": {
+                "type": "object",
+                "description": (
+                    "Full brief artifact for brief-first pipelines. Optional "
+                    "but STRONGLY recommended — when present, final_review "
+                    "checks required brief.metadata.render_runtime against "
+                    "edit_decisions.render_runtime."
+                ),
+            },
+            "decision_log": {
+                "type": "object",
+                "description": (
+                    "Full decision_log artifact. Required whenever a "
+                    "render_runtime_selection decision approves a runtime "
+                    "substitution after the proposal/brief runtime lock."
                 ),
             },
             "narration_transcript_path": {
@@ -191,7 +249,10 @@ class VideoCompose(BaseTool):
     # Remotion scene types that trigger React-based rendering
     _REMOTION_COMPONENTS = [
         "text_card", "stat_card", "callout", "comparison",
-        "progress", "chart", "bar_chart", "line_chart", "pie_chart", "kpi_grid",
+        "progress", "progress_bar", "chart", "bar_chart", "line_chart", "pie_chart", "kpi_grid",
+        "anime_scene", "notification_scene", "creator_workflow_scene", "dashboard_scene",
+        "brand_card", "terminal_scene", "screenshot_scene", "checkmark_scene",
+        "browser_tabs_scene", "badge_freeze_scene", "line_connection_scene", "stat_roll_scene",
     ]
 
     best_for = [
@@ -203,7 +264,25 @@ class VideoCompose(BaseTool):
     ]
     retry_policy = RetryPolicy(max_retries=1, retryable_errors=["Conversion failed"])
     resume_support = ResumeSupport.FROM_START
-    idempotency_key_fields = ["operation", "input_path", "edit_decisions"]
+    idempotency_key_fields = [
+        "operation",
+        "input_path",
+        "output_path",
+        "edit_decisions",
+        "asset_manifest",
+        "audio_path",
+        "subtitle_path",
+        "subtitle_style",
+        "profile",
+        "options",
+        "codec",
+        "crf",
+        "preset",
+        "proposal_packet",
+        "production_proposal",
+        "brief",
+        "decision_log",
+    ]
     side_effects = ["writes video file to output_path"]
     user_visible_verification = [
         "Play the composed output and verify cuts, subtitles, and overlays",
@@ -268,7 +347,8 @@ class VideoCompose(BaseTool):
             if composer_dir.exists() and (composer_dir / "package.json").exists() and not (composer_dir / "node_modules").exists():
                 info["remotion_note"] = (
                     "Remotion project exists but node_modules are NOT installed. "
-                    "Run 'cd remotion-composer && npm install' to enable Remotion rendering."
+                    "Run 'cd remotion-composer && npx --yes pnpm install --frozen-lockfile' "
+                    "to enable Remotion rendering."
                 )
             else:
                 info["remotion_note"] = (
@@ -330,12 +410,164 @@ class VideoCompose(BaseTool):
         result.duration_seconds = round(time.time() - start, 2)
         return result
 
+    def _required_render_output_path(
+        self,
+        inputs: dict[str, Any],
+        operation: str,
+    ) -> tuple[Path | None, ToolResult | None]:
+        raw_output_path = inputs.get("output_path")
+        if not raw_output_path:
+            return None, ToolResult(
+                success=False,
+                error=(
+                    f"output_path required for {operation}; render outputs must be "
+                    "explicitly written under projects/<project-name>/renders/."
+                ),
+            )
+
+        output_path = Path(raw_output_path)
+        repo_root = Path(__file__).resolve().parent.parent.parent
+        resolved = (
+            output_path.resolve()
+            if output_path.is_absolute()
+            else (Path.cwd() / output_path).resolve()
+        )
+        projects_root = (repo_root / "projects").resolve()
+
+        try:
+            project_relative = resolved.relative_to(projects_root)
+        except ValueError:
+            try:
+                resolved.relative_to(repo_root)
+            except ValueError:
+                return output_path, None
+
+            return None, ToolResult(
+                success=False,
+                error=(
+                    "Refusing to write render output under the repository project "
+                    "root. Use projects/<project-name>/renders/<file>.mp4 instead."
+                ),
+            )
+
+        if len(project_relative.parts) < 3 or project_relative.parts[1] != "renders":
+            return None, ToolResult(
+                success=False,
+                error=(
+                    f"Refusing to write render output to {resolved}. Render outputs "
+                    "must be under projects/<project-name>/renders/<file>.mp4."
+                ),
+            )
+
+        return output_path, None
+
+    def _render_runtime_governance_block(
+        self,
+        inputs: dict[str, Any],
+        edit_decisions: dict[str, Any],
+    ) -> ToolResult | None:
+        """Block unapproved runtime drift before any renderer is invoked."""
+        actual_runtime = str(edit_decisions.get("render_runtime") or "").strip().lower()
+        planning_artifact_present = any(
+            inputs.get(name) is not None
+            for name in ("production_proposal", "proposal_packet", "brief")
+        )
+
+        approved_runtime, runtime_source = self._extract_approved_render_runtime(
+            proposal_packet=inputs.get("proposal_packet"),
+            production_proposal=inputs.get("production_proposal"),
+            brief=inputs.get("brief"),
+            edit_decisions=edit_decisions,
+            decision_log=inputs.get("decision_log"),
+        )
+
+        if approved_runtime is None:
+            if not planning_artifact_present:
+                return None
+            return ToolResult(
+                success=False,
+                error=(
+                    "render_runtime lock missing from the provided planning "
+                    "artifact. Compose cannot render until the approved "
+                    "planning artifact carries render_runtime and edit_decisions "
+                    "carries the same value, or a user-approved "
+                    "render_runtime_selection decision records the substitution."
+                ),
+            )
+
+        if actual_runtime != approved_runtime:
+            return ToolResult(
+                success=False,
+                error=(
+                    "Unapproved render_runtime swap blocked before render: "
+                    f"planning artifact locked {approved_runtime!r} "
+                    f"({runtime_source}), but edit_decisions.render_runtime is "
+                    f"{actual_runtime!r}. Record a user-visible, user-approved "
+                    "render_runtime_selection decision before rerouting."
+                ),
+            )
+        return None
+
+    @staticmethod
+    def _final_review_block(
+        final_review: dict[str, Any],
+        *,
+        label: str,
+        data: dict[str, Any] | None,
+    ) -> ToolResult | None:
+        """Return a blocking result when final_review is not presentation-ready."""
+        status = final_review.get("status")
+        if status == "pass":
+            return None
+        issue_lines = "\n".join(
+            f"  - {issue}" for issue in final_review.get("issues_found", [])
+        )
+        if not issue_lines:
+            issue_lines = "  - final_review did not pass"
+        return ToolResult(
+            success=False,
+            error=(
+                f"Post-render self-review {str(status).upper()} ({label}). "
+                "The output is not presentable as complete.\n"
+                + issue_lines
+            ),
+            data=data,
+        )
+
     _IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".tif", ".webp"}
 
     @staticmethod
     def _is_image(path: Path) -> bool:
         """Check if a file is a still image (routes to Remotion, not FFmpeg)."""
         return path.suffix.lower() in VideoCompose._IMAGE_EXTENSIONS
+
+    @staticmethod
+    def _coerce_artifact(value: Any, field_name: str) -> dict[str, Any]:
+        """Accept an artifact dict, or load one from a JSON path for compatibility."""
+        if isinstance(value, dict):
+            return value
+        if isinstance(value, (str, Path)):
+            path = Path(value)
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+            if not isinstance(data, dict):
+                raise ValueError(f"{field_name} JSON must contain an object: {path}")
+            return data
+        raise TypeError(
+            f"{field_name} must be an artifact object or JSON path, got "
+            f"{type(value).__name__}"
+        )
+
+    @staticmethod
+    def _resolve_asset_reference(
+        value: Any,
+        asset_lookup: dict[str, dict[str, Any]],
+    ) -> Any:
+        if isinstance(value, str) and value in asset_lookup:
+            asset_path = asset_lookup[value].get("path")
+            if isinstance(asset_path, str) and asset_path.strip():
+                return asset_path
+        return value
 
     @staticmethod
     def _has_audio_stream(path: Path) -> bool:
@@ -370,9 +602,10 @@ class VideoCompose(BaseTool):
         are routed to Remotion via the render operation — call compose
         directly only for pure video pipelines (e.g. talking-head).
         """
-        edit_decisions = inputs.get("edit_decisions")
-        if not edit_decisions:
+        raw_edit_decisions = inputs.get("edit_decisions")
+        if not raw_edit_decisions:
             return ToolResult(success=False, error="edit_decisions required for compose")
+        edit_decisions = self._coerce_artifact(raw_edit_decisions, "edit_decisions")
 
         output_path = Path(inputs.get("output_path", "composed_output.mp4"))
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -383,15 +616,17 @@ class VideoCompose(BaseTool):
         preset = inputs.get("preset", "medium")
         profile_name = inputs.get("profile")
 
-        # Resolve target resolution from profile or default
-        resolution = "1920x1080"
-        if profile_name:
-            try:
-                from lib.media_profiles import get_profile
-                p = get_profile(profile_name)
-                resolution = f"{p.width}x{p.height}"
-            except (ImportError, ValueError):
-                pass
+        # Resolve target segment geometry from profile or default. Segments must
+        # be normalized to the final profile shape before concat; resizing only
+        # after concat can distort letterboxed vertical/square outputs.
+        target_width = 1920
+        target_height = 1080
+        target_fps = 30
+        profile = _media_profile(profile_name)
+        if profile is not None:
+            target_width = profile.width
+            target_height = profile.height
+            target_fps = profile.fps
 
         cuts = edit_decisions.get("cuts", [])
         if not cuts:
@@ -409,7 +644,7 @@ class VideoCompose(BaseTool):
         inputs["subtitle_style"] = resolved_sub_style
 
         ed_subs = edit_decisions.get("subtitles", {})
-        if ed_subs.get("source") and not subtitle_path:
+        if ed_subs.get("enabled") and ed_subs.get("source") and not subtitle_path:
             subtitle_path = ed_subs["source"]
 
         temp_dir = output_path.parent / ".compose_tmp"
@@ -425,9 +660,9 @@ class VideoCompose(BaseTool):
                     return ToolResult(success=False, error=f"Cut source not found: {source}")
 
                 seg_path = temp_dir / f"seg_{i:04d}.mp4"
-                in_s = cut["in_seconds"]
+                in_s = float(cut.get("source_in_seconds", cut["in_seconds"]))
                 out_s = cut["out_seconds"]
-                duration = out_s - in_s
+                duration = float(out_s) - float(cut["in_seconds"])
                 speed = cut.get("speed", 1.0)
 
                 if self._is_image(source):
@@ -470,14 +705,12 @@ class VideoCompose(BaseTool):
                     #
                     # Default target is 1920x1080 @ 30fps, yuv420p, sar=1. If the
                     # source is smaller it letterboxes; if larger it downscales.
-                    # Callers can override via edit_decisions.metadata.compose_target
-                    # (future extension) but the defaults match the most common
-                    # delivery profile (YouTube landscape).
+                    # Callers override via the selected media profile.
                     vf_parts: list[str] = [
-                        "scale=1920:1080:force_original_aspect_ratio=decrease",
-                        "pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=black",
+                        f"scale={target_width}:{target_height}:force_original_aspect_ratio=decrease",
+                        f"pad={target_width}:{target_height}:(ow-iw)/2:(oh-ih)/2:color=black",
                         "setsar=1",
-                        "fps=30",
+                        f"fps={target_fps}",
                     ]
                     af_parts: list[str] = []
                     if speed != 1.0:
@@ -493,7 +726,7 @@ class VideoCompose(BaseTool):
                         "-crf", str(crf),
                         "-preset", preset,
                         "-pix_fmt", "yuv420p",
-                        "-r", "30",
+                        "-r", str(target_fps),
                     ])
 
                     # Audio handling: some source clips have no audio stream
@@ -528,7 +761,7 @@ class VideoCompose(BaseTool):
                             "-crf", str(crf),
                             "-preset", preset,
                             "-pix_fmt", "yuv420p",
-                            "-r", "30",
+                            "-r", str(target_fps),
                             "-c:a", "aac",
                             "-b:a", "192k",
                             "-ar", "48000",
@@ -545,7 +778,7 @@ class VideoCompose(BaseTool):
             with open(concat_path, "w", encoding="utf-8") as f:
                 for seg in temp_segments:
                     safe = str(seg.resolve()).replace("\\", "/")
-                    f.write(f"file '{safe}'\n")
+                    f.write(f"file {_ffconcat_quote(safe)}\n")
 
             concat_out = temp_dir / "concat.mp4"
             cmd = [
@@ -564,7 +797,7 @@ class VideoCompose(BaseTool):
             if subtitle_path and Path(subtitle_path).exists():
                 style = inputs.get("subtitle_style", {})
                 ass_style = self._build_subtitle_style(style)
-                sub_escaped = str(Path(subtitle_path).resolve()).replace("\\", "/").replace(":", "\\:")
+                sub_escaped = _ffmpeg_filter_path(subtitle_path)
                 vfilters.append(f"subtitles='{sub_escaped}':force_style='{ass_style}'")
 
             cmd = ["ffmpeg", "-y", "-i", str(final_input)]
@@ -576,13 +809,13 @@ class VideoCompose(BaseTool):
             # This must be checked BEFORE choosing copy vs encode, because
             # -s and -r are incompatible with -c:v copy.
             profile_flags: list[str] = []
-            if profile_name:
-                try:
-                    from lib.media_profiles import get_profile
-                    p = get_profile(profile_name)
-                    profile_flags = ["-s", f"{p.width}x{p.height}", "-r", str(p.fps)]
-                except (ImportError, ValueError):
-                    pass
+            if profile is not None:
+                profile_flags = [
+                    "-s",
+                    f"{profile.width}x{profile.height}",
+                    "-r",
+                    str(profile.fps),
+                ]
 
             needs_reencode = bool(vfilters) or bool(profile_flags)
 
@@ -598,7 +831,13 @@ class VideoCompose(BaseTool):
                 # Use type-based selectors (0:v, 1:a) instead of index-based
                 # (0:v:0) because source videos may have audio as stream 0
                 # and video as stream 1 (e.g. Kling-generated clips).
-                cmd.extend(["-map", "0:v", "-map", "1:a", "-c:a", "aac", "-shortest"])
+                cmd.extend([
+                    "-map", "0:v",
+                    "-map", "1:a",
+                    "-c:a", "aac",
+                    "-ac", "2",
+                    "-shortest",
+                ])
             else:
                 cmd.extend(["-c:a", "copy"])
 
@@ -632,7 +871,11 @@ class VideoCompose(BaseTool):
                     pass
 
     _REMOTION_SCENE_TYPES = {
-        "text_card", "stat_card", "callout", "comparison", "progress", "chart",
+        "text_card", "stat_card", "callout", "comparison",
+        "progress", "progress_bar", "chart", "bar_chart", "line_chart", "pie_chart", "kpi_grid",
+        "anime_scene", "notification_scene", "creator_workflow_scene", "dashboard_scene",
+        "brand_card", "terminal_scene", "screenshot_scene", "checkmark_scene",
+        "browser_tabs_scene", "badge_freeze_scene", "line_connection_scene", "stat_roll_scene",
     }
 
     # Maps renderer_family (set at proposal stage) to Remotion composition ID.
@@ -694,29 +937,43 @@ class VideoCompose(BaseTool):
                 pass
 
         if playbook:
+            identity = playbook.get("identity", {})
             vl = playbook.get("visual_language", {})
             palette = vl.get("color_palette", {})
             typo = playbook.get("typography", {})
+            overlays = playbook.get("overlays", {})
+            stat_overlay = overlays.get("stat_card", {}) if isinstance(overlays, dict) else {}
 
             # Extract primary/accent — may be a list (gradient stops) or string
             primary_raw = palette.get("primary", ["#2563EB"])
             accent_raw = palette.get("accent", ["#F59E0B"])
             primary = primary_raw[0] if isinstance(primary_raw, list) else primary_raw
             accent = accent_raw[0] if isinstance(accent_raw, list) else accent_raw
+            secondary_accent = (
+                accent_raw[1]
+                if isinstance(accent_raw, list) and len(accent_raw) > 1
+                else "#10B981"
+            )
 
             bg = palette.get("background", "#FFFFFF")
             text = palette.get("text", "#1F2937")
-            surface = palette.get("surface", bg)
-            muted = palette.get("muted_text", "#6B7280")
+            surface = palette.get("surface") or stat_overlay.get("bg") or bg
+            muted = palette.get("muted") or palette.get("muted_text") or "#6B7280"
 
             # Build chart colors from all palette entries
-            chart_colors = []
+            chart_colors = list(playbook.get("chart_palette", []))
             for key in ["primary", "accent", "secondary", "success", "warning", "info"]:
+                if len(chart_colors) >= 6:
+                    break
                 val = palette.get(key)
                 if val:
                     chart_colors.append(val[0] if isinstance(val, list) else val)
             if len(chart_colors) < 3:
-                chart_colors = [primary, accent, "#10B981", "#8B5CF6", "#EC4899", "#06B6D4"]
+                chart_colors = [primary, accent, secondary_accent, "#8B5CF6", "#EC4899", "#06B6D4"]
+
+            heading_spec = typo.get("headings") or typo.get("heading") or {}
+            body_spec = typo.get("body") or {}
+            code_spec = typo.get("code") or {}
 
             theme = {
                 "primaryColor": primary,
@@ -725,9 +982,9 @@ class VideoCompose(BaseTool):
                 "surfaceColor": surface,
                 "textColor": text,
                 "mutedTextColor": muted,
-                "headingFont": typo.get("heading", {}).get("font", "Inter"),
-                "bodyFont": typo.get("body", {}).get("font", "Inter"),
-                "monoFont": typo.get("code", {}).get("font", "JetBrains Mono"),
+                "headingFont": heading_spec.get("font") or heading_spec.get("family") or "Inter",
+                "bodyFont": body_spec.get("font") or body_spec.get("family") or "Inter",
+                "monoFont": code_spec.get("font") or code_spec.get("family") or "JetBrains Mono",
                 "chartColors": chart_colors[:6],
                 "springConfig": {"damping": 20, "stiffness": 120, "mass": 1},
                 "transitionDuration": 0.4,
@@ -743,13 +1000,17 @@ class VideoCompose(BaseTool):
 
             # Motion style from playbook
             motion = playbook.get("motion", {})
-            pace = motion.get("pace", "moderate")
-            if pace == "fast":
+            pacing_rules = motion.get("pacing_rules", {})
+            if pacing_rules.get("transition_duration_seconds"):
+                theme["transitionDuration"] = float(
+                    pacing_rules["transition_duration_seconds"]
+                )
+            pace = identity.get("pace") or motion.get("pace", "moderate")
+            if pace in {"fast", "rapid"}:
                 theme["springConfig"] = {"damping": 12, "stiffness": 80, "mass": 1}
-                theme["transitionDuration"] = 0.3
-            elif pace == "slow":
+                theme["transitionDuration"] = min(theme["transitionDuration"], 0.3)
+            elif pace in {"slow", "gentle", "deliberate"}:
                 theme["springConfig"] = {"damping": 25, "stiffness": 150, "mass": 1}
-                theme["transitionDuration"] = 0.6
 
         # Fallback: try to extract from edit_decisions metadata
         if not theme and composition_data:
@@ -782,17 +1043,18 @@ class VideoCompose(BaseTool):
         component types, transitions, and mixed content — all in a single
         React-based render pass.
 
-        Returns False (i.e. use FFmpeg) only when Remotion is not
-        available. For `operation="render"` the governance default is
-        Remotion-first: the renderer family was chosen earlier, and the
-        tool should preserve that decision instead of silently
-        downgrading to FFmpeg.
+        For `operation="render"` the governance default is Remotion-first:
+        the renderer family was chosen earlier, and the tool should preserve
+        that decision instead of silently downgrading to FFmpeg. Availability
+        is checked by `_render` before calling this method for locked Remotion
+        renders.
 
         This "Remotion-first" policy means mixed content (video clips +
         animated stills + text cards) is always composed in Remotion, which
         can embed <OffthreadVideo> alongside React components natively.
         """
-        # If Remotion isn't installed, fall back to FFmpeg
+        # Preserve the legacy probe result for direct callers. Locked render
+        # paths check availability before this point and block instead.
         if not self._remotion_available():
             return False
 
@@ -851,6 +1113,23 @@ class VideoCompose(BaseTool):
                 log.warning("Could not validate delivery promise: %s", e)
         else:
             warnings.append("No delivery_promise in edit_decisions — skipping promise validation")
+
+        # --- 1b. Scene/cut fidelity check (Remotion/FFmpeg only) ---
+        # Hyperframes manages its own scene system; the registry only covers
+        # Remotion component scene types and plain media cuts.
+        if edit_decisions.get("render_runtime") != "hyperframes":
+            try:
+                from tools.validation.scene_fidelity_check import check_plan, load_registry
+
+                fidelity_input = dict(edit_decisions)
+                fidelity_input["cuts"] = resolved_cuts
+                fidelity_report = check_plan(fidelity_input, load_registry())
+                if not fidelity_report.get("ok"):
+                    for issue in fidelity_report.get("issues", []):
+                        detail = issue.get("detail") or issue.get("kind") or str(issue)
+                        blocks.append(f"Scene fidelity violation: {detail}")
+            except Exception as e:
+                log.warning("Could not run scene fidelity check: %s", e)
 
         # --- 2. Slideshow risk check ---
         renderer_family = edit_decisions.get("renderer_family")
@@ -933,18 +1212,33 @@ class VideoCompose(BaseTool):
         The agent should pass edit_decisions, asset_manifest, and optionally
         profile, subtitle_path, audio_path, and options.
         """
-        edit_decisions = inputs.get("edit_decisions")
-        asset_manifest = inputs.get("asset_manifest")
-        if not edit_decisions:
+        raw_edit_decisions = inputs.get("edit_decisions")
+        raw_asset_manifest = inputs.get("asset_manifest")
+        if not raw_edit_decisions:
             return ToolResult(success=False, error="edit_decisions required for render")
-        if not asset_manifest:
+        if not raw_asset_manifest:
             return ToolResult(success=False, error="asset_manifest required for render")
+        edit_decisions = self._coerce_artifact(raw_edit_decisions, "edit_decisions")
+        asset_manifest = self._coerce_artifact(raw_asset_manifest, "asset_manifest")
 
-        output_path = Path(inputs.get("output_path", "renders/output.mp4"))
+        output_path, output_error = self._required_render_output_path(inputs, "render")
+        if output_error:
+            return output_error
+        assert output_path is not None
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Build asset lookup: id -> asset info
-        asset_lookup = {a["id"]: a for a in asset_manifest.get("assets", [])}
+        # Handles both flat list and nested dict formats:
+        #   flat:   {"assets": [{id, path, ...}, ...]}
+        #   nested: {"assets": {"narration": [...], "images": [...], ...}}
+        raw_assets = asset_manifest.get("assets", [])
+        if isinstance(raw_assets, dict):
+            flat_assets: list = []
+            for category in raw_assets.values():
+                if isinstance(category, list):
+                    flat_assets.extend(category)
+            raw_assets = flat_assets
+        asset_lookup = {a["id"]: a for a in raw_assets if isinstance(a, dict) and "id" in a}
 
         cuts = edit_decisions.get("cuts", [])
         if not cuts:
@@ -958,15 +1252,6 @@ class VideoCompose(BaseTool):
             if source_id in asset_lookup:
                 resolved_cut["source"] = asset_lookup[source_id]["path"]
             resolved_cuts.append(resolved_cut)
-
-        # --- Pre-compose validation gate ---
-        scene_plan = inputs.get("scene_plan")
-        validation_block = self._pre_compose_validation(edit_decisions, resolved_cuts, scene_plan)
-        if validation_block is not None:
-            return validation_block
-
-        # Also accept profile as "output_profile" (skill convention) or "profile"
-        profile = inputs.get("profile") or inputs.get("output_profile")
 
         # --- Runtime routing: honor render_runtime locked at proposal ---
         # Silent swaps are forbidden by governance. If the chosen runtime
@@ -988,6 +1273,29 @@ class VideoCompose(BaseTool):
                 ),
             )
 
+        if render_runtime not in {"remotion", "hyperframes", "ffmpeg"}:
+            return ToolResult(
+                success=False,
+                error=(
+                    f"Unknown render_runtime {render_runtime!r}. "
+                    f"Valid values: remotion, hyperframes, ffmpeg. "
+                    f"render_runtime must be set at proposal stage."
+                ),
+            )
+
+        runtime_block = self._render_runtime_governance_block(inputs, edit_decisions)
+        if runtime_block is not None:
+            return runtime_block
+
+        # --- Pre-compose validation gate ---
+        scene_plan = inputs.get("scene_plan")
+        validation_block = self._pre_compose_validation(edit_decisions, resolved_cuts, scene_plan)
+        if validation_block is not None:
+            return validation_block
+
+        # Also accept profile as "output_profile" (skill convention) or "profile"
+        profile = inputs.get("profile") or inputs.get("output_profile")
+
         if render_runtime == "hyperframes":
             return self._render_via_hyperframes(
                 inputs=inputs,
@@ -1003,20 +1311,24 @@ class VideoCompose(BaseTool):
                 inputs=inputs,
                 edit_decisions=edit_decisions,
                 resolved_cuts=resolved_cuts,
+                asset_lookup=asset_lookup,
                 output_path=output_path,
                 profile=profile,
             )
-        if render_runtime != "remotion":
+
+        # --- Explicit Remotion path (render_runtime == 'remotion') ---
+        if not self._remotion_available():
             return ToolResult(
                 success=False,
                 error=(
-                    f"Unknown render_runtime {render_runtime!r}. "
-                    f"Valid values: remotion, hyperframes, ffmpeg. "
-                    f"render_runtime must be set at proposal stage."
+                    "render_runtime='remotion' is locked in edit_decisions, "
+                    "but the Remotion runtime is not available. Per governance, "
+                    "the tool must not silently downgrade to FFmpeg. Fix the "
+                    "Remotion setup or record a user-approved render_runtime "
+                    "decision before rerouting."
                 ),
             )
 
-        # --- Explicit Remotion path (render_runtime == 'remotion') ---
         if self._needs_remotion(resolved_cuts):
             remotion_inputs: dict[str, Any] = {
                 "edit_decisions": dict(edit_decisions, cuts=resolved_cuts),
@@ -1037,7 +1349,7 @@ class VideoCompose(BaseTool):
                         f"Underlying error: {render_result.error}\n\n"
                         f"This composition requires Remotion (images, text cards, animations). "
                         f"Options:\n"
-                        f"  1. Fix Remotion setup (cd remotion-composer && npm install)\n"
+                        f"  1. Fix Remotion setup (cd remotion-composer && npx --yes pnpm install --frozen-lockfile)\n"
                         f"  2. Re-run with operation='compose' for FFmpeg-only (video cuts only)\n"
                         f"  3. Approve a degraded FFmpeg render (still images → Ken Burns)\n\n"
                         f"Per governance: renderer downgrade requires user approval."
@@ -1072,6 +1384,9 @@ class VideoCompose(BaseTool):
                 output_path,
                 edit_decisions,
                 inputs.get("proposal_packet"),
+                production_proposal=inputs.get("production_proposal"),
+                brief=inputs.get("brief"),
+                decision_log=inputs.get("decision_log"),
                 narration_transcript_path=inputs.get("narration_transcript_path"),
                 script_text=inputs.get("script_text") or self._read_text_file(
                     inputs.get("script_path")
@@ -1085,16 +1400,13 @@ class VideoCompose(BaseTool):
             render_result.data["final_review"] = final_review
             render_result.data["final_review_status"] = final_review["status"]
 
-            # If the self-review says fail, downgrade the ToolResult
-            if final_review["status"] == "fail":
-                return ToolResult(
-                    success=False,
-                    error=(
-                        "Post-render self-review FAILED. The output is not presentable.\n"
-                        + "\n".join(f"  • {i}" for i in final_review.get("issues_found", []))
-                    ),
-                    data=render_result.data,
-                )
+            review_block = self._final_review_block(
+                final_review,
+                label="render",
+                data=render_result.data,
+            )
+            if review_block is not None:
+                return review_block
 
         return render_result
 
@@ -1174,6 +1486,8 @@ class VideoCompose(BaseTool):
             hf_inputs["strict"] = inputs["strict"]
         if "skip_contrast" in inputs:
             hf_inputs["skip_contrast"] = inputs["skip_contrast"]
+        if "workers" in inputs:
+            hf_inputs["workers"] = inputs["workers"]
 
         render_result = HyperFramesCompose().execute(hf_inputs)
 
@@ -1195,6 +1509,9 @@ class VideoCompose(BaseTool):
                 output_path,
                 edit_decisions,
                 inputs.get("proposal_packet"),
+                production_proposal=inputs.get("production_proposal"),
+                brief=inputs.get("brief"),
+                decision_log=inputs.get("decision_log"),
                 narration_transcript_path=inputs.get("narration_transcript_path"),
                 script_text=inputs.get("script_text") or self._read_text_file(
                     inputs.get("script_path")
@@ -1204,15 +1521,13 @@ class VideoCompose(BaseTool):
                 render_result.data = {}
             render_result.data["final_review"] = final_review
             render_result.data["final_review_status"] = final_review["status"]
-            if final_review["status"] == "fail":
-                return ToolResult(
-                    success=False,
-                    error=(
-                        "Post-render self-review FAILED (HyperFrames). The output is not presentable.\n"
-                        + "\n".join(f"  • {i}" for i in final_review.get("issues_found", []))
-                    ),
-                    data=render_result.data,
-                )
+            review_block = self._final_review_block(
+                final_review,
+                label="HyperFrames",
+                data=render_result.data,
+            )
+            if review_block is not None:
+                return review_block
 
         return render_result
 
@@ -1222,6 +1537,7 @@ class VideoCompose(BaseTool):
         inputs: dict[str, Any],
         edit_decisions: dict[str, Any],
         resolved_cuts: list[dict],
+        asset_lookup: dict[str, dict[str, Any]],
         output_path: Path,
         profile: Optional[str],
     ) -> ToolResult:
@@ -1239,6 +1555,7 @@ class VideoCompose(BaseTool):
             ed_subs = edit_decisions.get("subtitles", {})
             if ed_subs.get("enabled") and ed_subs.get("source"):
                 subtitle_path = ed_subs["source"]
+        subtitle_path = self._resolve_asset_reference(subtitle_path, asset_lookup)
 
         compose_inputs = dict(inputs)
         compose_inputs["edit_decisions"] = dict(edit_decisions, cuts=resolved_cuts)
@@ -1255,6 +1572,9 @@ class VideoCompose(BaseTool):
                 output_path,
                 edit_decisions,
                 inputs.get("proposal_packet"),
+                production_proposal=inputs.get("production_proposal"),
+                brief=inputs.get("brief"),
+                decision_log=inputs.get("decision_log"),
                 narration_transcript_path=inputs.get("narration_transcript_path"),
                 script_text=inputs.get("script_text") or self._read_text_file(
                     inputs.get("script_path")
@@ -1264,15 +1584,13 @@ class VideoCompose(BaseTool):
                 render_result.data = {}
             render_result.data["final_review"] = final_review
             render_result.data["final_review_status"] = final_review["status"]
-            if final_review["status"] == "fail":
-                return ToolResult(
-                    success=False,
-                    error=(
-                        "Post-render self-review FAILED (FFmpeg). The output is not presentable.\n"
-                        + "\n".join(f"  • {i}" for i in final_review.get("issues_found", []))
-                    ),
-                    data=render_result.data,
-                )
+            review_block = self._final_review_block(
+                final_review,
+                label="FFmpeg",
+                data=render_result.data,
+            )
+            if review_block is not None:
+                return review_block
 
         return render_result
 
@@ -1298,23 +1616,102 @@ class VideoCompose(BaseTool):
                 error="edit_decisions or composition_data required for remotion_render",
             )
 
-        output_path = Path(inputs.get("output_path", "renders/remotion_output.mp4"))
+        # Guard: CinematicRenderer expects scenes[] not cuts[].
+        # Passing edit_decisions (cuts[] format) to CinematicRenderer causes a
+        # silent 30s empty render. Catch it early with a clear error.
+        renderer_family = composition_data.get("renderer_family", "")
+        if renderer_family == "cinematic-trailer" and "scenes" not in composition_data:
+            return ToolResult(
+                success=False,
+                error=(
+                    "CinematicRenderer (renderer_family='cinematic-trailer') requires "
+                    "'scenes[]' (CinematicRendererProps format), not 'cuts[]' (edit_decisions format). "
+                    "Build props with scenes[], soundtrack, and music keys, then call with "
+                    "operation='remotion_render'. Passing edit_decisions directly causes a silent "
+                    "30s empty render — this guard prevents that."
+                ),
+            )
+
+        output_path, output_error = self._required_render_output_path(
+            inputs,
+            "remotion_render",
+        )
+        if output_error:
+            return output_error
+        assert output_path is not None
         output_path.parent.mkdir(parents=True, exist_ok=True)
         # Absolutise so the CLI can resolve the output regardless of cwd.
         output_path = output_path.resolve()
+        profile_name = inputs.get("profile")
+        profile = _media_profile(profile_name)
 
         # Deep-copy props so we don't mutate the original
         props = json.loads(json.dumps(composition_data))
 
-        # Convert absolute file paths to file:// URIs for Remotion's
-        # Img and OffthreadVideo components
+        # Resolve asset sources to paths Remotion's local dev server can serve.
+        # Strategy (in order of preference):
+        #   1. Already an HTTP/file/remotion: URI → pass through unchanged.
+        #   2. Relative path → leave as-is; Remotion resolves via staticFile()
+        #      against the composer's public/ directory.
+        #   3. Absolute path inside composer_dir/public/ → convert to relative.
+        #   4. Other absolute path → use file:// URI.
+        # WSL2 NOTE: /mnt/[x]/ paths CANNOT be served by Remotion's Node.js
+        # server via file:// URIs. Instead, create a symlink:
+        #   ln -sfn /path/to/projects remotion-composer/public/projects
+        # and pass paths like "projects/my-proj/assets/video/clip.mp4" (relative).
+        # Compute public_dir directly so it doesn't depend on composer_dir being
+        # defined later in the method.
+        _remotion_public = Path(__file__).resolve().parent.parent.parent / "remotion-composer" / "public"
+
+        def _to_remotion_src(src: str) -> str:
+            if not src or src.startswith(("http://", "https://", "file://", "remotion:")):
+                return src
+            if not Path(src).is_absolute():
+                return src  # already relative — staticFile() resolves it
+            resolved = Path(src).resolve()
+            try:
+                rel = resolved.relative_to(_remotion_public)
+                return str(rel)  # inside public/ → use relative path
+            except ValueError:
+                pass
+            posix = resolved.as_posix()
+            return f"file:///{posix}" if not posix.startswith("/") else f"file://{posix}"
+
+        # Apply to cuts[] (Explainer / FFmpeg path)
         for cut in props.get("cuts", []):
-            source = cut.get("source", "")
-            if source and not source.startswith(("http://", "https://", "file://")):
-                resolved = Path(source).resolve()
-                if resolved.exists():
-                    posix = resolved.as_posix()
-                    cut["source"] = f"file:///{posix}" if not posix.startswith("/") else f"file://{posix}"
+            if cut.get("source"):
+                cut["source"] = _to_remotion_src(cut["source"])
+            # anime_scene images[] — each element is a path string
+            if cut.get("images"):
+                cut["images"] = [_to_remotion_src(img) for img in cut["images"]]
+            # background asset paths (used by overlay-on-image/video scene types)
+            if cut.get("backgroundImage"):
+                cut["backgroundImage"] = _to_remotion_src(cut["backgroundImage"])
+            if cut.get("backgroundVideo"):
+                cut["backgroundVideo"] = _to_remotion_src(cut["backgroundVideo"])
+            if cut.get("productImage"):
+                cut["productImage"] = _to_remotion_src(cut["productImage"])
+
+        # Apply to scenes[] (CinematicRenderer path) — previously unhandled
+        for scene in props.get("scenes", []):
+            if scene.get("src"):
+                scene["src"] = _to_remotion_src(scene["src"])
+
+        # Apply to soundtrack / music src fields (CinematicRenderer audio)
+        for audio_key in ("soundtrack", "music"):
+            audio_obj = props.get(audio_key)
+            if isinstance(audio_obj, dict) and audio_obj.get("src"):
+                audio_obj["src"] = _to_remotion_src(audio_obj["src"])
+
+        # Apply to Explainer audio config (audio.narration.src, audio.music.src)
+        audio_config = props.get("audio")
+        if isinstance(audio_config, dict):
+            narration = audio_config.get("narration")
+            if isinstance(narration, dict) and narration.get("src"):
+                narration["src"] = _to_remotion_src(narration["src"])
+            music = audio_config.get("music")
+            if isinstance(music, dict) and music.get("src"):
+                music["src"] = _to_remotion_src(music["src"])
 
         # Build a custom themeConfig from the playbook's actual colors.
         # This ensures every video gets a unique visual identity derived
@@ -1356,21 +1753,16 @@ class VideoCompose(BaseTool):
         ]
 
         # Apply media profile dimensions
-        profile_name = inputs.get("profile")
-        if profile_name:
-            try:
-                from lib.media_profiles import get_profile
-                p = get_profile(profile_name)
-                cmd.extend(["--width", str(p.width), "--height", str(p.height)])
-            except (ImportError, ValueError):
-                pass
+        if profile is not None:
+            cmd.extend(["--width", str(profile.width), "--height", str(profile.height)])
 
+        render_timeout = int(inputs.get("render_timeout_seconds", 1800))
         try:
             # Invoke from inside the composer dir so npx can resolve the
             # local remotion binary via node_modules/.bin. Without this,
             # Windows npx cannot locate the CLI and returns "could not
             # determine executable to run".
-            self.run_command(cmd, timeout=600, cwd=composer_dir)
+            self.run_command(cmd, timeout=render_timeout, cwd=composer_dir)
         except Exception as e:
             return ToolResult(success=False, error=f"Remotion render failed: {e}")
         finally:
@@ -1458,7 +1850,6 @@ class VideoCompose(BaseTool):
         """
         result: dict[str, Any] = {
             "transcript_matches_script": False,
-            "word_accuracy": None,
             "script_word_count": 0,
             "transcript_word_count": 0,
             "spurious_punctuation_words": [],
@@ -1540,11 +1931,96 @@ class VideoCompose(BaseTool):
 
         return result
 
+    @staticmethod
+    def _extract_approved_render_runtime(
+        *,
+        proposal_packet: dict[str, Any] | None,
+        production_proposal: dict[str, Any] | None,
+        brief: dict[str, Any] | None,
+        edit_decisions: dict[str, Any] | None,
+        decision_log: dict[str, Any] | None = None,
+    ) -> tuple[str | None, str | None]:
+        """Return the effective approved render_runtime plus the source path used."""
+        locked_runtime: str | None = None
+        locked_source: str | None = None
+
+        if production_proposal:
+            runtime = str(production_proposal.get("render_runtime") or "").strip().lower()
+            if runtime:
+                locked_runtime = runtime
+                locked_source = "production_proposal.render_runtime"
+
+        if locked_runtime is None and proposal_packet:
+            runtime = str(
+                (proposal_packet.get("production_plan") or {}).get("render_runtime")
+                or ""
+            ).strip().lower()
+            if runtime:
+                locked_runtime = runtime
+                locked_source = "proposal_packet.production_plan.render_runtime"
+
+        if locked_runtime is None and brief:
+            runtime = str(
+                (brief.get("metadata") or {}).get("render_runtime")
+                or ""
+            ).strip().lower()
+            if runtime:
+                locked_runtime = runtime
+                locked_source = "brief.metadata.render_runtime"
+
+            runtime = str(brief.get("render_runtime") or "").strip().lower()
+            if locked_runtime is None and runtime:
+                locked_runtime = runtime
+                locked_source = "brief.render_runtime"
+
+            runtime = str(
+                ((brief.get("metadata") or {}).get("production_plan") or {}).get(
+                    "render_runtime"
+                )
+                or ""
+            ).strip().lower()
+            if locked_runtime is None and runtime:
+                locked_runtime = runtime
+                locked_source = "brief.metadata.production_plan.render_runtime"
+
+        if locked_runtime is None and edit_decisions:
+            runtime = str(
+                (edit_decisions.get("metadata") or {}).get("proposal_render_runtime")
+                or ""
+            ).strip().lower()
+            if runtime:
+                locked_runtime = runtime
+                locked_source = "edit_decisions.metadata.proposal_render_runtime"
+
+        if locked_runtime and edit_decisions:
+            actual_runtime = str(edit_decisions.get("render_runtime") or "").strip().lower()
+            if actual_runtime and actual_runtime != locked_runtime:
+                verdict = check_runtime_consistency(
+                    {"render_runtime": locked_runtime},
+                    {
+                        "render_runtime": actual_runtime,
+                        "metadata": edit_decisions.get("metadata") or {},
+                    },
+                    decision_log,
+                )
+                if verdict.get("status") == "PASS":
+                    return (
+                        actual_runtime,
+                        "decision_log.render_runtime_selection "
+                        f"(approved substitution from {locked_source})",
+                    )
+
+        return locked_runtime, locked_source
+
     def _run_final_review(
         self,
         output_path: Path,
         edit_decisions: dict[str, Any] | None = None,
         proposal_packet: dict[str, Any] | None = None,
+        *,
+        production_proposal: dict[str, Any] | None = None,
+        brief: dict[str, Any] | None = None,
+        decision_log: dict[str, Any] | None = None,
         narration_transcript_path: str | Path | None = None,
         script_text: str | None = None,
     ) -> dict[str, Any]:
@@ -1554,12 +2030,15 @@ class VideoCompose(BaseTool):
         the actual rendered output before marking the stage complete.
         Never claim a video is ready without a real probe + frame sample.
 
-        When `proposal_packet` is provided, its
-        `production_plan.render_runtime` is compared against
-        `edit_decisions.render_runtime` so `runtime_swap_detected` can
-        actually flip. Without it, we fall back to
-        `edit_decisions.metadata.proposal_render_runtime` (which the edit
-        director can set explicitly to opt into swap detection).
+        When a planning artifact is provided, its approved runtime is compared
+        against `edit_decisions.render_runtime` so unapproved swaps can flip
+        `runtime_swap_detected`. Supported sources are
+        `production_proposal.render_runtime` for ad-video,
+        `proposal_packet.production_plan.render_runtime` for proposal-packet
+        pipelines, and required `brief.metadata.render_runtime` for brief-first
+        pipelines. Approved `decision_log` substitutions are treated as the
+        effective runtime lock. Without a planning artifact, we fall back to
+        `edit_decisions.metadata.proposal_render_runtime`.
 
         Returns a dict conforming to final_review.schema.json.
         """
@@ -1627,6 +2106,21 @@ class VideoCompose(BaseTool):
                         )
                     technical_probe["target_duration"] = target_dur
                     technical_probe["duration_drift_pct"] = round(drift_pct * 100, 1)
+                    # Audio-stream truncation check — catches the class of bug where
+                    # a corrupt TTS file or broken sidechaincompress silently drops
+                    # the tail of the narration (e.g. 28.58s audio in a 31s video).
+                    if audio_stream:
+                        # ffprobe may return "N/A" for duration on some containers;
+                        # guard against ValueError so the check never silently crashes.
+                        _raw_adur = audio_stream.get("duration", "0")
+                        audio_dur = float(_raw_adur) if _raw_adur and _raw_adur != "N/A" else 0.0
+                        if audio_dur > 0 and audio_dur < target_dur - 1.0:
+                            truncation_issue = (
+                                f"Audio truncation: audio {audio_dur:.2f}s is more "
+                                f"than 1s shorter than target {target_dur:.1f}s"
+                            )
+                            technical_probe["audio_truncation_check"] = f"WARN — {truncation_issue}"
+                            technical_probe["issues"].append(truncation_issue)
                 if width < 320 or height < 240:
                     technical_probe["issues"].append(
                         f"Resolution {width}x{height} is very low"
@@ -1705,6 +2199,9 @@ class VideoCompose(BaseTool):
             "mix_intelligible": True,
             "issues": [],
         }
+        music_strategy = ""
+        if isinstance(edit_decisions, dict):
+            music_strategy = str(edit_decisions.get("music_strategy") or "").strip().lower()
         if technical_probe.get("has_audio") and duration > 0:
             try:
                 # Use ffmpeg volumedetect to check audio levels
@@ -1740,8 +2237,9 @@ class VideoCompose(BaseTool):
                     # Assume narration present if mean volume is reasonable
                     if mean_vol > -40:
                         audio_spotcheck["narration_present"] = True
-                    # Assume music present if audio exists (conservative)
-                    if mean_vol > -50:
+                    # Without separated stems this is only evidence of music
+                    # when the edit actually approved a music bed.
+                    if music_strategy != "none" and mean_vol > -50:
                         audio_spotcheck["music_present"] = True
 
                 if max_vol is not None and max_vol > -0.5:
@@ -1766,41 +2264,43 @@ class VideoCompose(BaseTool):
             promise_preservation["renderer_family_used"] = renderer_family
 
             # Runtime governance — record what actually ran and flag a swap.
-            # Three sources of truth, in priority order:
-            #   1. proposal_packet.production_plan.render_runtime (authoritative)
-            #   2. edit_decisions.metadata.proposal_render_runtime (if edit stage
-            #      explicitly copied it to opt into in-tool swap detection)
-            #   3. edit_decisions.render_runtime itself (cannot detect a swap in
-            #      this case — reviewer does cross-artifact comparison instead)
+            # Compare the runtime that actually rendered against the approved
+            # planning-stage runtime. If no planning artifact is passed, this
+            # check is intentionally marked skipped so reviewer contracts can
+            # catch the missing evidence.
             render_runtime_edit = (edit_decisions.get("render_runtime") or "").strip().lower()
             if render_runtime_edit:
                 promise_preservation["render_runtime_used"] = render_runtime_edit
 
-                proposal_runtime: str | None = None
-                runtime_source: str | None = None
-                if proposal_packet:
-                    pp_runtime = (
-                        (proposal_packet.get("production_plan") or {}).get("render_runtime")
-                        or ""
-                    ).strip().lower()
-                    if pp_runtime:
-                        proposal_runtime = pp_runtime
-                        runtime_source = "proposal_packet.production_plan.render_runtime"
-                if proposal_runtime is None:
-                    md_runtime = (
-                        (edit_decisions.get("metadata") or {}).get("proposal_render_runtime")
-                        or ""
-                    ).strip().lower()
-                    if md_runtime:
-                        proposal_runtime = md_runtime
-                        runtime_source = "edit_decisions.metadata.proposal_render_runtime"
+                proposal_runtime, runtime_source = self._extract_approved_render_runtime(
+                    proposal_packet=proposal_packet,
+                    production_proposal=production_proposal,
+                    brief=brief,
+                    edit_decisions=edit_decisions,
+                    decision_log=decision_log,
+                )
 
                 if proposal_runtime is None:
-                    promise_preservation["runtime_swap_check"] = (
-                        "skipped — no proposal_packet or proposal_render_runtime "
-                        "metadata provided. Reviewer skill does cross-artifact "
-                        "comparison separately."
-                    )
+                    if (
+                        brief is not None
+                        and production_proposal is None
+                        and proposal_packet is None
+                    ):
+                        promise_preservation["runtime_swap_check"] = (
+                            "missing — brief.metadata.render_runtime is required "
+                            "for brief-first runtime governance."
+                        )
+                        promise_preservation["issues"].append(
+                            "render_runtime lock missing: brief.metadata.render_runtime "
+                            "is required when brief is the planning artifact."
+                        )
+                    else:
+                        promise_preservation["runtime_swap_check"] = (
+                            "skipped — no production_proposal, proposal_packet, "
+                            "brief runtime, or proposal_render_runtime metadata "
+                            "provided. Reviewer skill does cross-artifact comparison "
+                            "separately."
+                        )
                 elif proposal_runtime != render_runtime_edit:
                     promise_preservation["runtime_swap_detected"] = True
                     promise_preservation["runtime_swap_check"] = (
@@ -1853,11 +2353,15 @@ class VideoCompose(BaseTool):
         subtitle_check: dict[str, Any] = {
             "subtitles_expected": False,
             "subtitles_present": False,
+            "coverage_ratio": 0.0,
+            "timing_drift_detected": False,
             "issues": [],
         }
         if edit_decisions:
             ed_subs = edit_decisions.get("subtitles", {})
             subtitle_check["subtitles_expected"] = bool(ed_subs.get("enabled"))
+            if subtitle_check["subtitles_expected"]:
+                subtitle_check["coverage_ratio"] = 0.0
 
             # Check if output has subtitle stream
             if technical_probe.get("valid_container"):
@@ -1874,6 +2378,8 @@ class VideoCompose(BaseTool):
                         sub_data = json.loads(proc.stdout)
                         sub_streams = sub_data.get("streams", [])
                         subtitle_check["subtitles_present"] = len(sub_streams) > 0
+                        if subtitle_check["subtitles_present"]:
+                            subtitle_check["coverage_ratio"] = 1.0
 
                     # If subtitles were expected but not found as a stream,
                     # they may be burned in (which is fine — not a failure)
@@ -1886,6 +2392,7 @@ class VideoCompose(BaseTool):
                             subtitle_check["subtitles_present"] = True
                             subtitle_check["coverage_ratio"] = 1.0
                         else:
+                            subtitle_check["coverage_ratio"] = 0.0
                             subtitle_check["issues"].append(
                                 "Subtitles expected but not found in output and "
                                 "no subtitle source file exists for burn-in"
@@ -1904,7 +2411,12 @@ class VideoCompose(BaseTool):
             Path(narration_transcript_path) if narration_transcript_path else None,
             script_text,
         )
-        issues.extend(transcript_comparison.get("issues", []))
+        transcript_issues = transcript_comparison.get("issues", [])
+        issues.extend(
+            issue
+            for issue in transcript_issues
+            if not str(issue).startswith("transcript_comparison skipped:")
+        )
 
         # --- 7. Determine overall status ---
         critical_issues = [
@@ -1912,6 +2424,8 @@ class VideoCompose(BaseTool):
             if any(kw in i.lower() for kw in [
                 "silent downgrade", "delivery promise violation",
                 "effectively silent", "ffprobe failed", "suspiciously short",
+                "audio truncation",
+                "render_runtime changed", "render_runtime lock missing",
                 "tts punctuation leak",  # reading literal punctuation aloud
             ])
         ]
@@ -1977,7 +2491,7 @@ class VideoCompose(BaseTool):
 
         style = inputs.get("subtitle_style", {})
         ass_style = self._build_subtitle_style(style)
-        sub_escaped = str(subtitle_path.resolve()).replace("\\", "/").replace(":", "\\:")
+        sub_escaped = _ffmpeg_filter_path(subtitle_path)
         codec = inputs.get("codec", "libx264")
         crf = inputs.get("crf", 23)
 
@@ -2079,6 +2593,7 @@ class VideoCompose(BaseTool):
         crf = inputs.get("crf", 23)
         preset = inputs.get("preset", "medium")
         profile_name = inputs.get("profile")
+        profile = _media_profile(profile_name)
 
         if not input_path.exists():
             return ToolResult(success=False, error=f"Input not found: {input_path}")
@@ -2091,14 +2606,9 @@ class VideoCompose(BaseTool):
         ]
 
         # Apply media profile if specified
-        if profile_name:
-            try:
-                from lib.media_profiles import get_profile, ffmpeg_output_args
-                profile = get_profile(profile_name)
-                cmd.extend(["-s", f"{profile.width}x{profile.height}"])
-                cmd.extend(["-r", str(profile.fps)])
-            except (ImportError, ValueError):
-                pass  # proceed without profile
+        if profile is not None:
+            cmd.extend(["-s", f"{profile.width}x{profile.height}"])
+            cmd.extend(["-r", str(profile.fps)])
 
         cmd.append(str(output_path))
         self.run_command(cmd)
@@ -2141,8 +2651,9 @@ class VideoCompose(BaseTool):
         if playbook:
             typo = playbook.get("typography", {})
             colors = playbook.get("visual_language", {}).get("color_palette", {})
-            if typo.get("body", {}).get("family"):
-                resolved["font"] = typo["body"]["family"]
+            body_spec = typo.get("body", {})
+            if body_spec.get("font") or body_spec.get("family"):
+                resolved["font"] = body_spec.get("font") or body_spec["family"]
             if colors.get("text"):
                 resolved["primary_color"] = colors["text"]
             if colors.get("background"):
@@ -2151,15 +2662,37 @@ class VideoCompose(BaseTool):
                 bg = colors["background"]
                 resolved["back_color"] = bg
 
-        # Layer 2: edit_decisions subtitle style
+        # Layer 2: edit_decisions subtitle style. The artifact schema uses
+        # subtitles.style for a named mode string (sentence/karaoke/etc.) and
+        # keeps concrete style fields beside it, so accept both shapes.
         if edit_decisions:
-            ed_style = edit_decisions.get("subtitles", {}).get("style", {})
-            for k, v in ed_style.items():
-                if v is not None:
-                    resolved[k] = v
+            ed_subtitles = edit_decisions.get("subtitles", {})
+            if isinstance(ed_subtitles, dict):
+                for source_key, resolved_key in {
+                    "font": "font",
+                    "font_size": "font_size",
+                    "color": "primary_color",
+                    "outline_color": "outline_color",
+                }.items():
+                    value = ed_subtitles.get(source_key)
+                    if value is not None:
+                        resolved[resolved_key] = value
+
+                position = ed_subtitles.get("position")
+                if position == "top-center":
+                    resolved["alignment"] = 8
+                    resolved["margin_v"] = max(40, int(resolved.get("margin_v", 40)))
+                elif position == "bottom-center":
+                    resolved["alignment"] = 2
+
+                ed_style = ed_subtitles.get("style", {})
+                if isinstance(ed_style, dict):
+                    for k, v in ed_style.items():
+                        if v is not None:
+                            resolved[k] = v
 
         # Layer 3: Explicit override (highest priority)
-        if explicit_style:
+        if isinstance(explicit_style, dict):
             for k, v in explicit_style.items():
                 if v is not None:
                     resolved[k] = v
@@ -2169,16 +2702,35 @@ class VideoCompose(BaseTool):
     @staticmethod
     def _build_subtitle_style(style: dict) -> str:
         """Build ASS force_style string from style dict."""
+        def _ass_color(value: Any) -> str:
+            if not isinstance(value, str):
+                return str(value)
+            raw = value.strip()
+            if raw.startswith("&H"):
+                return raw
+            if raw.startswith("#") and len(raw) in {7, 9}:
+                hex_value = raw[1:]
+                if len(hex_value) == 6:
+                    css_alpha = 255
+                else:
+                    css_alpha = int(hex_value[6:8], 16)
+                rr = int(hex_value[0:2], 16)
+                gg = int(hex_value[2:4], 16)
+                bb = int(hex_value[4:6], 16)
+                ass_alpha = 255 - css_alpha
+                return f"&H{ass_alpha:02X}{bb:02X}{gg:02X}{rr:02X}"
+            return raw
+
         parts = []
         parts.append(f"FontName={style.get('font', 'Inter')}")
         parts.append(f"FontSize={style.get('font_size', 28)}")
         parts.append(f"Bold={1 if style.get('bold', True) else 0}")
         if style.get("primary_color"):
-            parts.append(f"PrimaryColour={style['primary_color']}")
+            parts.append(f"PrimaryColour={_ass_color(style['primary_color'])}")
         if style.get("outline_color"):
-            parts.append(f"OutlineColour={style['outline_color']}")
+            parts.append(f"OutlineColour={_ass_color(style['outline_color'])}")
         if style.get("back_color"):
-            parts.append(f"BackColour={style['back_color']}")
+            parts.append(f"BackColour={_ass_color(style['back_color'])}")
         border_style = style.get("border_style", 1)
         parts.append(f"BorderStyle={border_style}")
         parts.append(f"Outline={style.get('outline_width', 2)}")

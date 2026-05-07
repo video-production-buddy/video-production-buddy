@@ -22,6 +22,7 @@ from tools.base_tool import (
     ToolStatus,
     ToolTier,
 )
+from tools.video._shared import validate_video_operation
 
 
 class KlingVideo(BaseTool):
@@ -35,7 +36,7 @@ class KlingVideo(BaseTool):
     determinism = Determinism.STOCHASTIC
     runtime = ToolRuntime.API
 
-    dependencies = []
+    dependencies = ["env_any:FAL_KEY,FAL_AI_API_KEY"]
     install_instructions = (
         "Set FAL_KEY to your fal.ai API key.\n"
         "  Get one at https://fal.ai/dashboard/keys"
@@ -92,7 +93,15 @@ class KlingVideo(BaseTool):
         cpu_cores=1, ram_mb=512, vram_mb=0, disk_mb=500, network_required=True
     )
     retry_policy = RetryPolicy(max_retries=2, retryable_errors=["rate_limit", "timeout"])
-    idempotency_key_fields = ["prompt", "model_variant", "operation", "duration"]
+    idempotency_key_fields = [
+        "prompt",
+        "output_path",
+        "model_variant",
+        "operation",
+        "duration",
+        "aspect_ratio",
+        "image_url",
+    ]
     side_effects = ["writes video file to output_path", "calls fal.ai API"]
     user_visible_verification = ["Watch generated clip for motion coherence and visual quality"]
 
@@ -124,10 +133,16 @@ class KlingVideo(BaseTool):
                 error="FAL_KEY not set. " + self.install_instructions,
             )
 
+        operation = inputs.get("operation", "text_to_video")
+        operation_error = validate_video_operation(operation, {"text_to_video", "image_to_video"})
+        if operation_error:
+            return ToolResult(success=False, error=operation_error)
+        if operation == "image_to_video" and not inputs.get("image_url"):
+            return ToolResult(success=False, error="image_to_video requires image_url")
+
         import requests
 
         start = time.time()
-        operation = inputs.get("operation", "text_to_video")
         variant = inputs.get("model_variant", "v3/standard")
         # fal.ai uses hyphens in endpoint paths (text-to-video, not text_to_video)
         operation_path = operation.replace("_", "-")
@@ -138,7 +153,7 @@ class KlingVideo(BaseTool):
             payload["duration"] = inputs["duration"]
         if inputs.get("aspect_ratio"):
             payload["aspect_ratio"] = inputs["aspect_ratio"]
-        if operation == "image_to_video" and inputs.get("image_url"):
+        if operation == "image_to_video":
             payload["image_url"] = inputs["image_url"]
 
         headers = {

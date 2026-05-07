@@ -38,6 +38,10 @@ class ShowcaseCard(BaseTool):
     agent_skills = ["ffmpeg", "video_toolkit"]
 
     capabilities = ["create_showcase_card"]
+    best_for = [
+        "Wrapping a source clip in a vertical showcase card layout",
+        "Adding title and subtitle framing for social preview exports",
+    ]
 
     input_schema = {
         "type": "object",
@@ -104,7 +108,20 @@ class ShowcaseCard(BaseTool):
     }
 
     resource_profile = ResourceProfile(cpu_cores=2, ram_mb=1024, vram_mb=0, disk_mb=500)
-    idempotency_key_fields = ["input_path", "title", "subtitle"]
+    idempotency_key_fields = [
+        "input_path",
+        "output_path",
+        "title",
+        "subtitle",
+        "output_width",
+        "output_height",
+        "background_color",
+        "title_font",
+        "title_font_size",
+        "subtitle_font_size",
+        "title_color",
+        "watermark",
+    ]
     side_effects = ["writes showcase card video to output_path"]
     user_visible_verification = [
         "Play output and verify title, subtitle, and video are positioned correctly",

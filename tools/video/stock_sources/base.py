@@ -35,9 +35,57 @@ Adding a new source
 """
 from __future__ import annotations
 
+import hashlib
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional, Protocol, runtime_checkable
+from urllib.parse import urljoin, urlparse
+
+
+_SAFE_FILENAME_CHARS_RE = re.compile(r"[^A-Za-z0-9._-]+")
+_MAX_CLIP_FILE_NAME_LENGTH = 120
+_DIGEST_LENGTH = 12
+
+
+def safe_clip_file_name(clip_id: str, ext: str) -> str:
+    """Return a filesystem-local file or directory name for a candidate id."""
+    raw = str(clip_id)
+    safe = _SAFE_FILENAME_CHARS_RE.sub("_", raw).strip("._-")
+    if not safe:
+        safe = "clip"
+    if safe != raw or len(f"{safe}{ext}") > _MAX_CLIP_FILE_NAME_LENGTH:
+        digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:_DIGEST_LENGTH]
+        max_stem = max(
+            1,
+            _MAX_CLIP_FILE_NAME_LENGTH - len(ext) - len(digest) - 1,
+        )
+        safe = f"{safe[:max_stem]}-{digest}"
+    return f"{safe}{ext}"
+
+
+def stable_source_id(prefix: str, value: str, length: int = 8) -> str:
+    """Build a process-stable short source id from a URL or provider id."""
+    digest = hashlib.sha256(str(value).encode("utf-8")).hexdigest()[:length]
+    return f"{prefix}_{digest}"
+
+
+def absolute_url(base_url: str, url: str) -> str:
+    """Resolve source-provided relative URLs against a site base URL."""
+    if not url:
+        return ""
+    return urljoin(f"{base_url.rstrip('/')}/", str(url))
+
+
+def url_path_has_extension(url: str, extensions: tuple[str, ...]) -> bool:
+    """Return True when a URL's path ends with one of the given extensions."""
+    if not url:
+        return False
+    try:
+        path = urlparse(str(url)).path.lower()
+    except Exception:
+        path = str(url).lower().split("?", 1)[0].split("#", 1)[0]
+    return path.endswith(tuple(ext.lower() for ext in extensions))
 
 
 @dataclass

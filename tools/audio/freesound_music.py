@@ -39,7 +39,7 @@ class FreesoundMusic(BaseTool):
     determinism = Determinism.DETERMINISTIC
     runtime = ToolRuntime.API
 
-    dependencies = []  # checked dynamically via env var
+    dependencies = ["env:FREESOUND_API_KEY"]
     install_instructions = (
         "Set the FREESOUND_API_KEY environment variable:\n"
         "  export FREESOUND_API_KEY=your_key_here\n"
@@ -100,7 +100,7 @@ class FreesoundMusic(BaseTool):
         cpu_cores=1, ram_mb=256, vram_mb=0, disk_mb=50, network_required=True
     )
     retry_policy = RetryPolicy(max_retries=2, retryable_errors=["rate_limit", "timeout"])
-    idempotency_key_fields = ["query", "min_duration", "max_duration"]
+    idempotency_key_fields = ["query", "output_path", "min_duration", "max_duration"]
     side_effects = ["writes audio file to output_path", "calls Freesound API"]
     user_visible_verification = [
         "Listen to downloaded track for mood and quality",
@@ -191,7 +191,7 @@ class FreesoundMusic(BaseTool):
 
         request = urllib.request.Request(
             url,
-            headers={"User-Agent": "OpenMontage/0.1 (music acquisition tool)"},
+            headers={"User-Agent": "Video Production Buddy/0.1 (music acquisition tool)"},
         )
 
         with urllib.request.urlopen(request, timeout=30) as response:
@@ -220,7 +220,7 @@ class FreesoundMusic(BaseTool):
 
         request = urllib.request.Request(
             audio_url,
-            headers={"User-Agent": "OpenMontage/0.1 (music acquisition tool)"},
+            headers={"User-Agent": "Video Production Buddy/0.1 (music acquisition tool)"},
         )
 
         with urllib.request.urlopen(request, timeout=60) as response:

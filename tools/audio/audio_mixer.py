@@ -41,6 +41,10 @@ class AudioMixer(BaseTool):
     agent_skills = ["ffmpeg", "video_toolkit"]
 
     capabilities = ["mix", "duck", "fade", "normalize", "extract_audio", "segmented_music"]
+    best_for = [
+        "Combining narration, music, and effects into a final mix",
+        "Applying speech ducking and segment-specific music beds",
+    ]
 
     input_schema = {
         "type": "object",
@@ -131,6 +135,23 @@ class AudioMixer(BaseTool):
                 },
             },
             "normalize": {"type": "boolean", "default": True},
+            "target_lufs": {
+                "type": "number",
+                "default": -16,
+                "description": (
+                    "Target integrated loudness for loudnorm when normalize is true. "
+                    "Common platform defaults: TikTok/Reels/Shorts -14, YouTube -13, "
+                    "broadcast -23. Omitted values preserve the legacy -16 default."
+                ),
+            },
+            "target_total_duration_seconds": {
+                "type": "number",
+                "minimum": 0,
+                "description": (
+                    "Optional hard output duration. When set for mix/full_mix, the "
+                    "tool pads or trims the audio so it matches the final video runtime."
+                ),
+            },
             "video_path": {
                 "type": "string",
                 "description": (
@@ -170,11 +191,48 @@ class AudioMixer(BaseTool):
                 "default": 0.5,
                 "description": "Duration of fade in/out at segment boundaries (seconds).",
             },
+            "music_volume_schedule": {
+                "type": "array",
+                "description": (
+                    "Path B: per-timestamp music gain envelope produced by "
+                    "lib.intensity_curve.derive_duck_schedule. When provided "
+                    "(and non-empty) on a 'duck' or 'full_mix' operation, the "
+                    "music track is attenuated by a deterministic time-varying "
+                    "FFmpeg volume filter instead of the speech-amplitude-driven "
+                    "sidechaincompress path. Empty list / absent = legacy path."
+                ),
+                "items": {
+                    "type": "object",
+                    "required": ["t_seconds", "gain_db"],
+                    "properties": {
+                        "t_seconds": {"type": "number", "minimum": 0},
+                        "gain_db": {"type": "number"},
+                    },
+                },
+            },
         },
     }
 
     resource_profile = ResourceProfile(cpu_cores=2, ram_mb=1024, vram_mb=0, disk_mb=500)
-    idempotency_key_fields = ["operation", "tracks", "ducking"]
+    idempotency_key_fields = [
+        "operation",
+        "output_path",
+        "tracks",
+        "primary_audio",
+        "secondary_audio",
+        "duck_level",
+        "ducking",
+        "input_path",
+        "normalize",
+        "target_lufs",
+        "target_total_duration_seconds",
+        "music_volume_schedule",
+        "video_path",
+        "music_path",
+        "music_volume",
+        "segments",
+        "fade_duration",
+    ]
     side_effects = ["writes mixed audio file to output_path"]
     user_visible_verification = [
         "Listen to mixed output and verify speech clarity and music ducking",
@@ -211,6 +269,14 @@ class AudioMixer(BaseTool):
 
         output_path = Path(inputs.get("output_path", "mixed_audio.wav"))
         normalize = inputs.get("normalize", True)
+        # Configurable LUFS target. Per-platform defaults:
+        #   TikTok / Reels / Shorts → -14, YouTube → -13, broadcast → -23.
+        # Falls back to -16 (legacy) when omitted to preserve back-compat.
+        target_lufs = float(inputs.get("target_lufs", -16))
+        # Hard duration target — pad with silence (or truncate) so the output
+        # matches the video runtime. Prevents the "mix ends at 26s for a 30s
+        # video, final frames silent" failure mode. None = skip.
+        target_total_duration_seconds = inputs.get("target_total_duration_seconds")
 
         # Validate all inputs exist
         for t in tracks:
@@ -250,11 +316,24 @@ class AudioMixer(BaseTool):
             f"{mix_inputs}amix=inputs={len(tracks)}:duration=longest:dropout_transition=2[mixed]"
         )
 
+        # Optional duration contract: pad with silence (or truncate) so the
+        # output is exactly target_total_duration_seconds long.
+        if target_total_duration_seconds:
+            d = float(target_total_duration_seconds)
+            filter_parts.append(
+                f"[mixed]apad=whole_dur={d},atrim=0:{d},asetpts=N/SR/TB[mixed_padded]"
+            )
+            mixed_label = "[mixed_padded]"
+        else:
+            mixed_label = "[mixed]"
+
         if normalize:
-            filter_parts.append("[mixed]loudnorm=I=-16:LRA=11:TP=-1.5[out]")
+            filter_parts.append(
+                f"{mixed_label}loudnorm=I={target_lufs}:LRA=11:TP=-1.5[out]"
+            )
             out_label = "[out]"
         else:
-            out_label = "[mixed]"
+            out_label = mixed_label
 
         filter_complex = ";".join(filter_parts)
 
@@ -279,6 +358,12 @@ class AudioMixer(BaseTool):
     def _duck(self, inputs: dict[str, Any]) -> ToolResult:
         """Apply ducking: lower music volume when speech is present.
 
+        Path B: if ``music_volume_schedule`` is provided and non-empty, the
+        music track is attenuated by a time-varying FFmpeg ``volume`` filter
+        whose envelope is dictated by the schedule (deterministic, derived from
+        the bible's emotional intensity curve). Otherwise the legacy
+        speech-amplitude-driven sidechaincompress path runs unchanged.
+
         Accepts two input formats:
 
         Simple format (preferred for agents):
@@ -302,6 +387,7 @@ class AudioMixer(BaseTool):
         """
         ducking = inputs.get("ducking", {})
         output_path = Path(inputs.get("output_path", "ducked_audio.wav"))
+        schedule = inputs.get("music_volume_schedule") or []
 
         # --- Resolve speech/music paths from either input format ---
         speech_path = None
@@ -347,18 +433,31 @@ class AudioMixer(BaseTool):
                 ),
             )
 
-        # Use FFmpeg sidechaincompress for ducking
+        # Path B: schedule-driven duck envelope replaces sidechaincompress.
+        if schedule:
+            return self._duck_with_schedule(
+                speech_path=speech_path,
+                music_path=music_path,
+                schedule=schedule,
+                output_path=output_path,
+            )
+
+        # Use FFmpeg sidechaincompress for ducking.
+        # Speech (input 0) is split into two copies: one feeds the sidechain
+        # key signal, the other goes to the final mix output. This avoids the
+        # "filter graph label consumed twice" error that breaks the naive pattern
+        # of using [0:a] both as sidechain key and in the amix output.
         music_vol = ducking.get("music_volume_during_speech", 0.15)
         attack = ducking.get("attack_ms", 200) / 1000
         release = ducking.get("release_ms", 500) / 1000
 
-        # Sidechain compress: use speech as the key signal to duck music
         filter_complex = (
-            f"[1:a]sidechaincompress="
+            f"[0:a]asplit=2[speech_key][speech_out];"
+            f"[1:a][speech_key]sidechaincompress="
             f"threshold=0.02:ratio=9:attack={attack}:release={release}:"
-            f"level_sc=1:mix=0.9[ducked];"
-            f"[ducked]volume={music_vol * 3}[music_out];"  # compensate sidechain level
-            f"[0:a][music_out]amix=inputs=2:duration=longest[out]"
+            f"level_sc=1:mix=0.9[music_ducked];"
+            f"[music_ducked]volume={music_vol * 3}[music_out];"
+            f"[speech_out][music_out]amix=inputs=2:duration=longest[out]"
         )
 
         cmd = [
@@ -378,6 +477,69 @@ class AudioMixer(BaseTool):
                 "operation": "duck",
                 "speech_track": speech_path,
                 "music_track": music_path,
+                "output": str(output_path),
+            },
+            artifacts=[str(output_path)],
+        )
+
+    def _duck_with_schedule(
+        self,
+        *,
+        speech_path: str,
+        music_path: str,
+        schedule: list[dict[str, float]],
+        output_path: Path,
+    ) -> ToolResult:
+        """Path B: attenuate music with a deterministic time-varying volume envelope.
+
+        Compiles ``schedule`` into an FFmpeg ``volume`` expression and applies it
+        to the music track with ``eval=frame`` so the gain is recomputed every
+        frame. Speech passes through unchanged and is mixed with the
+        envelope-shaped music via ``amix``.
+        """
+        # Validate inputs explicitly so a missing fixture surfaces as a clean
+        # ToolResult error instead of an opaque subprocess.CalledProcessError dump.
+        if not Path(speech_path).exists():
+            return ToolResult(
+                success=False,
+                error=f"Speech audio not found: {speech_path}",
+            )
+        if not Path(music_path).exists():
+            return ToolResult(
+                success=False,
+                error=f"Music audio not found: {music_path}",
+            )
+
+        # Local import keeps audio_mixer's module-load surface unchanged for
+        # registry discovery — only paid on the schedule code path.
+        from lib.intensity_curve import compile_volume_schedule_to_ffmpeg_expr
+
+        volume_expr = compile_volume_schedule_to_ffmpeg_expr(schedule)
+
+        filter_complex = (
+            f"[1:a]volume='{volume_expr}':eval=frame[music_env];"
+            f"[0:a][music_env]amix=inputs=2:duration=longest:dropout_transition=0[out]"
+        )
+
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", speech_path,
+            "-i", music_path,
+            "-filter_complex", filter_complex,
+            "-map", "[out]",
+            str(output_path),
+        ]
+
+        self.run_command(cmd)
+
+        return ToolResult(
+            success=True,
+            data={
+                "operation": "duck",
+                "mode": "schedule",
+                "speech_track": speech_path,
+                "music_track": music_path,
+                "schedule_samples": len(schedule),
                 "output": str(output_path),
             },
             artifacts=[str(output_path)],
@@ -415,6 +577,19 @@ class AudioMixer(BaseTool):
             artifacts=[str(output_path)],
         )
 
+    def _probe_audio_duration(self, path: Path) -> float | None:
+        """Return audio duration in seconds via ffprobe, or None on error."""
+        try:
+            result = self.run_command([
+                "ffprobe", "-v", "error",
+                "-show_entries", "format=duration",
+                "-of", "csv=p=0",
+                str(path),
+            ])
+            return round(float(result.stdout.strip().split("\n")[0]), 2)
+        except Exception:
+            return None
+
     def _full_mix(self, inputs: dict[str, Any]) -> ToolResult:
         """One-call mix: layer narration tracks, add music with ducking, normalize.
 
@@ -447,6 +622,13 @@ class AudioMixer(BaseTool):
         output_path.parent.mkdir(parents=True, exist_ok=True)
         normalize = inputs.get("normalize", True)
         ducking = inputs.get("ducking", {"enabled": True})
+        # Configurable LUFS target. Per-platform defaults:
+        #   TikTok / Reels / Shorts → -14, YouTube → -13, broadcast → -23.
+        # Falls back to -16 (legacy) when omitted.
+        target_lufs = float(inputs.get("target_lufs", -16))
+        # Hard duration target — pad with silence (or truncate) so the output
+        # matches the video runtime. None = skip.
+        target_total_duration_seconds = inputs.get("target_total_duration_seconds")
 
         speech_tracks = [t for t in tracks if t.get("role") in ("speech", "primary")]
         music_tracks = [t for t in tracks if t.get("role") in ("music", "secondary")]
@@ -488,97 +670,251 @@ class AudioMixer(BaseTool):
             else:
                 filter_parts.append(f"[{i}:a]acopy[a{i}]")
 
-        # If ducking is enabled and we have both speech and music, apply sidechain
         duck_enabled = ducking.get("enabled", True) if isinstance(ducking, dict) else bool(ducking)
+        duck_params = ducking if isinstance(ducking, dict) else {}
+        music_vol = duck_params.get("music_volume_during_speech", 0.15)
+        schedule = inputs.get("music_volume_schedule") or []
 
-        if duck_enabled and speech_tracks and music_tracks:
-            # Mix speech tracks together first
+        if schedule and music_tracks:
+            from lib.intensity_curve import compile_volume_schedule_to_ffmpeg_expr
+
+            volume_expr = compile_volume_schedule_to_ffmpeg_expr(schedule)
+            schedule_parts = list(filter_parts)
+            mix_labels: list[str] = []
+
             speech_indices = list(range(len(speech_tracks)))
-            speech_labels = "".join(f"[a{i}]" for i in speech_indices)
-
-            if len(speech_tracks) > 1:
-                filter_parts.append(
-                    f"{speech_labels}amix=inputs={len(speech_tracks)}:duration=longest[speech_mix]"
-                )
-                speech_out = "[speech_mix]"
-            else:
-                speech_out = f"[a{speech_indices[0]}]"
-
-            # Mix music tracks together
             music_start = len(speech_tracks)
             music_indices = list(range(music_start, music_start + len(music_tracks)))
-            music_labels = "".join(f"[a{i}]" for i in music_indices)
+            sfx_start = len(speech_tracks) + len(music_tracks)
 
-            if len(music_tracks) > 1:
-                filter_parts.append(
-                    f"{music_labels}amix=inputs={len(music_tracks)}:duration=longest[music_mix]"
+            if speech_indices:
+                speech_labels = "".join(f"[a{i}]" for i in speech_indices)
+                if len(speech_indices) > 1:
+                    schedule_parts.append(
+                        f"{speech_labels}amix=inputs={len(speech_indices)}:"
+                        f"duration=longest[speech_out]"
+                    )
+                else:
+                    schedule_parts.append(f"[a{speech_indices[0]}]acopy[speech_out]")
+                mix_labels.append("[speech_out]")
+
+            music_labels = "".join(f"[a{i}]" for i in music_indices)
+            if len(music_indices) > 1:
+                schedule_parts.append(
+                    f"{music_labels}amix=inputs={len(music_indices)}:"
+                    f"duration=longest[music_pre]"
                 )
-                music_in = "[music_mix]"
+                music_input = "[music_pre]"
+            else:
+                music_input = f"[a{music_indices[0]}]"
+
+            schedule_parts.append(
+                f"{music_input}volume='{volume_expr}':eval=frame[music_env]"
+            )
+            mix_labels.append("[music_env]")
+
+            if sfx_tracks:
+                mix_labels.extend(
+                    f"[a{i}]" for i in range(sfx_start, sfx_start + len(sfx_tracks))
+                )
+
+            if len(mix_labels) > 1:
+                all_labels = "".join(mix_labels)
+                schedule_parts.append(
+                    f"{all_labels}amix=inputs={len(mix_labels)}:"
+                    f"duration=longest:dropout_transition=2[premix]"
+                )
+                premix_label = "[premix]"
+            else:
+                schedule_parts.append(f"{mix_labels[0]}acopy[premix]")
+                premix_label = "[premix]"
+
+            if target_total_duration_seconds:
+                d = float(target_total_duration_seconds)
+                schedule_parts.append(
+                    f"{premix_label}apad=whole_dur={d},atrim=0:{d},"
+                    f"asetpts=N/SR/TB[premix_padded]"
+                )
+                premix_label = "[premix_padded]"
+
+            if normalize:
+                schedule_parts.append(
+                    f"{premix_label}loudnorm=I={target_lufs}:LRA=11:TP=-1.5[out]"
+                )
+                out_label = "[out]"
+            else:
+                out_label = premix_label
+
+            schedule_filter = ";".join(p for p in schedule_parts if p)
+            schedule_cmd = ["ffmpeg", "-y"] + input_args + [
+                "-filter_complex", schedule_filter,
+                "-map", out_label,
+                str(output_path),
+            ]
+            self.run_command(schedule_cmd)
+            return ToolResult(
+                success=True,
+                data={
+                    "operation": "full_mix",
+                    "speech_tracks": len(speech_tracks),
+                    "music_tracks": len(music_tracks),
+                    "sfx_tracks": len(sfx_tracks),
+                    "ducking_enabled": True,
+                    "ducking_mode": "schedule",
+                    "schedule_samples": len(schedule),
+                    "normalized": normalize,
+                    "output": str(output_path),
+                    "duration_seconds": self._probe_audio_duration(output_path),
+                },
+                artifacts=[str(output_path)],
+            )
+
+        if duck_enabled and speech_tracks and music_tracks:
+            attack = duck_params.get("attack_ms", 200) / 1000
+            release = duck_params.get("release_ms", 500) / 1000
+            speech_indices = list(range(len(speech_tracks)))
+            music_start = len(speech_tracks)
+            music_indices = list(range(music_start, music_start + len(music_tracks)))
+            sfx_start = len(speech_tracks) + len(music_tracks)
+
+            # Build sidechain filter graph.
+            # Each speech track is split: one copy feeds the sidechain key signal,
+            # the other feeds the final output mix. This avoids the "filter graph
+            # label consumed twice" error that caused the original implementation to fail.
+            sc_parts = list(filter_parts)
+            for i in speech_indices:
+                sc_parts.append(f"[a{i}]asplit=2[asp{i}a][asp{i}b]")
+
+            speech_key_labels = "".join(f"[asp{i}a]" for i in speech_indices)
+            speech_out_labels = "".join(f"[asp{i}b]" for i in speech_indices)
+
+            if len(speech_tracks) > 1:
+                sc_parts.append(
+                    f"{speech_key_labels}amix=inputs={len(speech_tracks)}:duration=longest[speech_key]"
+                )
+                sc_parts.append(
+                    f"{speech_out_labels}amix=inputs={len(speech_tracks)}:duration=longest[speech_out]"
+                )
+            else:
+                sc_parts.append(f"[asp{speech_indices[0]}a]acopy[speech_key]")
+                sc_parts.append(f"[asp{speech_indices[0]}b]acopy[speech_out]")
+
+            music_labels = "".join(f"[a{i}]" for i in music_indices)
+            if len(music_tracks) > 1:
+                sc_parts.append(
+                    f"{music_labels}amix=inputs={len(music_tracks)}:duration=longest[music_pre]"
+                )
+                music_in = "[music_pre]"
             else:
                 music_in = f"[a{music_indices[0]}]"
 
-            # Apply sidechain ducking
-            duck_params = ducking if isinstance(ducking, dict) else {}
-            attack = duck_params.get("attack_ms", 200) / 1000
-            release = duck_params.get("release_ms", 500) / 1000
-            music_vol = duck_params.get("music_volume_during_speech", 0.15)
-
-            filter_parts.append(
-                f"{music_in}{speech_out}sidechaincompress="
+            sc_parts.append(
+                f"{music_in}[speech_key]sidechaincompress="
                 f"threshold=0.02:ratio=9:attack={attack}:release={release}:"
-                f"level_sc=1:mix=0.9[ducked_music];"
-                f"[ducked_music]volume={music_vol * 3}[music_out]"
+                f"level_sc=1:mix=0.9[music_ducked]"
             )
+            sc_parts.append(f"[music_ducked]volume={music_vol * 3}[music_out]")
 
-            # Duplicate speech for final mix (sidechain consumes it as key)
-            filter_parts.append(
-                f"{speech_out}acopy[speech_dup]" if speech_out.startswith("[a") else ""
-            )
-            # Re-mix speech path: we need speech audio in the output too
-            # Simpler approach: use amix on original speech and ducked music
-            # Reset: use a cleaner approach — amerge the speech mix and ducked music
-            # Actually, let's rebuild. The sidechain approach above uses speech as
-            # the key signal but doesn't consume it from the output chain.
-            # FFmpeg sidechaincompress: input 0 = audio to compress, input 1 = key signal
-            # So music is compressed, speech signal is the key. We need to mix them.
-            # Remove the last filter_part (the acopy that may be empty)
-            if filter_parts and filter_parts[-1] == "":
-                filter_parts.pop()
-
-            # Build speech mix for output separately
-            if len(speech_tracks) > 1:
-                # speech_mix already exists, make a copy for output
-                filter_parts.append(f"{speech_labels}amix=inputs={len(speech_tracks)}:duration=longest[speech_out]")
-            else:
-                filter_parts.append(f"[a{speech_indices[0]}]acopy[speech_out]")
-
-            # Final mix: speech_out + music_out
-            mix_label = "[speech_out][music_out]amix=inputs=2:duration=longest[premix]"
-
-            # Add SFX if present
-            sfx_start = len(speech_tracks) + len(music_tracks)
             if sfx_tracks:
                 sfx_labels = "".join(f"[a{i}]" for i in range(sfx_start, sfx_start + len(sfx_tracks)))
-                filter_parts.append(mix_label.replace("[premix]", "[pressfx]"))
-                filter_parts.append(
-                    f"[pressfx]{sfx_labels}amix=inputs={1 + len(sfx_tracks)}:duration=longest[premix]"
+                sc_parts.append(
+                    f"[speech_out][music_out]{sfx_labels}"
+                    f"amix=inputs={2 + len(sfx_tracks)}:duration=longest[premix]"
                 )
             else:
-                filter_parts.append(mix_label)
+                sc_parts.append("[speech_out][music_out]amix=inputs=2:duration=longest[premix]")
 
-        else:
-            # No ducking: simple amix of all tracks
-            all_labels = "".join(f"[a{i}]" for i in range(len(all_tracks)))
+            if target_total_duration_seconds:
+                d = float(target_total_duration_seconds)
+                sc_parts.append(
+                    f"[premix]apad=whole_dur={d},atrim=0:{d},asetpts=N/SR/TB[premix_padded]"
+                )
+                premix_label = "[premix_padded]"
+            else:
+                premix_label = "[premix]"
+
+            if normalize:
+                sc_parts.append(
+                    f"{premix_label}loudnorm=I={target_lufs}:LRA=11:TP=-1.5[out]"
+                )
+                sc_out_label = "[out]"
+            else:
+                sc_out_label = premix_label
+
+            sc_filter = ";".join(p for p in sc_parts if p)
+            sc_cmd = ["ffmpeg", "-y"] + input_args + [
+                "-filter_complex", sc_filter,
+                "-map", sc_out_label,
+                str(output_path),
+            ]
+            try:
+                self.run_command(sc_cmd)
+                return ToolResult(
+                    success=True,
+                    data={
+                        "operation": "full_mix",
+                        "speech_tracks": len(speech_tracks),
+                        "music_tracks": len(music_tracks),
+                        "sfx_tracks": len(sfx_tracks),
+                        "ducking_enabled": True,
+                        "ducking_mode": "sidechaincompress",
+                        "normalized": normalize,
+                        "output": str(output_path),
+                        "duration_seconds": self._probe_audio_duration(output_path),
+                    },
+                    artifacts=[str(output_path)],
+                )
+            except Exception:
+                pass  # sidechaincompress unavailable — fall through to fixed-volume mix
+
+            # Fallback: fixed-volume music mix (reliable on all FFmpeg builds).
+            # Reset filter_parts and rebuild without sidechaincompress.
+            filter_parts = []
+            for i, track in enumerate(all_tracks):
+                vol = track.get("volume", 1.0)
+                # Apply ducking volume reduction to music tracks
+                if track.get("role") in ("music", "secondary"):
+                    vol = vol * music_vol
+                delay_ms = int(track.get("start_seconds", 0) * 1000)
+                fade_in = track.get("fade_in_seconds", 0)
+                fade_out = track.get("fade_out_seconds", 0)
+                filters = []
+                if vol != 1.0:
+                    filters.append(f"volume={vol}")
+                if delay_ms > 0:
+                    filters.append(f"adelay={delay_ms}|{delay_ms}")
+                if fade_in > 0:
+                    filters.append(f"afade=t=in:d={fade_in}")
+                if fade_out > 0:
+                    filters.append(f"afade=t=out:d={fade_out}")
+                if filters:
+                    filter_parts.append(f"[{i}:a]{','.join(filters)}[a{i}]")
+                else:
+                    filter_parts.append(f"[{i}:a]acopy[a{i}]")
+
+        # Simple amix of all (possibly pre-volume-adjusted) tracks
+        all_labels = "".join(f"[a{i}]" for i in range(len(all_tracks)))
+        filter_parts.append(
+            f"{all_labels}amix=inputs={len(all_tracks)}:duration=longest:dropout_transition=2[premix]"
+        )
+
+        if target_total_duration_seconds:
+            d = float(target_total_duration_seconds)
             filter_parts.append(
-                f"{all_labels}amix=inputs={len(all_tracks)}:duration=longest:dropout_transition=2[premix]"
+                f"[premix]apad=whole_dur={d},atrim=0:{d},asetpts=N/SR/TB[premix_padded]"
             )
+            premix_label = "[premix_padded]"
+        else:
+            premix_label = "[premix]"
 
         # Normalize
         if normalize:
-            filter_parts.append("[premix]loudnorm=I=-16:LRA=11:TP=-1.5[out]")
+            filter_parts.append(
+                f"{premix_label}loudnorm=I={target_lufs}:LRA=11:TP=-1.5[out]"
+            )
             out_label = "[out]"
         else:
-            out_label = "[premix]"
+            out_label = premix_label
 
         filter_complex = ";".join(p for p in filter_parts if p)
 
@@ -599,6 +935,7 @@ class AudioMixer(BaseTool):
                 "ducking_enabled": duck_enabled,
                 "normalized": normalize,
                 "output": str(output_path),
+                "duration_seconds": self._probe_audio_duration(output_path),
             },
             artifacts=[str(output_path)],
         )

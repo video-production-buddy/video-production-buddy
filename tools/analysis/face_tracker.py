@@ -50,6 +50,10 @@ class FaceTracker(BaseTool):
         "face_bounding_box",
         "head_pose_estimation",
     ]
+    best_for = [
+        "Detecting face presence and bounding boxes in talking-head or avatar footage",
+        "Producing frame-level face tracks for reframing and visual QA",
+    ]
 
     input_schema = {
         "type": "object",
@@ -106,7 +110,12 @@ class FaceTracker(BaseTool):
     }
 
     resource_profile = ResourceProfile(cpu_cores=2, ram_mb=1024, vram_mb=0, disk_mb=100)
-    idempotency_key_fields = ["input_path", "sample_fps", "min_detection_confidence"]
+    idempotency_key_fields = [
+        "input_path",
+        "output_path",
+        "sample_fps",
+        "min_detection_confidence",
+    ]
     side_effects = ["writes face tracking JSON to output_path"]
     user_visible_verification = [
         "Spot-check bounding boxes against video frames",

@@ -24,6 +24,7 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
+from lib.hyperframes_gsap_shim import gsap_shim_script
 from tools.base_tool import (
     BaseTool,
     Determinism,
@@ -195,6 +196,15 @@ class HyperFramesCompose(BaseTool):
                     "while iterating; forbidden for final delivery."
                 ),
             },
+            "workers": {
+                "type": "integer",
+                "minimum": 1,
+                "description": (
+                    "Number of parallel Chrome workers for `hyperframes render`. "
+                    "Defaults to the CLI default (auto). On WSL2 with video-heavy "
+                    "compositions set to 2 to avoid worker timeout."
+                ),
+            },
         },
     }
 
@@ -203,7 +213,21 @@ class HyperFramesCompose(BaseTool):
     )
     retry_policy = RetryPolicy(max_retries=0)
     resume_support = ResumeSupport.FROM_START
-    idempotency_key_fields = ["operation", "workspace_path", "edit_decisions"]
+    idempotency_key_fields = [
+        "operation",
+        "block_name",
+        "workspace_path",
+        "output_path",
+        "edit_decisions",
+        "asset_manifest",
+        "playbook",
+        "profile",
+        "quality",
+        "fps",
+        "strict",
+        "skip_contrast",
+        "workers",
+    ]
     side_effects = [
         "writes HTML/CSS/JS files into workspace_path",
         "copies asset files into workspace_path/assets/",
@@ -455,7 +479,7 @@ class HyperFramesCompose(BaseTool):
             )
 
     def _scaffold(self, inputs: dict[str, Any]) -> ToolResult:
-        """Materialize the HyperFrames workspace from OpenMontage artifacts.
+        """Materialize the HyperFrames workspace from Video Production Buddy artifacts.
 
         This does NOT call `hyperframes init` — we want full control over the
         generated files so they map cleanly to edit_decisions. `init` is
@@ -526,7 +550,7 @@ class HyperFramesCompose(BaseTool):
             total_duration=total_duration,
             css_vars=css_vars,
             title=edit_decisions.get("metadata", {}).get("title")
-            or f"OpenMontage {edit_decisions.get('renderer_family', 'composition')}",
+            or f"Video Production Buddy {edit_decisions.get('renderer_family', 'composition')}",
         )
         (workspace / "index.html").write_text(html, encoding="utf-8")
 
@@ -710,6 +734,8 @@ class HyperFramesCompose(BaseTool):
             "--fps", str(fps),
             "--quality", quality,
         ]
+        if "workers" in inputs:
+            args += ["--workers", str(int(inputs["workers"]))]
         proc = self._run_hf(args, cwd=workspace, timeout=1800, check=False)
         steps["render"] = {
             "exit_code": proc.returncode,
@@ -767,10 +793,10 @@ class HyperFramesCompose(BaseTool):
         if profile_name:
             try:
                 from lib.media_profiles import get_profile  # type: ignore
-                p = get_profile(profile_name)
-                return int(p.width), int(p.height), int(p.fps)
-            except Exception:
-                pass
+            except ImportError:
+                return 1920, 1080, int(fps_in)
+            p = get_profile(profile_name)
+            return int(p.width), int(p.height), int(p.fps)
         return 1920, 1080, int(fps_in)
 
     @staticmethod
@@ -845,21 +871,37 @@ class HyperFramesCompose(BaseTool):
 
         music = audio.get("music", {})
         m_id = music.get("asset_id")
+        # Resolve music source: prefer asset_id lookup, fall back to direct src path.
+        music_src_path: Optional[Path] = None
         if m_id and m_id in asset_lookup:
-            src = Path(asset_lookup[m_id].get("path", ""))
-            if src.exists():
-                if not self._is_inside(src, workspace):
-                    dest = assets_dir / src.name
-                    if not dest.exists() or dest.stat().st_size != src.stat().st_size:
-                        shutil.copy2(src, dest)
-                else:
-                    dest = src
-                out["music"] = {
-                    "src": str(dest),
-                    "volume": float(music.get("volume", 0.15) or 0.15),
-                    "fade_in_seconds": float(music.get("fade_in_seconds", 0) or 0),
-                    "fade_out_seconds": float(music.get("fade_out_seconds", 0) or 0),
-                }
+            music_src_path = Path(asset_lookup[m_id].get("path", ""))
+        elif music.get("src"):
+            music_src_path = Path(music["src"])
+        if music_src_path and music_src_path.exists():
+            if not self._is_inside(music_src_path, workspace):
+                dest = assets_dir / music_src_path.name
+                if not dest.exists() or dest.stat().st_size != music_src_path.stat().st_size:
+                    shutil.copy2(music_src_path, dest)
+            else:
+                dest = music_src_path
+            fade_in = float(
+                music.get("fade_in_seconds") or music.get("fadeInSeconds") or 0
+            )
+            fade_out = float(
+                music.get("fade_out_seconds") or music.get("fadeOutSeconds") or 0
+            )
+            out["music"] = {
+                "src": str(dest),
+                "volume": float(music.get("volume", 0.15) or 0.15),
+                "fade_in_seconds": fade_in,
+                "fade_out_seconds": fade_out,
+            }
+        elif music or m_id:
+            log.warning(
+                "HyperFrames compose: music asset not found at %s — "
+                "proceeding without music track.",
+                music_src_path,
+            )
 
         return out
 
@@ -876,7 +918,7 @@ class HyperFramesCompose(BaseTool):
         playbook: dict[str, Any],
         edit_decisions: dict[str, Any],
     ) -> tuple[dict[str, str], str]:
-        """Bridge OpenMontage playbook → HyperFrames CSS vars + DESIGN.md.
+        """Bridge Video Production Buddy playbook → HyperFrames CSS vars + DESIGN.md.
 
         Delegates to `lib/hyperframes_style_bridge.py` so the logic is
         shareable and testable. Falls back to a safe built-in default when
@@ -903,8 +945,10 @@ class HyperFramesCompose(BaseTool):
         fg = _first(palette.get("text"), "#F5F5F5")
         accent = _first(palette.get("accent"), "#F59E0B")
         primary = _first(palette.get("primary"), "#2563EB")
-        heading = typo.get("heading", {}).get("font") or typo.get("heading", {}).get("family") or "Inter"
-        body = typo.get("body", {}).get("font") or typo.get("body", {}).get("family") or "Inter"
+        heading_spec = typo.get("headings") or typo.get("heading") or {}
+        body_spec = typo.get("body") or {}
+        heading = heading_spec.get("font") or heading_spec.get("family") or "Inter"
+        body = body_spec.get("font") or body_spec.get("family") or "Inter"
 
         css_vars = {
             "--color-bg": bg,
@@ -918,7 +962,7 @@ class HyperFramesCompose(BaseTool):
         }
         design_md = (
             "# DESIGN\n\n"
-            "Generated by OpenMontage HyperFrames style bridge (fallback).\n\n"
+            "Generated by Video Production Buddy HyperFrames style bridge (fallback).\n\n"
             f"- Background: `{bg}`\n"
             f"- Foreground: `{fg}`\n"
             f"- Accent: `{accent}`\n"
@@ -1012,7 +1056,7 @@ class HyperFramesCompose(BaseTool):
     .clip.text-card h1 {{ font-family: var(--font-heading); font-weight: 700; font-size: 96px; line-height: 1.1; margin: 0; color: var(--color-fg); }}
     .clip.text-card .subtitle {{ font-size: 36px; margin-top: 24px; color: var(--color-accent); }}
   </style>
-  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+  {gsap_shim_script()}
 </head>
 <body>
   <div data-composition-id="root" data-start="0" data-duration="{self._f(total_duration)}" data-width="{width}" data-height="{height}">
@@ -1056,7 +1100,9 @@ class HyperFramesCompose(BaseTool):
                 f'data-start="{self._f(in_s)}" data-duration="{self._f(duration)}" '
                 f'data-track-index="1">{inner}</div>'
             )
-            # Mild entrance — fade + lift.
+            # Mild entrance — fade + lift. +0.1 s offset lets the cut's
+            # container fade-in complete before text animates, avoiding a
+            # simultaneous opacity flash on the first frame.
             tween = (
                 f'tl.from("#{cut_id} h1", {{ y: 40, opacity: 0, duration: 0.6, '
                 f'ease: "power3.out" }}, {self._f(in_s + 0.1)});'
@@ -1071,9 +1117,10 @@ class HyperFramesCompose(BaseTool):
                 f'data-start="{self._f(in_s)}" data-duration="{self._f(duration)}" '
                 f'data-track-index="1" alt="">'
             )
+            # +0.1 s offset matches text-card entrance delay for visual consistency.
             tween = (
                 f'tl.from("#{cut_id}", {{ scale: 1.05, opacity: 0, duration: 0.5, '
-                f'ease: "power2.out" }}, {self._f(in_s)});'
+                f'ease: "power2.out" }}, {self._f(in_s + 0.1)});'
             )
             return html, tween
 

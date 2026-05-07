@@ -21,7 +21,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from .base import Candidate, SearchFilters
+from .base import Candidate, SearchFilters, absolute_url, url_path_has_extension
 
 _log = logging.getLogger(__name__)
 
@@ -72,7 +72,7 @@ class JAXASource:
                 _SEARCH_URL,
                 params=params,
                 timeout=30,
-                headers={"User-Agent": "OpenMontage/1.0"},
+                headers={"User-Agent": "Video Production Buddy/1.0"},
             )
             r.raise_for_status()
         except Exception as e:
@@ -92,8 +92,7 @@ class JAXASource:
             href = link_el.get("href", "")
             if not href:
                 continue
-            if not href.startswith("http"):
-                href = f"{_BASE_URL}/{href.lstrip('/')}"
+            href = absolute_url(_BASE_URL, href)
 
             title = ""
             title_el = item.select_one(".title, h3, h2, p, .caption")
@@ -106,8 +105,7 @@ class JAXASource:
             img_el = item.select_one("img")
             if img_el:
                 thumb = img_el.get("src", "") or img_el.get("data-src", "") or ""
-                if thumb and not thumb.startswith("http"):
-                    thumb = f"{_BASE_URL}/{thumb.lstrip('/')}"
+                thumb = absolute_url(_BASE_URL, thumb)
 
             candidate_kind = "video" if kind == "video" else "image"
             clip_id = href.rstrip("/").rsplit("/", 1)[-1].split("?")[0].split(".")[0]
@@ -142,13 +140,15 @@ class JAXASource:
 
         detail_url = candidate.extra.get("detail_url", candidate.download_url)
 
-        if any(detail_url.lower().endswith(ext) for ext in (".mp4", ".mov", ".webm", ".jpg", ".png")):
+        if url_path_has_extension(
+            detail_url, (".mp4", ".mov", ".webm", ".jpg", ".png")
+        ):
             return self._stream_download(detail_url, out_path)
 
         try:
             r = requests.get(
                 detail_url, timeout=30,
-                headers={"User-Agent": "OpenMontage/1.0"},
+                headers={"User-Agent": "Video Production Buddy/1.0"},
             )
             r.raise_for_status()
             soup = BeautifulSoup(r.text, "html.parser")
@@ -185,8 +185,7 @@ class JAXASource:
             if not download_url:
                 raise ValueError(f"Could not find download URL on JAXA page: {detail_url}")
 
-            if not download_url.startswith("http"):
-                download_url = f"{_BASE_URL}/{download_url.lstrip('/')}"
+            download_url = absolute_url(_BASE_URL, download_url)
 
             return self._stream_download(download_url, out_path)
 
@@ -198,7 +197,7 @@ class JAXASource:
 
         with requests.get(
             url, stream=True, timeout=180,
-            headers={"User-Agent": "OpenMontage/1.0"},
+            headers={"User-Agent": "Video Production Buddy/1.0"},
         ) as r:
             r.raise_for_status()
             with open(out_path, "wb") as f:

@@ -170,6 +170,14 @@ class ScreenRecorder(BaseTool):
         cpu_cores=2, ram_mb=512, vram_mb=0, disk_mb=500, network_required=False,
     )
 
+    idempotency_key_fields = [
+        "output_path",
+        "duration_seconds",
+        "fps",
+        "capture_audio",
+        "region",
+        "screen_index",
+    ]
     side_effects = ["creates_file"]
     fallback_tools = ["cap_recorder"]
 
@@ -203,6 +211,16 @@ class ScreenRecorder(BaseTool):
                 timeout=duration + 30,  # grace period
             )
             elapsed = time.time() - start_time
+
+            if proc.returncode != 0:
+                stderr = (proc.stderr or proc.stdout or "unknown FFmpeg error")[-500:]
+                return ToolResult(
+                    success=False,
+                    error=(
+                        f"FFmpeg failed with exit code {proc.returncode}. "
+                        f"FFmpeg stderr: {stderr}"
+                    ),
+                )
 
             if not output_path.exists():
                 return ToolResult(

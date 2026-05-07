@@ -151,13 +151,36 @@ def local_generation_enabled() -> bool:
     return os.environ.get("VIDEO_GEN_LOCAL_ENABLED", "").lower() in {"true", "1", "yes"}
 
 
-def local_generation_status() -> ToolStatus:
+def validate_video_operation(operation: str, allowed: set[str]) -> str | None:
+    if operation in allowed:
+        return None
+    return (
+        f"Unknown operation {operation!r}. "
+        f"Valid values: {', '.join(sorted(allowed))}."
+    )
+
+
+def _diffusers_pipeline_name(pipeline_class: str) -> str:
+    pipeline_map = {
+        "WanPipeline": "WanPipeline",
+        "HunyuanVideoPipeline": "HunyuanVideoPipeline",
+        "LTXPipeline": "LTXPipeline",
+        "CogVideoXPipeline": "CogVideoXPipeline",
+    }
+    return pipeline_map.get(pipeline_class, pipeline_class)
+
+
+def local_generation_status(pipeline_class: str | None = None) -> ToolStatus:
     if not local_generation_enabled():
         return ToolStatus.UNAVAILABLE
     try:
-        import diffusers  # noqa: F401
-        import torch  # noqa: F401
+        import diffusers
+        import torch
     except ImportError:
+        return ToolStatus.UNAVAILABLE
+    if not getattr(getattr(torch, "cuda", None), "is_available", lambda: False)():
+        return ToolStatus.UNAVAILABLE
+    if pipeline_class and not hasattr(diffusers, _diffusers_pipeline_name(pipeline_class)):
         return ToolStatus.UNAVAILABLE
     return ToolStatus.AVAILABLE
 
@@ -193,13 +216,7 @@ def load_diffusers_pipeline(pipeline_class: str, model_id: str, enable_offload: 
     import diffusers
     import torch
 
-    pipeline_map = {
-        "WanPipeline": "WanPipeline",
-        "HunyuanVideoPipeline": "HunyuanVideoPipeline",
-        "LTXPipeline": "LTXPipeline",
-        "CogVideoXPipeline": "CogVideoXPipeline",
-    }
-    pipeline_name = pipeline_map.get(pipeline_class, pipeline_class)
+    pipeline_name = _diffusers_pipeline_name(pipeline_class)
     pipeline_class_obj = getattr(diffusers, pipeline_name)
     dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
     pipeline = pipeline_class_obj.from_pretrained(model_id, torch_dtype=dtype)
@@ -227,11 +244,13 @@ def load_reference_image(inputs: dict[str, Any], width: int, height: int):
     ref_url = inputs.get("reference_image_url")
 
     if ref_path:
-        image = Image.open(ref_path).convert("RGB")
+        with Image.open(ref_path) as opened:
+            image = opened.convert("RGB")
     elif ref_url:
         response = requests.get(ref_url, timeout=60)
         response.raise_for_status()
-        image = Image.open(BytesIO(response.content)).convert("RGB")
+        with Image.open(BytesIO(response.content)) as opened:
+            image = opened.convert("RGB")
     else:
         return ToolResult(
             success=False,
@@ -248,9 +267,6 @@ def generate_local_video(
     default_variant: str,
     inputs: dict[str, Any],
 ) -> ToolResult:
-    import torch
-    from diffusers.utils import export_to_video
-
     variant = inputs.get("model_variant", default_variant)
     if variant not in variants:
         return ToolResult(
@@ -264,11 +280,25 @@ def generate_local_video(
     seed = inputs.get("seed")
     enable_offload = inputs.get("enable_model_offload", True)
 
+    if operation not in {"text_to_video", "image_to_video"}:
+        return ToolResult(
+            success=False,
+            error="Unknown operation: "
+            f"{operation}. Available: text_to_video, image_to_video",
+        )
+    if operation == "text_to_video" and not meta.get("t2v"):
+        return ToolResult(
+            success=False,
+            error=f"{meta['name']} does not support text_to_video.",
+        )
     if operation == "image_to_video" and not meta.get("i2v"):
         return ToolResult(
             success=False,
             error=f"{meta['name']} does not support image_to_video.",
         )
+
+    import torch
+    from diffusers.utils import export_to_video
 
     width = inputs.get("width", meta["default_width"])
     height = inputs.get("height", meta["default_height"])
@@ -371,10 +401,7 @@ def upload_image_fal(image_path: str) -> str:
     if not path.exists():
         raise FileNotFoundError(f"Image not found: {image_path}")
 
-    suffix = path.suffix.lower()
-    content_type = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "webp": "image/webp"}.get(
-        suffix.lstrip("."), "image/png"
-    )
+    content_type = _image_content_type(path)
 
     # Initiate upload
     init_resp = requests.post(
@@ -408,13 +435,14 @@ def upload_image_heygen(image_path: str, api_key: str) -> str:
     path = Path(image_path)
     if not path.exists():
         raise FileNotFoundError(f"Image not found: {image_path}")
+    content_type = _image_content_type(path)
 
     # Try HeyGen v2 presigned upload
     try:
         resp = requests.post(
             "https://api.heygen.com/v2/assets/upload",
             headers={"X-Api-Key": api_key, "Content-Type": "application/json"},
-            json={"content_type": "image/png", "file_name": path.name},
+            json={"content_type": content_type, "file_name": path.name},
             timeout=30,
         )
         if resp.status_code == 200:
@@ -424,7 +452,7 @@ def upload_image_heygen(image_path: str, api_key: str) -> str:
             if upload_url and file_url:
                 put_resp = requests.put(
                     upload_url,
-                    headers={"Content-Type": "image/png"},
+                    headers={"Content-Type": content_type},
                     data=path.read_bytes(),
                     timeout=60,
                 )
@@ -435,6 +463,16 @@ def upload_image_heygen(image_path: str, api_key: str) -> str:
 
     # Fallback to fal.ai storage upload
     return upload_image_fal(image_path)
+
+
+def _image_content_type(path: Path) -> str:
+    suffix = path.suffix.lower().lstrip(".")
+    return {
+        "png": "image/png",
+        "jpg": "image/jpeg",
+        "jpeg": "image/jpeg",
+        "webp": "image/webp",
+    }.get(suffix, "image/png")
 
 
 def generate_heygen_video(inputs: dict[str, Any]) -> ToolResult:
@@ -454,6 +492,9 @@ def generate_heygen_video(inputs: dict[str, Any]) -> ToolResult:
     prompt = inputs["prompt"]
     aspect_ratio = inputs.get("aspect_ratio", "16:9")
     operation = inputs.get("operation", "text_to_video")
+    operation_error = validate_video_operation(operation, {"text_to_video", "image_to_video"})
+    if operation_error:
+        return ToolResult(success=False, error=operation_error)
     workflow_input: dict[str, Any] = {
         "prompt": prompt,
         "provider": provider,
@@ -521,6 +562,9 @@ def generate_ltx_modal_video(inputs: dict[str, Any]) -> ToolResult:
 
     prompt = inputs["prompt"]
     operation = inputs.get("operation", "text_to_video")
+    operation_error = validate_video_operation(operation, {"text_to_video", "image_to_video"})
+    if operation_error:
+        return ToolResult(success=False, error=operation_error)
     aspect = inputs.get("aspect_ratio", "16:9")
     width = inputs.get("width")
     height = inputs.get("height")

@@ -71,7 +71,7 @@ def ensure_subtitle(path):
         return
     print(f"  [fixture] Generating subtitle: {path}")
     with open(path, "w", encoding="utf-8") as f:
-        f.write("1\n00:00:00,000 --> 00:00:03,000\nWelcome to OpenMontage\n\n")
+        f.write("1\n00:00:00,000 --> 00:00:03,000\nWelcome to Video Production Buddy\n\n")
         f.write("2\n00:00:03,000 --> 00:00:06,000\nBuilding amazing videos with AI\n\n")
         f.write("3\n00:00:06,000 --> 00:00:10,000\nLet's see what we can create\n\n")
 

@@ -19,7 +19,7 @@ import os
 from pathlib import Path
 from typing import Any, Optional
 
-from .base import Candidate, SearchFilters
+from .base import Candidate, SearchFilters, stable_source_id
 
 
 _VIDEO_SEARCH_URL = "https://api.pexels.com/videos/search"
@@ -153,13 +153,18 @@ class PexelsSource:
 
             user = v.get("user") or {}
             tag_text = _slug_tags_from_url(v.get("url", "") or "")
+            source_url = v.get("url", "") or ""
+            download_url = rend.get("link", "") or ""
+            source_id = str(v.get("id") or "").strip()
+            if not source_id:
+                source_id = stable_source_id(self.name, download_url or source_url)
 
             out.append(
                 Candidate(
                     source=self.name,
-                    source_id=str(v.get("id")),
-                    source_url=v.get("url", "") or "",
-                    download_url=rend.get("link", "") or "",
+                    source_id=source_id,
+                    source_url=source_url,
+                    download_url=download_url,
                     kind="video",
                     width=int(rend.get("width") or v.get("width") or 0),
                     height=int(rend.get("height") or v.get("height") or 0),
@@ -216,12 +221,16 @@ class PexelsSource:
                 continue
 
             alt = (p.get("alt") or "").strip()
+            source_url = p.get("url", "") or ""
+            source_id = str(p.get("id") or "").strip()
+            if not source_id:
+                source_id = stable_source_id(self.name, download_url or source_url)
 
             out.append(
                 Candidate(
                     source=self.name,
-                    source_id=str(p.get("id")),
-                    source_url=p.get("url", "") or "",
+                    source_id=source_id,
+                    source_url=source_url,
                     download_url=download_url,
                     kind="image",
                     width=width,

@@ -89,6 +89,10 @@ class FaceEnhance(BaseTool):
         "denoise",
         "preset_chain",
     ]
+    best_for = [
+        "Applying lightweight FFmpeg face polish to talking-head clips",
+        "Chaining deterministic enhancement presets without generative changes",
+    ]
 
     input_schema = {
         "type": "object",
@@ -116,7 +120,15 @@ class FaceEnhance(BaseTool):
     }
 
     resource_profile = ResourceProfile(cpu_cores=2, ram_mb=1024, vram_mb=0, disk_mb=2000)
-    idempotency_key_fields = ["input_path", "preset", "presets", "custom_vf"]
+    idempotency_key_fields = [
+        "input_path",
+        "output_path",
+        "preset",
+        "presets",
+        "custom_vf",
+        "codec",
+        "crf",
+    ]
     side_effects = ["writes enhanced video to output_path"]
     user_visible_verification = [
         "Compare enhanced output with original side-by-side",
@@ -131,11 +143,15 @@ class FaceEnhance(BaseTool):
         output_path = Path(
             inputs.get("output_path", str(input_path.with_stem(f"{input_path.stem}_enhanced")))
         )
+        output_path.parent.mkdir(parents=True, exist_ok=True)
         codec = inputs.get("codec", "libx264")
         crf = inputs.get("crf", 20)
 
         # Build filter chain
-        vf = self._build_filter(inputs)
+        try:
+            vf = self._build_filter(inputs)
+        except ValueError as e:
+            return ToolResult(success=False, error=str(e))
         if not vf:
             return ToolResult(success=False, error="No preset, presets, or custom_vf specified")
 
@@ -154,6 +170,12 @@ class FaceEnhance(BaseTool):
             self.run_command(cmd)
         except Exception as e:
             return ToolResult(success=False, error=f"FFmpeg failed: {e}")
+
+        if not output_path.exists():
+            return ToolResult(
+                success=False,
+                error=f"Expected output was not created: {output_path}",
+            )
 
         elapsed = time.time() - start
 
@@ -177,7 +199,7 @@ class FaceEnhance(BaseTool):
             chains = []
             for name in inputs["presets"]:
                 if name not in PRESETS:
-                    continue
+                    raise ValueError(f"Unknown preset: {name}")
                 chains.append(PRESETS[name]["vf"])
             return ",".join(chains)
 
@@ -185,7 +207,7 @@ class FaceEnhance(BaseTool):
         preset = PRESETS.get(preset_name)
         if preset:
             return preset["vf"]
-        return ""
+        raise ValueError(f"Unknown preset: {preset_name}")
 
     @staticmethod
     def list_presets() -> dict[str, str]:

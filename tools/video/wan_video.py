@@ -71,12 +71,24 @@ class WanVideo(BaseTool):
 
     resource_profile = ResourceProfile(cpu_cores=2, ram_mb=16000, vram_mb=8000, disk_mb=4000, network_required=False)
     retry_policy = RetryPolicy(max_retries=1)
-    idempotency_key_fields = ["prompt", "model_variant", "operation", "seed"]
+    idempotency_key_fields = [
+        "prompt",
+        "output_path",
+        "model_variant",
+        "operation",
+        "reference_image_url",
+        "reference_image_path",
+        "width",
+        "height",
+        "num_frames",
+        "num_inference_steps",
+        "seed",
+    ]
     side_effects = ["writes video file to output_path", "may download model weights"]
     user_visible_verification = ["Watch generated clip for motion coherence and artifacts"]
 
     def get_status(self) -> ToolStatus:
-        return local_generation_status()
+        return local_generation_status("WanPipeline")
 
     def estimate_cost(self, inputs: dict[str, Any]) -> float:
         return 0.0

@@ -23,7 +23,13 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from .base import Candidate, SearchFilters
+from .base import (
+    Candidate,
+    SearchFilters,
+    absolute_url,
+    stable_source_id,
+    url_path_has_extension,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -69,7 +75,7 @@ class NOAASource:
                 "https://www.noaa.gov/search",
                 params={"query": query, "type": "video"},
                 timeout=30,
-                headers={"User-Agent": "OpenMontage/1.0"},
+                headers={"User-Agent": "Video Production Buddy/1.0"},
             )
             r.raise_for_status()
             soup = BeautifulSoup(r.text, "html.parser")
@@ -83,8 +89,7 @@ class NOAASource:
                 href = link_el.get("href", "")
                 if not href:
                     continue
-                if not href.startswith("http"):
-                    href = f"https://www.noaa.gov{href}"
+                href = absolute_url("https://www.noaa.gov", href)
 
                 title = ""
                 title_el = card.select_one("h2, h3, .title, .field-content")
@@ -97,13 +102,12 @@ class NOAASource:
                 thumb = ""
                 if img_el:
                     thumb = img_el.get("src", "") or img_el.get("data-src", "") or ""
-                    if thumb and not thumb.startswith("http"):
-                        thumb = f"https://www.noaa.gov{thumb}"
+                    thumb = absolute_url("https://www.noaa.gov", thumb)
 
                 out.append(
                     Candidate(
                         source=self.name,
-                        source_id=f"noaa_{hash(href) & 0xFFFFFFFF:08x}",
+                        source_id=stable_source_id("noaa", href),
                         source_url=href,
                         download_url=href,  # Resolved in download()
                         kind="video",
@@ -134,14 +138,14 @@ class NOAASource:
         detail_url = candidate.extra.get("detail_url", candidate.download_url)
 
         # Direct media URL
-        if any(detail_url.lower().endswith(ext) for ext in (".mp4", ".mov", ".webm")):
+        if url_path_has_extension(detail_url, (".mp4", ".mov", ".webm")):
             return self._stream_download(detail_url, out_path)
 
         # Scrape detail page
         try:
             r = requests.get(
                 detail_url, timeout=30,
-                headers={"User-Agent": "OpenMontage/1.0"},
+                headers={"User-Agent": "Video Production Buddy/1.0"},
             )
             r.raise_for_status()
             soup = BeautifulSoup(r.text, "html.parser")
@@ -174,8 +178,7 @@ class NOAASource:
             if not download_url:
                 raise ValueError(f"Could not find video URL on NOAA page: {detail_url}")
 
-            if not download_url.startswith("http"):
-                download_url = f"https://www.noaa.gov{download_url}"
+            download_url = absolute_url("https://www.noaa.gov", download_url)
 
             return self._stream_download(download_url, out_path)
 
@@ -187,7 +190,7 @@ class NOAASource:
 
         with requests.get(
             url, stream=True, timeout=180,
-            headers={"User-Agent": "OpenMontage/1.0"},
+            headers={"User-Agent": "Video Production Buddy/1.0"},
         ) as r:
             r.raise_for_status()
             with open(out_path, "wb") as f:

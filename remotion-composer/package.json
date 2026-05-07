@@ -1,7 +1,7 @@
 {
-  "name": "openmontage-remotion-composer",
+  "name": "video-production-buddy-remotion-composer",
   "version": "1.0.0",
-  "description": "Remotion composition renderer for OpenMontage animated explainer videos",
+  "description": "Remotion composition renderer for Video Production Buddy animated explainer videos",
   "scripts": {
     "start": "npx remotion studio",
     "build": "npx remotion render src/index.tsx Explainer out/video.mp4",
@@ -12,6 +12,7 @@
     "@remotion/cli": "^4.0.441",
     "@remotion/google-fonts": "^4.0.441",
     "@remotion/media": "^4.0.441",
+    "@remotion/media-utils": "4.0.448",
     "@remotion/player": "^4.0.441",
     "@remotion/transitions": "^4.0.441",
     "react": "^18.2.0",

@@ -15,6 +15,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from lib.hyperframes_gsap_shim import gsap_shim_script
 from schemas.artifacts import validate_artifact
 from tools.base_tool import (
     BaseTool,
@@ -39,6 +40,12 @@ def _write_json(path: str | None, data: dict[str, Any]) -> list[str]:
 def _slug(value: str) -> str:
     chars = [c.lower() if c.isalnum() else "-" for c in value.strip()]
     return "-".join("".join(chars).split("-")).strip("-") or "character"
+
+
+DEFAULT_CHARACTER_ID = "main-character"
+REAL_GSAP_SCRIPT = (
+    '<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>'
+)
 
 
 def _character_color(index: int) -> tuple[str, str]:
@@ -111,7 +118,7 @@ class CharacterSpecGenerator(BaseTool):
     version = "0.1.0"
     tier = ToolTier.CORE
     capability = "character_animation"
-    provider = "openmontage"
+    provider = "video_production_buddy"
     stability = ToolStability.BETA
     execution_mode = ExecutionMode.SYNC
     determinism = Determinism.DETERMINISTIC
@@ -131,6 +138,7 @@ class CharacterSpecGenerator(BaseTool):
     }
     output_schema = {"type": "object", "properties": {"character_design": {"type": "object"}}}
     artifact_schema = {"artifact": "character_design"}
+    idempotency_key_fields = ["characters", "brief", "style", "output_path"]
     side_effects = ["optionally writes character_design JSON to output_path"]
     user_visible_verification = ["Review character count, action list, and emotional range"]
 
@@ -187,13 +195,17 @@ class SvgRigBuilder(BaseTool):
     version = "0.1.0"
     tier = ToolTier.CORE
     capability = "character_animation"
-    provider = "openmontage"
+    provider = "video_production_buddy"
     stability = ToolStability.BETA
     execution_mode = ExecutionMode.SYNC
     determinism = Determinism.DETERMINISTIC
     resource_profile = ResourceProfile(cpu_cores=1, ram_mb=128, vram_mb=0, disk_mb=10)
     agent_skills = ["character-rigging", "svg-character-animation", "gsap-core", "gsap-timeline"]
     capabilities = ["draft_svg_rig_plan", "define_parts_pivots_layers"]
+    best_for = [
+        "Turning character_design artifacts into layered SVG rig plans",
+        "Defining reusable parts, pivots, hierarchy, and z-order for local animation",
+    ]
     input_schema = {
         "type": "object",
         "required": ["character_design"],
@@ -203,6 +215,7 @@ class SvgRigBuilder(BaseTool):
         },
     }
     artifact_schema = {"artifact": "rig_plan"}
+    idempotency_key_fields = ["character_design", "output_path"]
     side_effects = ["optionally writes rig_plan JSON to output_path"]
     user_visible_verification = ["Check pivots and layers before asset generation"]
 
@@ -285,19 +298,24 @@ class PoseLibraryBuilder(BaseTool):
     version = "0.1.0"
     tier = ToolTier.CORE
     capability = "character_animation"
-    provider = "openmontage"
+    provider = "video_production_buddy"
     stability = ToolStability.BETA
     execution_mode = ExecutionMode.SYNC
     determinism = Determinism.DETERMINISTIC
     resource_profile = ResourceProfile(cpu_cores=1, ram_mb=128, vram_mb=0, disk_mb=10)
     agent_skills = ["pose-library-design", "character-rigging", "svg-character-animation"]
     capabilities = ["draft_pose_library", "draft_action_cycles"]
+    best_for = [
+        "Generating reusable poses and simple action cycles from a rig plan",
+        "Preparing expression and gesture libraries for local character scenes",
+    ]
     input_schema = {
         "type": "object",
         "required": ["rig_plan"],
         "properties": {"rig_plan": {"type": "object"}, "output_path": {"type": "string"}},
     }
     artifact_schema = {"artifact": "pose_library"}
+    idempotency_key_fields = ["rig_plan", "output_path"]
     side_effects = ["optionally writes pose_library JSON to output_path"]
 
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
@@ -372,13 +390,17 @@ class ActionTimelineCompiler(BaseTool):
     version = "0.1.0"
     tier = ToolTier.CORE
     capability = "character_animation"
-    provider = "openmontage"
+    provider = "video_production_buddy"
     stability = ToolStability.BETA
     execution_mode = ExecutionMode.SYNC
     determinism = Determinism.DETERMINISTIC
     resource_profile = ResourceProfile(cpu_cores=1, ram_mb=128, vram_mb=0, disk_mb=10)
     agent_skills = ["pose-library-design", "svg-character-animation", "gsap-timeline"]
     capabilities = ["compile_scene_actions", "draft_action_timeline"]
+    best_for = [
+        "Mapping scene plans into timed character actions and poses",
+        "Creating deterministic action_timeline artifacts for renderer input",
+    ]
     input_schema = {
         "type": "object",
         "required": ["scene_plan"],
@@ -390,11 +412,12 @@ class ActionTimelineCompiler(BaseTool):
         },
     }
     artifact_schema = {"artifact": "action_timeline"}
+    idempotency_key_fields = ["scene_plan", "character_ids", "fps", "output_path"]
     side_effects = ["optionally writes action_timeline JSON to output_path"]
 
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
         start = time.time()
-        character_ids = inputs.get("character_ids") or ["main_character"]
+        character_ids = inputs.get("character_ids") or [DEFAULT_CHARACTER_ID]
         scenes = []
         for scene in inputs["scene_plan"].get("scenes", []):
             start_s = scene.get("start_seconds", 0)
@@ -468,7 +491,7 @@ class CharacterRigRenderer(BaseTool):
     version = "0.1.0"
     tier = ToolTier.CORE
     capability = "character_animation"
-    provider = "openmontage"
+    provider = "video_production_buddy"
     stability = ToolStability.BETA
     execution_mode = ExecutionMode.SYNC
     determinism = Determinism.DETERMINISTIC
@@ -483,6 +506,10 @@ class CharacterRigRenderer(BaseTool):
         "hyperframes",
     ]
     capabilities = ["write_browser_preview", "prepare_character_render_package"]
+    best_for = [
+        "Rendering local character rigs into browser preview packages",
+        "Preparing HyperFrames-compatible assets and optional preview MP4s",
+    ]
     input_schema = {
         "type": "object",
         "required": ["action_timeline"],
@@ -514,6 +541,17 @@ class CharacterRigRenderer(BaseTool):
         "writes a HyperFrames workspace/package",
         "optionally writes preview MP4",
     ]
+    idempotency_key_fields = [
+        "action_timeline",
+        "rig_plan",
+        "pose_library",
+        "output_path",
+        "workspace_path",
+        "video_output_path",
+        "render_video",
+        "duration_seconds",
+        "fps",
+    ]
     user_visible_verification = ["Open preview and check character visibility and motion"]
 
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
@@ -530,7 +568,7 @@ class CharacterRigRenderer(BaseTool):
                 if action.get("character_id")
             }
             rig_characters = [{"character_id": cid} for cid in sorted(seen_ids)] or [
-                {"character_id": "main_character"}
+                {"character_id": DEFAULT_CHARACTER_ID}
             ]
         count = len(rig_characters)
         spacing = 620 / max(count, 1)
@@ -561,7 +599,7 @@ class CharacterRigRenderer(BaseTool):
   <meta charset=\"utf-8\" />
   <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
   <title>Character Animation Preview</title>
-  <script src=\"https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js\"></script>
+  {REAL_GSAP_SCRIPT}
   <style>
     body {{ margin: 0; overflow: hidden; background: #9bd7ff; font-family: system-ui, sans-serif; }}
     #stage {{ width: 100vw; height: 100vh; display: grid; place-items: center; background: linear-gradient(#9bd7ff 0 65%, #75c878 65%); }}
@@ -635,7 +673,7 @@ class CharacterRigRenderer(BaseTool):
         )
         (workspace_path / "DESIGN.md").write_text(
             "# DESIGN\n\n"
-            "Generated for OpenMontage character animation.\n\n"
+            "Generated for Video Production Buddy character animation.\n\n"
             "- Background: `#9bd7ff` sky and `#75c878` ground\n"
             "- Foreground: `#202632` ink outlines\n"
             "- Accent: saturated cartoon body colors\n"
@@ -654,7 +692,7 @@ class CharacterRigRenderer(BaseTool):
     <svg viewBox=\"0 0 640 640\" role=\"img\" aria-label=\"Character animation scene\">
 {''.join(character_svgs)}
     </svg>
-    <script src=\"https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js\"></script>
+    {gsap_shim_script()}
     <script>
       window.__timelines = window.__timelines || {{}};
       const tl = gsap.timeline({{ paused: true }});
@@ -790,13 +828,17 @@ class CharacterAnimationReviewer(BaseTool):
     version = "0.1.0"
     tier = ToolTier.ANALYZE
     capability = "character_animation"
-    provider = "openmontage"
+    provider = "video_production_buddy"
     stability = ToolStability.BETA
     execution_mode = ExecutionMode.SYNC
     determinism = Determinism.DETERMINISTIC
     resource_profile = ResourceProfile(cpu_cores=1, ram_mb=128, vram_mb=0, disk_mb=10)
     agent_skills = ["character-animation-qa"]
     capabilities = ["review_character_artifacts", "draft_character_qa_report"]
+    best_for = [
+        "Reviewing rig, pose, timeline, and preview artifacts for animation readiness",
+        "Drafting character QA reports before final render or handoff",
+    ]
     input_schema = {
         "type": "object",
         "properties": {
@@ -811,6 +853,16 @@ class CharacterAnimationReviewer(BaseTool):
         },
     }
     artifact_schema = {"artifact": "character_qa_report"}
+    idempotency_key_fields = [
+        "rig_plan",
+        "pose_library",
+        "action_timeline",
+        "output_path",
+        "preview_path",
+        "review_level",
+        "browser_preview_checked",
+        "frame_samples_checked",
+    ]
     side_effects = ["optionally writes character_qa_report JSON to output_path"]
 
     def execute(self, inputs: dict[str, Any]) -> ToolResult:

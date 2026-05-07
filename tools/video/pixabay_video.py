@@ -32,7 +32,7 @@ class PixabayVideo(BaseTool):
     determinism = Determinism.DETERMINISTIC
     runtime = ToolRuntime.API
 
-    dependencies = []
+    dependencies = ["env:PIXABAY_API_KEY"]
     install_instructions = (
         "Set PIXABAY_API_KEY to your Pixabay API key.\n"
         "  Get one free at https://pixabay.com/api/docs/"
@@ -102,7 +102,7 @@ class PixabayVideo(BaseTool):
         cpu_cores=1, ram_mb=256, vram_mb=0, disk_mb=200, network_required=True
     )
     retry_policy = RetryPolicy(max_retries=2, retryable_errors=["rate_limit", "timeout"])
-    idempotency_key_fields = ["query", "video_type", "category", "page"]
+    idempotency_key_fields = ["query", "output_path", "video_type", "category", "page"]
     side_effects = ["writes video file to output_path", "calls Pixabay API"]
     user_visible_verification = ["Watch downloaded clip to verify it matches the intended scene"]
 

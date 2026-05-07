@@ -28,6 +28,7 @@ from tools.base_tool import (
     ToolStatus,
     ToolTier,
 )
+from tools.video._shared import validate_video_operation
 
 
 class SeedanceReplicate(BaseTool):
@@ -41,7 +42,7 @@ class SeedanceReplicate(BaseTool):
     determinism = Determinism.STOCHASTIC
     runtime = ToolRuntime.API
 
-    dependencies = []
+    dependencies = ["env:REPLICATE_API_TOKEN"]
     install_instructions = (
         "Set REPLICATE_API_TOKEN to your Replicate API token.\n"
         "  Get one at https://replicate.com/account/api-tokens"
@@ -120,7 +121,18 @@ class SeedanceReplicate(BaseTool):
         cpu_cores=1, ram_mb=512, vram_mb=0, disk_mb=500, network_required=True
     )
     retry_policy = RetryPolicy(max_retries=2, retryable_errors=["rate_limit", "timeout"])
-    idempotency_key_fields = ["prompt", "model_variant", "operation", "duration", "seed"]
+    idempotency_key_fields = [
+        "prompt",
+        "output_path",
+        "model_variant",
+        "operation",
+        "duration",
+        "aspect_ratio",
+        "resolution",
+        "generate_audio",
+        "image_url",
+        "seed",
+    ]
     side_effects = ["writes video file to output_path", "calls Replicate API"]
     user_visible_verification = [
         "Watch generated clip for motion coherence, audio sync, and visual quality"
@@ -151,10 +163,17 @@ class SeedanceReplicate(BaseTool):
                 error="REPLICATE_API_TOKEN not set. " + self.install_instructions,
             )
 
+        variant = inputs.get("model_variant", "standard")
+        operation = inputs.get("operation", "text_to_video")
+        operation_error = validate_video_operation(operation, {"text_to_video", "image_to_video"})
+        if operation_error:
+            return ToolResult(success=False, error=operation_error)
+        if operation == "image_to_video" and not inputs.get("image_url"):
+            return ToolResult(success=False, error="image_to_video requires image_url")
+
         import requests
 
         start = time.time()
-        variant = inputs.get("model_variant", "standard")
         model_slug = (
             "bytedance/seedance-2.0-fast" if variant == "fast" else "bytedance/seedance-2.0"
         )
@@ -170,7 +189,7 @@ class SeedanceReplicate(BaseTool):
             payload_input["generate_audio"] = inputs["generate_audio"]
         if inputs.get("seed") is not None:
             payload_input["seed"] = inputs["seed"]
-        if inputs.get("operation") == "image_to_video" and inputs.get("image_url"):
+        if operation == "image_to_video":
             payload_input["image"] = inputs["image_url"]
 
         headers = {
@@ -236,6 +255,7 @@ class SeedanceReplicate(BaseTool):
                 "gateway": "replicate",
                 "model": model_slug,
                 "prompt": inputs["prompt"],
+                "operation": operation,
                 "variant": variant,
                 "aspect_ratio": inputs.get("aspect_ratio", "16:9"),
                 "resolution": inputs.get("resolution", "720p"),

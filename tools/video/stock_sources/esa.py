@@ -24,7 +24,13 @@ import re
 from pathlib import Path
 from typing import Any
 
-from .base import Candidate, SearchFilters
+from .base import (
+    Candidate,
+    SearchFilters,
+    absolute_url,
+    stable_source_id,
+    url_path_has_extension,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -69,7 +75,7 @@ class ESASource:
                 _SEARCH_URL,
                 params=params,
                 timeout=30,
-                headers={"User-Agent": "OpenMontage/1.0"},
+                headers={"User-Agent": "Video Production Buddy/1.0"},
             )
             r.raise_for_status()
         except Exception as e:
@@ -89,8 +95,7 @@ class ESASource:
             href = link_el.get("href", "")
             if not href:
                 continue
-            if not href.startswith("http"):
-                href = f"https://www.esa.int{href}"
+            href = absolute_url("https://www.esa.int", href)
 
             title = ""
             title_el = card.select_one("h3, h2, .title, .card-title")
@@ -101,8 +106,7 @@ class ESASource:
             thumb = ""
             if img_el:
                 thumb = img_el.get("src", "") or img_el.get("data-src", "") or ""
-                if thumb and not thumb.startswith("http"):
-                    thumb = f"https://www.esa.int{thumb}"
+                thumb = absolute_url("https://www.esa.int", thumb)
 
             # Determine kind from URL or content
             is_video = "/Videos/" in href or "/Video/" in href
@@ -116,7 +120,7 @@ class ESASource:
             out.append(
                 Candidate(
                     source=self.name,
-                    source_id=f"esa_{hash(href) & 0xFFFFFFFF:08x}",
+                    source_id=stable_source_id("esa", href),
                     source_url=href,
                     download_url=href,  # Will be resolved in download()
                     kind=candidate_kind,
@@ -144,7 +148,7 @@ class ESASource:
         detail_url = candidate.extra.get("detail_url", candidate.download_url)
 
         # If it's already a direct media URL, download directly
-        if any(detail_url.lower().endswith(ext) for ext in (".mp4", ".mov", ".jpg", ".png")):
+        if url_path_has_extension(detail_url, (".mp4", ".mov", ".jpg", ".png")):
             return self._stream_download(detail_url, out_path)
 
         # Otherwise, scrape the detail page for the download link
@@ -152,7 +156,7 @@ class ESASource:
             r = requests.get(
                 detail_url,
                 timeout=30,
-                headers={"User-Agent": "OpenMontage/1.0"},
+                headers={"User-Agent": "Video Production Buddy/1.0"},
             )
             r.raise_for_status()
             soup = BeautifulSoup(r.text, "html.parser")
@@ -180,8 +184,7 @@ class ESASource:
             if not download_url:
                 raise ValueError(f"Could not find download URL on ESA detail page: {detail_url}")
 
-            if not download_url.startswith("http"):
-                download_url = f"https://www.esa.int{download_url}"
+            download_url = absolute_url("https://www.esa.int", download_url)
 
             return self._stream_download(download_url, out_path)
 
@@ -193,7 +196,7 @@ class ESASource:
 
         with requests.get(
             url, stream=True, timeout=180,
-            headers={"User-Agent": "OpenMontage/1.0"},
+            headers={"User-Agent": "Video Production Buddy/1.0"},
         ) as r:
             r.raise_for_status()
             with open(out_path, "wb") as f:

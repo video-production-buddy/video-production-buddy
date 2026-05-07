@@ -23,12 +23,22 @@ import importlib
 import inspect
 import pkgutil
 
-from .base import Candidate, SearchFilters, StockSource
+from .base import (
+    Candidate,
+    SearchFilters,
+    StockSource,
+    absolute_url,
+    safe_clip_file_name,
+    url_path_has_extension,
+)
 
 __all__ = [
     "Candidate",
     "SearchFilters",
     "StockSource",
+    "absolute_url",
+    "safe_clip_file_name",
+    "url_path_has_extension",
     "all_sources",
     "available_sources",
     "get_source",

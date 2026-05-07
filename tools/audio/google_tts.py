@@ -37,11 +37,10 @@ class GoogleTTS(BaseTool):
     determinism = Determinism.DETERMINISTIC
     runtime = ToolRuntime.API
 
-    dependencies = []
+    dependencies = ["env_any:GOOGLE_API_KEY,GEMINI_API_KEY"]
     install_instructions = (
         "Set GOOGLE_API_KEY to your Google Cloud API key with Text-to-Speech enabled.\n"
-        "  Enable the API at https://console.cloud.google.com/apis/library/texttospeech.googleapis.com\n"
-        "  Or use GOOGLE_APPLICATION_CREDENTIALS for service account auth."
+        "  Enable the API at https://console.cloud.google.com/apis/library/texttospeech.googleapis.com"
     )
     fallback = "openai_tts"
     fallback_tools = ["openai_tts", "elevenlabs_tts", "piper_tts"]
@@ -113,7 +112,15 @@ class GoogleTTS(BaseTool):
         cpu_cores=1, ram_mb=256, vram_mb=0, disk_mb=50, network_required=True
     )
     retry_policy = RetryPolicy(max_retries=2, retryable_errors=["rate_limit", "timeout"])
-    idempotency_key_fields = ["text", "voice", "language_code", "speaking_rate", "pitch"]
+    idempotency_key_fields = [
+        "text",
+        "output_path",
+        "voice",
+        "language_code",
+        "speaking_rate",
+        "pitch",
+        "audio_encoding",
+    ]
     side_effects = ["writes audio file to output_path", "calls Google Cloud TTS API"]
     user_visible_verification = ["Listen to generated audio for natural speech quality"]
 
@@ -130,7 +137,7 @@ class GoogleTTS(BaseTool):
         return os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
 
     def get_status(self) -> ToolStatus:
-        if self._get_api_key() or os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
+        if self._get_api_key():
             return ToolStatus.AVAILABLE
         return ToolStatus.UNAVAILABLE
 

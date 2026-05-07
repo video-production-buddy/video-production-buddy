@@ -56,6 +56,10 @@ class GreenScreenProcessor(BaseTool):
         "background_removal",
         "rembg_segmentation",
     ]
+    best_for = [
+        "Keying green-screen presenter footage into alpha-ready video",
+        "Preparing speaker clips for composite layouts",
+    ]
 
     input_schema = {
         "type": "object",
@@ -99,7 +103,12 @@ class GreenScreenProcessor(BaseTool):
     retry_policy = RetryPolicy(max_retries=1, retryable_errors=["FFmpeg error"])
     resume_support = ResumeSupport.FROM_START
     idempotency_key_fields = [
-        "input_path", "method", "fps", "bg_color", "max_frames",
+        "input_path",
+        "output_path",
+        "method",
+        "fps",
+        "bg_color",
+        "max_frames",
     ]
     side_effects = ["writes keyed video to output_path"]
     user_visible_verification = [
@@ -120,6 +129,8 @@ class GreenScreenProcessor(BaseTool):
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         method = inputs.get("method", "auto")
+        if method not in {"auto", "chromakey", "rembg"}:
+            return ToolResult(success=False, error=f"Unknown method: {method}")
         fps = inputs.get("fps", 15)
         bg_color = inputs.get("bg_color", "#0E172A")
         max_frames = inputs.get("max_frames", 0)

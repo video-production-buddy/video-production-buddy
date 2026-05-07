@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -91,18 +90,19 @@ class PiperTTS(BaseTool):
         cpu_cores=2, ram_mb=512, vram_mb=0, disk_mb=200, network_required=False
     )
     retry_policy = RetryPolicy(max_retries=1, retryable_errors=[])
-    idempotency_key_fields = ["text", "model", "speaker_id", "length_scale"]
+    idempotency_key_fields = [
+        "text",
+        "output_path",
+        "model",
+        "speaker_id",
+        "length_scale",
+        "sentence_silence",
+    ]
     side_effects = ["writes audio file to output_path"]
     user_visible_verification = ["Listen to generated audio for intelligibility"]
 
     def get_status(self) -> ToolStatus:
-        if shutil.which("piper"):
-            return ToolStatus.AVAILABLE
-        try:
-            import piper  # noqa: F401
-            return ToolStatus.AVAILABLE
-        except ImportError:
-            return ToolStatus.UNAVAILABLE
+        return super().get_status()
 
     def estimate_cost(self, inputs: dict[str, Any]) -> float:
         return 0.0
@@ -120,14 +120,29 @@ class PiperTTS(BaseTool):
         result.duration_seconds = round(time.time() - start, 2)
         return result
 
+    def _resolve_model_path(self, model: str) -> str:
+        """Resolve a model shortname to its full .onnx path if available locally."""
+        if model.endswith(".onnx") or Path(model).exists():
+            return model
+        candidates = [
+            Path.home() / ".piper" / "models" / f"{model}.onnx",
+            Path.home() / ".local" / "share" / "piper" / f"{model}.onnx",
+        ]
+        for candidate in candidates:
+            if candidate.exists():
+                return str(candidate)
+        return model  # fall back and let piper error naturally
+
     def _generate(self, inputs: dict[str, Any]) -> ToolResult:
         output_path = Path(inputs.get("output_path", "tts_output.wav"))
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
+        model = self._resolve_model_path(inputs.get("model", "en_US-lessac-medium"))
+
         proc = subprocess.run(
             [
                 "piper",
-                "--model", inputs.get("model", "en_US-lessac-medium"),
+                "--model", model,
                 "--speaker", str(inputs.get("speaker_id", 0)),
                 "--length-scale", str(inputs.get("length_scale", 1.0)),
                 "--sentence-silence", str(inputs.get("sentence_silence", 0.3)),

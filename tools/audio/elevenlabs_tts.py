@@ -32,7 +32,7 @@ class ElevenLabsTTS(BaseTool):
     determinism = Determinism.STOCHASTIC
     runtime = ToolRuntime.API
 
-    dependencies = []
+    dependencies = ["env:ELEVENLABS_API_KEY"]
     install_instructions = (
         "Set the ELEVENLABS_API_KEY environment variable:\n"
         "  export ELEVENLABS_API_KEY=your_key_here\n"
@@ -109,16 +109,32 @@ class ElevenLabsTTS(BaseTool):
         cpu_cores=1, ram_mb=256, vram_mb=0, disk_mb=50, network_required=True
     )
     retry_policy = RetryPolicy(max_retries=2, retryable_errors=["rate_limit", "timeout"])
-    idempotency_key_fields = ["text", "voice_id", "model_id"]
+    idempotency_key_fields = [
+        "text",
+        "output_path",
+        "voice_id",
+        "model_id",
+        "stability",
+        "similarity_boost",
+        "style",
+        "output_format",
+    ]
     side_effects = ["writes audio file to output_path", "calls ElevenLabs API"]
     user_visible_verification = ["Listen to generated audio for natural speech quality"]
 
     DEFAULT_VOICE_ID = "21m00Tcm4TlvDq8ikWAM"
 
+    # Class-level cache: key prefixes that returned 401 this process lifetime.
+    # Prevents repeated "available" status reports after a known-bad key.
+    _AUTH_FAILED_KEY_PREFIXES: set[str] = set()
+
     def get_status(self) -> ToolStatus:
-        if os.environ.get("ELEVENLABS_API_KEY"):
-            return ToolStatus.AVAILABLE
-        return ToolStatus.UNAVAILABLE
+        key = os.environ.get("ELEVENLABS_API_KEY", "")
+        if not key:
+            return ToolStatus.UNAVAILABLE
+        if key[:8] in self.__class__._AUTH_FAILED_KEY_PREFIXES:
+            return ToolStatus.UNAVAILABLE
+        return ToolStatus.AVAILABLE
 
     def estimate_cost(self, inputs: dict[str, Any]) -> float:
         return round(len(inputs.get("text", "")) * 0.0003, 4)
@@ -165,6 +181,8 @@ class ElevenLabsTTS(BaseTool):
             params={"output_format": output_format},
             timeout=120,
         )
+        if response.status_code == 401:
+            self.__class__._AUTH_FAILED_KEY_PREFIXES.add(api_key[:8])
         response.raise_for_status()
 
         ext = "mp3" if "mp3" in output_format else "wav"

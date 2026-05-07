@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "video-production-buddy/music_library/track_timing",
+  "title": "Music Library Track Timing",
+  "description": "Sidecar timing manifest for a track in `music_library/`. When production_proposal.music_strategy == 'library_locked', the asset-director picks a track from music_library/ whose sidecar declares structural moments (drop_seconds, downbeats) compatible with the bible's tension_peak_at_seconds and intensity_curve. This is the only way to achieve bar-precise music sync — text-to-music models do not honor timestamp constraints in prompts.",
+  "type": "object",
+  "required": ["version", "track_file", "duration_seconds", "drop_seconds"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Schema version pin."
+    },
+    "track_file": {
+      "type": "string",
+      "minLength": 1,
+      "allOf": [
+        { "not": { "pattern": "^/" } },
+        { "not": { "pattern": "^[A-Za-z]:" } },
+        { "not": { "pattern": "^\\\\\\\\" } },
+        { "not": { "pattern": "(^|[\\\\/])\\.\\.([\\\\/]|$)" } }
+      ],
+      "description": "Relative path from music_library/ to the audio file (e.g. 'ambient_dawn.mp3', 'cinematic_build.wav')."
+    },
+    "duration_seconds": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Full track duration. Asset-director compares this against scene_plan.total_duration_seconds to decide whether to trim, loop, or skip the track."
+    },
+    "bpm": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Tempo in beats per minute. Optional. Used by lib.beat_detector when search_align strategy is active."
+    },
+    "drop_seconds": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "number", "minimum": 0 },
+      "description": "Timestamps of bass drops or climactic moments within the track, in seconds. Asset-director picks the closest entry to production_bible.narrative.tension_peak_at_seconds and trims/pads the track so the chosen drop lands at the target time."
+    },
+    "downbeats": {
+      "type": "array",
+      "items": { "type": "number", "minimum": 0 },
+      "description": "Bar-1 downbeat timestamps in seconds. Optional. Used to align cuts and shutter clicks to the music's metric grid (match_cut_chain in scene_plan)."
+    },
+    "arc_shape": {
+      "type": "string",
+      "enum": ["rising", "falling", "wave", "punchy", "slow_burn", "flat"],
+      "description": "Coarse arc descriptor. Asset-director matches this against bible.narrative.pacing_model. 'rising' / 'slow_burn' fit escalating intensity_curves; 'wave' fits wave; 'punchy' fits punchy."
+    },
+    "genre_tags": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "description": "Free-form genre / mood tags ('ambient', 'cinematic', 'piano', 'orchestral', 'electronic', 'lofi'). Asset-director uses these for soft matching against bible.audio.music_direction.genre_direction."
+    },
+    "license": {
+      "type": "string",
+      "description": "License declaration ('CC0', 'Pixabay License', 'commercial-use', 'personal-only', 'royalty-free'). Asset-director refuses to use tracks declared 'personal-only' for ad-video pipelines."
+    },
+    "notes": {
+      "type": "string",
+      "description": "Free-form note for the human curator (origin, why this track was added, sync hints)."
+    }
+  }
+}

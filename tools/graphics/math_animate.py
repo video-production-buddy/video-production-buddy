@@ -34,7 +34,7 @@ QUALITY_PRESETS = {
     "medium": {"flag": "-qm", "resolution": "1280x720", "fps": 30},
     "high": {"flag": "-qh", "resolution": "1920x1080", "fps": 60},
     "4k": {"flag": "-qk", "resolution": "3840x2160", "fps": 60},
-    "preview": {"flag": "-ql --format gif", "resolution": "854x480", "fps": 15},
+    "preview": {"flag": "-ql", "resolution": "854x480", "fps": 15},
 }
 
 
@@ -65,6 +65,10 @@ class MathAnimate(BaseTool):
         "render_scene",
         "render_from_code",
         "render_from_template",
+    ]
+    best_for = [
+        "Rendering Manim educational animations from approved scene code",
+        "Producing math or diagram motion clips for explainer pipelines",
     ]
 
     input_schema = {
@@ -116,7 +120,16 @@ class MathAnimate(BaseTool):
         cpu_cores=2, ram_mb=1024, vram_mb=0, disk_mb=500, network_required=False
     )
     retry_policy = RetryPolicy(max_retries=1, retryable_errors=["timeout"])
-    idempotency_key_fields = ["scene_code", "scene_name", "quality"]
+    idempotency_key_fields = [
+        "scene_code",
+        "scene_name",
+        "quality",
+        "format",
+        "transparent",
+        "background_color",
+        "extra_args",
+        "output_path",
+    ]
     side_effects = ["writes video/image file to output_path", "creates temp files"]
     user_visible_verification = [
         "Watch the animation for correctness and visual quality",
@@ -164,7 +177,9 @@ class MathAnimate(BaseTool):
         scene_code = inputs["scene_code"]
         scene_name = inputs.get("scene_name")
         quality = inputs.get("quality", "medium")
-        output_format = inputs.get("format", "mp4")
+        output_format = inputs.get("format")
+        if not output_format:
+            output_format = "gif" if quality == "preview" else "mp4"
         output_path = inputs.get("output_path")
         transparent = inputs.get("transparent", False)
         bg_color = inputs.get("background_color")

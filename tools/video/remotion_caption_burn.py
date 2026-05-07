@@ -61,7 +61,8 @@ class RemotionCaptionBurn(BaseTool):
 
     dependencies = ["cmd:ffmpeg", "cmd:ffprobe"]
     install_instructions = (
-        "Remotion (optional, preferred): npm install in remotion-composer/\n"
+        "Remotion (optional, preferred): cd remotion-composer && "
+        "npx --yes pnpm install --frozen-lockfile\n"
         "FFmpeg (required for fallback): https://ffmpeg.org/download.html"
     )
     agent_skills = ["remotion-best-practices", "ffmpeg"]
@@ -69,6 +70,10 @@ class RemotionCaptionBurn(BaseTool):
     capabilities = [
         "burn_remotion_captions",
         "burn_ffmpeg_captions_fallback",
+    ]
+    best_for = [
+        "Burning styled word-level captions into talking-head videos",
+        "Using Remotion captions when available with FFmpeg fallback",
     ]
 
     input_schema = {
@@ -142,7 +147,18 @@ class RemotionCaptionBurn(BaseTool):
     }
 
     resource_profile = ResourceProfile(cpu_cores=4, ram_mb=2048, vram_mb=0, disk_mb=500)
-    idempotency_key_fields = ["input_path", "segments", "srt_path"]
+    idempotency_key_fields = [
+        "input_path",
+        "output_path",
+        "segments",
+        "srt_path",
+        "words_per_page",
+        "font_size",
+        "highlight_color",
+        "corrections",
+        "overlays",
+        "force_ffmpeg",
+    ]
     side_effects = ["writes captioned video to output_path"]
     user_visible_verification = [
         "Play the output video and verify captions appear at the bottom of the frame",
@@ -312,7 +328,7 @@ class RemotionCaptionBurn(BaseTool):
 
         # Build props JSON
         props = {
-            "videoSrc": f"public/talking-head/{video_filename}",
+            "videoSrc": f"talking-head/{video_filename}",
             "captions": captions,
             "overlays": overlays or [],
             "wordsPerPage": words_per_page,
@@ -389,8 +405,13 @@ class RemotionCaptionBurn(BaseTool):
 
         tmp_srt.write_text("\n".join(srt_lines), encoding="utf-8")
 
-        # Escape path for FFmpeg subtitles filter (Windows colon issue)
-        srt_escaped = str(tmp_srt).replace("\\", "/").replace(":", "\\:")
+        # Escape path for FFmpeg subtitles filter.
+        srt_escaped = (
+            str(tmp_srt)
+            .replace("\\", "/")
+            .replace(":", "\\:")
+            .replace("'", "\\'")
+        )
 
         cmd = [
             "ffmpeg", "-y",
@@ -406,13 +427,15 @@ class RemotionCaptionBurn(BaseTool):
             "-c:a", "copy",
             output_path,
         ]
-        self.run_command(cmd)
-
-        # Clean up temp SRT
         try:
-            tmp_srt.unlink()
-        except OSError:
-            pass
+            self.run_command(cmd)
+        except Exception as e:
+            return ToolResult(success=False, error=f"FFmpeg subtitle burn failed: {e}")
+        finally:
+            try:
+                tmp_srt.unlink()
+            except OSError:
+                pass
 
         if not Path(output_path).exists():
             return ToolResult(success=False, error="FFmpeg subtitle burn produced no output")

@@ -21,7 +21,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from .base import Candidate, SearchFilters
+from .base import Candidate, SearchFilters, stable_source_id
 
 
 _SEARCH_URL = "https://api.coverr.co/videos"
@@ -103,12 +103,18 @@ class CoverrSource:
                 tags = " ".join(tags)
             title = v.get("title", "") or ""
             source_tags = f"{title} {tags}".strip()
+            source_id = str(v.get("id") or v.get("slug") or "").strip()
+            if not source_id:
+                source_id = stable_source_id(self.name, download_url)
+            source_url = v.get("url", "") or (
+                f"https://coverr.co/videos/{v.get('slug', '')}" if v.get("slug") else download_url
+            )
 
             out.append(
                 Candidate(
                     source=self.name,
-                    source_id=str(v.get("id") or v.get("slug", "")),
-                    source_url=v.get("url", "") or f"https://coverr.co/videos/{v.get('slug', '')}",
+                    source_id=source_id,
+                    source_url=source_url,
                     download_url=download_url,
                     kind="video",
                     width=width,

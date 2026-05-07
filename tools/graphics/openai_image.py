@@ -33,7 +33,7 @@ class OpenAIImage(BaseTool):
     determinism = Determinism.STOCHASTIC
     runtime = ToolRuntime.API
 
-    dependencies = []  # checked dynamically
+    dependencies = ["env:OPENAI_API_KEY"]
     install_instructions = (
         "Set OPENAI_API_KEY to your OpenAI API key.\n"
         "  pip install openai"
@@ -90,7 +90,15 @@ class OpenAIImage(BaseTool):
         cpu_cores=1, ram_mb=512, vram_mb=0, disk_mb=100, network_required=True
     )
     retry_policy = RetryPolicy(max_retries=2, retryable_errors=["rate_limit", "timeout"])
-    idempotency_key_fields = ["prompt", "size", "quality", "model"]
+    idempotency_key_fields = [
+        "prompt",
+        "output_path",
+        "size",
+        "quality",
+        "model",
+        "output_format",
+        "n",
+    ]
     side_effects = ["writes image file to output_path", "calls OpenAI API"]
     user_visible_verification = ["Inspect generated image for relevance and quality"]
 

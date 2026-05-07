@@ -29,6 +29,9 @@ from tools.base_tool import (
 )
 
 
+ANALYSIS_DEPTHS = ["transcript_only", "standard", "deep"]
+
+
 class VideoAnalyzer(BaseTool):
     name = "video_analyzer"
     version = "0.1.0"
@@ -40,7 +43,7 @@ class VideoAnalyzer(BaseTool):
     determinism = Determinism.DETERMINISTIC
     runtime = ToolRuntime.LOCAL
 
-    dependencies = ["cmd:ffmpeg"]
+    dependencies = ["cmd:ffmpeg", "cmd:ffprobe"]
     install_instructions = (
         "Core: FFmpeg is required (https://ffmpeg.org/download.html)\n"
         "For URL downloads: pip install yt-dlp\n"
@@ -80,7 +83,7 @@ class VideoAnalyzer(BaseTool):
             },
             "analysis_depth": {
                 "type": "string",
-                "enum": ["transcript_only", "standard", "deep"],
+                "enum": ANALYSIS_DEPTHS,
                 "default": "standard",
                 "description": (
                     "transcript_only: transcript + metadata only. "
@@ -111,7 +114,7 @@ class VideoAnalyzer(BaseTool):
         cpu_cores=2, ram_mb=2048, vram_mb=0, disk_mb=3000,
         network_required=False,  # Only needed for URL sources
     )
-    idempotency_key_fields = ["source", "analysis_depth"]
+    idempotency_key_fields = ["source", "output_dir", "analysis_depth", "max_keyframes"]
     side_effects = [
         "downloads video to output_dir (if URL)",
         "writes keyframe images to output_dir/keyframes/",
@@ -141,6 +144,12 @@ class VideoAnalyzer(BaseTool):
             return "instagram"
         if "tiktok.com" in s:
             return "tiktok"
+        if "bilibili.com" in s or "b23.tv" in s:
+            return "bilibili"
+        if "douyin.com" in s or "iesdouyin.com" in s:
+            return "douyin"
+        if "kuaishou.com" in s or "kwai.com" in s:
+            return "kuaishou"
         return "other_url"
 
     def _is_youtube(self, platform: str) -> bool:
@@ -150,6 +159,8 @@ class VideoAnalyzer(BaseTool):
         source = inputs["source"]
         depth = inputs.get("analysis_depth", "standard")
         max_keyframes = inputs.get("max_keyframes", 20)
+        if depth not in ANALYSIS_DEPTHS:
+            return ToolResult(success=False, error=f"Unknown analysis_depth: {depth}")
 
         # Setup output directory
         if inputs.get("output_dir"):
@@ -323,14 +334,16 @@ class VideoAnalyzer(BaseTool):
             except Exception as e:
                 steps_failed.append(f"download_for_whisper: {e}")
 
-        # Fallback: Whisper transcription on audio
-        if transcript_data is None and audio_path:
+        # Fallback: Whisper transcription on audio, or directly on the video
+        # container when no separate audio file was produced.
+        transcription_source = audio_path or video_path
+        if transcript_data is None and transcription_source:
             try:
                 from tools.analysis.transcriber import Transcriber
                 transcriber = Transcriber()
                 # Let Whisper auto-detect language instead of assuming English
                 tr_inputs = {
-                    "input_path": audio_path,
+                    "input_path": transcription_source,
                     "model_size": "base",
                     "output_dir": str(output_dir),
                 }

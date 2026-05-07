@@ -26,6 +26,10 @@ from tools.base_tool import (
 )
 
 
+FORMATS = ["video", "audio_only", "subtitles_only", "metadata_only"]
+MAX_RESOLUTIONS = ["360p", "480p", "720p", "1080p"]
+
+
 class VideoDownloader(BaseTool):
     name = "video_downloader"
     version = "0.1.0"
@@ -73,13 +77,13 @@ class VideoDownloader(BaseTool):
             "output_dir": {"type": "string", "description": "Directory for downloaded files"},
             "format": {
                 "type": "string",
-                "enum": ["video", "audio_only", "subtitles_only", "metadata_only"],
+                "enum": FORMATS,
                 "default": "video",
                 "description": "What to download",
             },
             "max_resolution": {
                 "type": "string",
-                "enum": ["360p", "480p", "720p", "1080p"],
+                "enum": MAX_RESOLUTIONS,
                 "default": "720p",
                 "description": "Maximum video resolution (for analysis, 720p is sufficient)",
             },
@@ -117,7 +121,13 @@ class VideoDownloader(BaseTool):
         cpu_cores=1, ram_mb=512, vram_mb=0, disk_mb=2000,
         network_required=True,
     )
-    idempotency_key_fields = ["url", "format", "max_resolution"]
+    idempotency_key_fields = [
+        "url",
+        "output_dir",
+        "format",
+        "max_resolution",
+        "max_duration_seconds",
+    ]
     side_effects = ["downloads media files to output_dir"]
     resume_support_value = "from_start"
     user_visible_verification = [
@@ -144,6 +154,12 @@ class VideoDownloader(BaseTool):
             return "instagram"
         if "tiktok.com" in url_lower:
             return "tiktok"
+        if "bilibili.com" in url_lower or "b23.tv" in url_lower:
+            return "bilibili"
+        if "douyin.com" in url_lower or "iesdouyin.com" in url_lower:
+            return "douyin"
+        if "kuaishou.com" in url_lower or "kwai.com" in url_lower:
+            return "kuaishou"
         if "vimeo.com" in url_lower:
             return "vimeo"
         if "twitter.com" in url_lower or "x.com" in url_lower:
@@ -184,6 +200,10 @@ class VideoDownloader(BaseTool):
         dl_format = inputs.get("format", "video")
         max_res = inputs.get("max_resolution", "720p")
         max_duration = inputs.get("max_duration_seconds", 600)
+        if dl_format not in FORMATS:
+            return ToolResult(success=False, error=f"Unknown format: {dl_format}")
+        if max_res not in MAX_RESOLUTIONS:
+            return ToolResult(success=False, error=f"Unknown max_resolution: {max_res}")
 
         output_dir.mkdir(parents=True, exist_ok=True)
         platform = self._detect_platform(url)

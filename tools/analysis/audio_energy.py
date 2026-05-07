@@ -46,7 +46,7 @@ class AudioEnergy(BaseTool):
     determinism = Determinism.DETERMINISTIC
     runtime = ToolRuntime.LOCAL
 
-    dependencies = ["binary:ffmpeg"]
+    dependencies = ["binary:ffmpeg", "binary:ffprobe"]
     install_instructions = (
         "Install ffmpeg:\n"
         "  Windows: winget install ffmpeg\n"
@@ -93,11 +93,15 @@ class AudioEnergy(BaseTool):
         cpu_cores=1, ram_mb=128, vram_mb=0, disk_mb=0, network_required=False
     )
     retry_policy = RetryPolicy(max_retries=0, retryable_errors=[])
-    idempotency_key_fields = ["input_path"]
+    idempotency_key_fields = [
+        "input_path",
+        "video_duration_seconds",
+        "energy_threshold_lufs",
+    ]
     side_effects = []
 
     def get_status(self) -> ToolStatus:
-        if shutil.which("ffmpeg"):
+        if shutil.which("ffmpeg") and shutil.which("ffprobe"):
             return ToolStatus.AVAILABLE
         return ToolStatus.UNAVAILABLE
 

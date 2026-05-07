@@ -23,6 +23,9 @@ from tools.base_tool import (
 )
 
 
+METHODS = ["content", "threshold", "adaptive"]
+
+
 class SceneDetect(BaseTool):
     name = "scene_detect"
     version = "0.1.0"
@@ -33,7 +36,7 @@ class SceneDetect(BaseTool):
     execution_mode = ExecutionMode.SYNC
     determinism = Determinism.DETERMINISTIC
 
-    dependencies = ["cmd:ffmpeg"]
+    dependencies = ["cmd:ffmpeg", "cmd:ffprobe"]
     install_instructions = (
         "FFmpeg is required. For better detection install PySceneDetect:\n"
         "pip install scenedetect[opencv]"
@@ -45,6 +48,10 @@ class SceneDetect(BaseTool):
         "detect_content_changes",
         "detect_threshold",
     ]
+    best_for = [
+        "Finding cut points and scene boundaries in source footage",
+        "Preparing long clips for review, segmentation, or clip-factory workflows",
+    ]
 
     input_schema = {
         "type": "object",
@@ -53,7 +60,7 @@ class SceneDetect(BaseTool):
             "input_path": {"type": "string"},
             "method": {
                 "type": "string",
-                "enum": ["content", "threshold", "adaptive"],
+                "enum": METHODS,
                 "default": "content",
             },
             "threshold": {
@@ -70,7 +77,13 @@ class SceneDetect(BaseTool):
     }
 
     resource_profile = ResourceProfile(cpu_cores=2, ram_mb=1024, vram_mb=0, disk_mb=100)
-    idempotency_key_fields = ["input_path", "method", "threshold"]
+    idempotency_key_fields = [
+        "input_path",
+        "output_path",
+        "method",
+        "threshold",
+        "min_scene_length_seconds",
+    ]
     side_effects = ["writes scene list JSON to output_path"]
     user_visible_verification = [
         "Spot-check detected scene boundaries against the video",
@@ -87,6 +100,9 @@ class SceneDetect(BaseTool):
         input_path = Path(inputs["input_path"])
         if not input_path.exists():
             return ToolResult(success=False, error=f"Input not found: {input_path}")
+        method = inputs.get("method", "content")
+        if method not in METHODS:
+            return ToolResult(success=False, error=f"Unknown method: {method}")
 
         start = time.time()
 

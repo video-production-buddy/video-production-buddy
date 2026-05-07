@@ -59,6 +59,10 @@ class VideoUnderstand(BaseTool):
         "scene_classification",
         "object_detection",
     ]
+    best_for = [
+        "Local visual understanding for sampled frames and short clips",
+        "Drafting visual QA notes when GPU vision models are installed",
+    ]
 
     input_schema = {
         "type": "object",
@@ -124,7 +128,14 @@ class VideoUnderstand(BaseTool):
         network_required=False,
     )
 
-    idempotency_key_fields = ["input_path", "mode", "model", "query"]
+    idempotency_key_fields = [
+        "input_path",
+        "mode",
+        "model",
+        "query",
+        "frame_indices",
+        "max_frames",
+    ]
     side_effects = []
     fallback = None
     user_visible_verification = [

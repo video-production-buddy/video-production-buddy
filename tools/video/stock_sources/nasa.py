@@ -35,17 +35,20 @@ from orbit) — the core material comes from Pexels and Archive.org.
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import quote, urlparse, urlunparse
 
-from .base import Candidate, SearchFilters
+from .base import Candidate, SearchFilters, url_path_has_extension
 
 
 _SEARCH_URL = "https://images-api.nasa.gov/search"
 _UNSAFE_ID_CHARS = re.compile(r"[^A-Za-z0-9._\-]+")
+_MAX_SOURCE_ID_LENGTH = 120
+_SOURCE_ID_DIGEST_LENGTH = 12
 
 
 class NasaSource:
@@ -260,7 +263,7 @@ def _pick_video_url(file_urls: list[str]) -> str:
     buckets: dict[str, list[str]] = {p: [] for p in priority}
     for url in file_urls:
         lower = url.lower()
-        if not lower.endswith((".mp4", ".mov", ".m4v")):
+        if not url_path_has_extension(url, (".mp4", ".mov", ".m4v")):
             continue
         for p in priority:
             if f"~{p}." in lower:
@@ -271,7 +274,7 @@ def _pick_video_url(file_urls: list[str]) -> str:
             return buckets[p][0]
     # Fallback: any mp4 at all
     for url in file_urls:
-        if url.lower().endswith(".mp4"):
+        if url_path_has_extension(url, (".mp4",)):
             return url
     return ""
 
@@ -287,7 +290,7 @@ def _pick_image_url(file_urls: list[str]) -> str:
     buckets: dict[str, list[str]] = {p: [] for p in priority}
     for url in file_urls:
         lower = url.lower()
-        if not lower.endswith((".jpg", ".jpeg", ".png", ".tif", ".tiff")):
+        if not url_path_has_extension(url, (".jpg", ".jpeg", ".png", ".tif", ".tiff")):
             continue
         for p in priority:
             if f"~{p}." in lower:
@@ -298,7 +301,7 @@ def _pick_image_url(file_urls: list[str]) -> str:
             return buckets[p][0]
     # Fallback: any jpg/png
     for url in file_urls:
-        if url.lower().endswith((".jpg", ".jpeg", ".png")):
+        if url_path_has_extension(url, (".jpg", ".jpeg", ".png")):
             return url
     return ""
 
@@ -315,11 +318,22 @@ def _sanitize_source_id(raw: str) -> str:
     """
     if not raw:
         return "unknown"
-    cleaned = _UNSAFE_ID_CHARS.sub("_", raw.strip())
+    raw_text = str(raw).strip()
+    cleaned = _UNSAFE_ID_CHARS.sub("_", raw_text)
     cleaned = re.sub(r"_+", "_", cleaned).strip("_.")
     if not cleaned:
-        return "unknown"
-    return cleaned[:120]
+        cleaned = "unknown"
+    if cleaned == raw_text and len(cleaned) <= _MAX_SOURCE_ID_LENGTH:
+        return cleaned
+
+    digest = hashlib.sha256(raw_text.encode("utf-8")).hexdigest()[
+        :_SOURCE_ID_DIGEST_LENGTH
+    ]
+    max_stem = max(
+        1,
+        _MAX_SOURCE_ID_LENGTH - len(digest) - 1,
+    )
+    return f"{cleaned[:max_stem]}-{digest}"
 
 
 def _encode_url_path(url: str) -> str:

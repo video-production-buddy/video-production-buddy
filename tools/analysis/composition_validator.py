@@ -27,7 +27,6 @@ from tools.base_tool import (
     ToolResult,
     ToolRuntime,
     ToolStability,
-    ToolStatus,
     ToolTier,
 )
 
@@ -86,11 +85,12 @@ class CompositionValidator(BaseTool):
     )
     side_effects = []
 
-    def get_status(self) -> ToolStatus:
-        return ToolStatus.AVAILABLE
-
     def estimate_cost(self, inputs: dict[str, Any]) -> float:
         return 0.0
+
+    @staticmethod
+    def _is_runtime_source(source: str) -> bool:
+        return source.startswith(("remotion:", "http://", "https://", "file://"))
 
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
         comp_path = Path(inputs["composition_path"])
@@ -109,13 +109,18 @@ class CompositionValidator(BaseTool):
         # composition JSON itself (edit_decisions.render_runtime).
         explicit_root = inputs.get("assets_root") or ""
         assets_root = Path(explicit_root) if explicit_root else None
+        if explicit_root and (assets_root is None or not assets_root.is_dir()):
+            return ToolResult(
+                success=False,
+                error=f"assets_root not found or not a directory: {assets_root}",
+            )
         runtime = (
             inputs.get("render_runtime")
             or comp.get("render_runtime")
             or ""
         ).strip().lower()
 
-        if assets_root is None or not assets_root.is_dir():
+        if assets_root is None:
             if runtime == "hyperframes":
                 # HyperFrames workspaces keep assets/ alongside index.html.
                 # Composition JSON typically lives in projects/<p>/artifacts/,
@@ -172,6 +177,7 @@ class CompositionValidator(BaseTool):
 
         # --- Check 3: Cut ordering and gaps ---
         sorted_cuts = sorted(cuts, key=lambda c: c.get("in_seconds", 0))
+        previous_end: float | None = None
         for i, cut in enumerate(sorted_cuts):
             in_s = cut.get("in_seconds", 0)
             out_s = cut.get("out_seconds", 0)
@@ -179,17 +185,23 @@ class CompositionValidator(BaseTool):
                 errors.append(
                     f"Cut '{cut.get('id', i)}': out_seconds ({out_s}) <= in_seconds ({in_s})"
                 )
+            if previous_end is not None and in_s < previous_end:
+                errors.append(
+                    f"Cut '{cut.get('id', i)}' overlaps previous cut: "
+                    f"in_seconds ({in_s}) < previous out_seconds ({previous_end})"
+                )
+            previous_end = max(float(out_s), previous_end or 0.0)
 
         # --- Check 4: Asset files exist ---
         for cut in cuts:
             source = cut.get("source", "")
-            if source:
+            if source and not self._is_runtime_source(source):
                 asset_path = assets_root / source
                 if not asset_path.exists():
                     errors.append(f"Missing asset: {source} (looked in {assets_root})")
 
             bg_img = cut.get("backgroundImage", "")
-            if bg_img:
+            if bg_img and not self._is_runtime_source(bg_img):
                 bg_path = assets_root / bg_img
                 if not bg_path.exists():
                     errors.append(f"Missing background image: {bg_img}")

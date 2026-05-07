@@ -23,6 +23,7 @@ from tools.base_tool import (
     ToolStatus,
     ToolTier,
 )
+from tools.video._shared import validate_video_operation
 
 
 class HiggsFieldVideo(BaseTool):
@@ -36,7 +37,9 @@ class HiggsFieldVideo(BaseTool):
     determinism = Determinism.STOCHASTIC
     runtime = ToolRuntime.API
 
-    dependencies = []
+    dependencies = [
+        "env_any:HIGGSFIELD_KEY,HIGGSFIELD_API_KEY+HIGGSFIELD_API_SECRET"
+    ]
     install_instructions = (
         "Set HIGGSFIELD_API_KEY and HIGGSFIELD_API_SECRET for your Higgsfield Cloud credentials.\n"
         "  Get them at https://cloud.higgsfield.ai/api-keys\n"
@@ -112,7 +115,15 @@ class HiggsFieldVideo(BaseTool):
         cpu_cores=1, ram_mb=512, vram_mb=0, disk_mb=500, network_required=True
     )
     retry_policy = RetryPolicy(max_retries=2, retryable_errors=["rate_limit", "timeout"])
-    idempotency_key_fields = ["prompt", "model", "operation", "duration"]
+    idempotency_key_fields = [
+        "prompt",
+        "output_path",
+        "model",
+        "operation",
+        "duration",
+        "aspect_ratio",
+        "image_url",
+    ]
     side_effects = ["writes video file to output_path", "calls Higgsfield Cloud API"]
     user_visible_verification = ["Watch generated clip for motion coherence and visual quality"]
 
@@ -166,11 +177,17 @@ class HiggsFieldVideo(BaseTool):
                 error="Higgsfield credentials not set. " + self.install_instructions,
             )
 
+        api_key, api_secret = creds
+        operation = inputs.get("operation", "text_to_video")
+        operation_error = validate_video_operation(operation, {"text_to_video", "image_to_video"})
+        if operation_error:
+            return ToolResult(success=False, error=operation_error)
+        if operation == "image_to_video" and not inputs.get("image_url"):
+            return ToolResult(success=False, error="image_to_video requires image_url")
+
         import requests
 
-        api_key, api_secret = creds
         start = time.time()
-        operation = inputs.get("operation", "text_to_video")
         model = inputs.get("model", "kling_3.0")
 
         payload: dict[str, Any] = {
@@ -182,7 +199,7 @@ class HiggsFieldVideo(BaseTool):
             payload["duration"] = int(inputs["duration"])
         if inputs.get("aspect_ratio"):
             payload["aspect_ratio"] = inputs["aspect_ratio"]
-        if operation == "image_to_video" and inputs.get("image_url"):
+        if operation == "image_to_video":
             payload["image_url"] = inputs["image_url"]
 
         headers = {

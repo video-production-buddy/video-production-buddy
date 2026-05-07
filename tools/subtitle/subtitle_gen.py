@@ -28,7 +28,7 @@ class SubtitleGen(BaseTool):
     version = "0.1.0"
     tier = ToolTier.CORE
     capability = "subtitle"
-    provider = "openmontage"
+    provider = "video_production_buddy"
     stability = ToolStability.EXPERIMENTAL
     execution_mode = ExecutionMode.SYNC
     determinism = Determinism.DETERMINISTIC
@@ -38,6 +38,10 @@ class SubtitleGen(BaseTool):
     agent_skills = ["remotion-best-practices"]
 
     capabilities = ["generate_srt", "generate_vtt", "generate_caption_json"]
+    best_for = [
+        "Generating SRT, VTT, or caption JSON from timed transcript segments",
+        "Applying word corrections and cue wrapping before caption burn-in",
+    ]
 
     input_schema = {
         "type": "object",
@@ -73,7 +77,15 @@ class SubtitleGen(BaseTool):
     }
 
     resource_profile = ResourceProfile(cpu_cores=1, ram_mb=128, vram_mb=0, disk_mb=10)
-    idempotency_key_fields = ["segments", "format", "max_words_per_cue"]
+    idempotency_key_fields = [
+        "segments",
+        "output_path",
+        "format",
+        "max_chars_per_line",
+        "max_words_per_cue",
+        "highlight_style",
+        "corrections",
+    ]
     side_effects = ["writes subtitle file to output_path"]
     user_visible_verification = [
         "Play video with generated subtitles and verify timing",
@@ -95,7 +107,13 @@ class SubtitleGen(BaseTool):
             segments = self._apply_corrections(segments, corrections)
 
         # Build cues from word-level timestamps
-        cues = self._build_cues(segments, max_words, max_chars)
+        try:
+            cues = self._build_cues(segments, max_words, max_chars)
+        except (KeyError, TypeError, ValueError) as exc:
+            return ToolResult(
+                success=False,
+                error=f"Invalid subtitle timestamp data: {exc}",
+            )
 
         if fmt == "srt":
             content = self._render_srt(cues, highlight_style)
@@ -311,17 +329,19 @@ class SubtitleGen(BaseTool):
     @staticmethod
     def _ts_srt(seconds: float) -> str:
         """Format seconds as SRT timestamp: HH:MM:SS,mmm"""
-        h = int(seconds // 3600)
-        m = int((seconds % 3600) // 60)
-        s = int(seconds % 60)
-        ms = int(round((seconds % 1) * 1000))
+        total_ms = max(0, int(seconds * 1000 + 0.5))
+        h = total_ms // 3_600_000
+        m = (total_ms % 3_600_000) // 60_000
+        s = (total_ms % 60_000) // 1000
+        ms = total_ms % 1000
         return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
     @staticmethod
     def _ts_vtt(seconds: float) -> str:
         """Format seconds as VTT timestamp: HH:MM:SS.mmm"""
-        h = int(seconds // 3600)
-        m = int((seconds % 3600) // 60)
-        s = int(seconds % 60)
-        ms = int(round((seconds % 1) * 1000))
+        total_ms = max(0, int(seconds * 1000 + 0.5))
+        h = total_ms // 3_600_000
+        m = (total_ms % 3_600_000) // 60_000
+        s = (total_ms % 60_000) // 1000
+        ms = total_ms % 1000
         return f"{h:02d}:{m:02d}:{s:02d}.{ms:03d}"

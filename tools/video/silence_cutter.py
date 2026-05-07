@@ -31,6 +31,11 @@ from tools.base_tool import (
 )
 
 
+def _ffconcat_quote(path: str) -> str:
+    """Quote a path for FFmpeg concat demuxer file-list syntax."""
+    return "'" + str(path).replace("'", "'\\''") + "'"
+
+
 class SilenceCutter(BaseTool):
     name = "silence_cutter"
     version = "0.1.0"
@@ -50,6 +55,10 @@ class SilenceCutter(BaseTool):
         "jump_cut",
         "silence_removal",
         "silence_speedup",
+    ]
+    best_for = [
+        "Removing or accelerating silence in talking-head and tutorial footage",
+        "Marking quiet regions before manual edit decisions",
     ]
 
     input_schema = {
@@ -99,8 +108,15 @@ class SilenceCutter(BaseTool):
     retry_policy = RetryPolicy(max_retries=1, retryable_errors=["FFmpeg error"])
     resume_support = ResumeSupport.FROM_START
     idempotency_key_fields = [
-        "input_path", "mode", "silence_threshold_db",
-        "min_silence_duration", "padding_seconds",
+        "input_path",
+        "output_path",
+        "mode",
+        "silence_threshold_db",
+        "min_silence_duration",
+        "padding_seconds",
+        "silence_speed_factor",
+        "codec",
+        "crf",
     ]
     side_effects = ["writes cut video to output_path"]
     user_visible_verification = [
@@ -336,7 +352,7 @@ class SilenceCutter(BaseTool):
             with open(list_path, "w", encoding="utf-8") as f:
                 for sf in seg_files:
                     safe_path = str(sf.resolve()).replace("\\", "/")
-                    f.write(f"file '{safe_path}'\n")
+                    f.write(f"file {_ffconcat_quote(safe_path)}\n")
 
             cmd = [
                 "ffmpeg", "-y",
@@ -438,7 +454,7 @@ class SilenceCutter(BaseTool):
             with open(list_path, "w", encoding="utf-8") as f:
                 for sf in seg_files:
                     safe_path = str(sf.resolve()).replace("\\", "/")
-                    f.write(f"file '{safe_path}'\n")
+                    f.write(f"file {_ffconcat_quote(safe_path)}\n")
 
             cmd = [
                 "ffmpeg", "-y",

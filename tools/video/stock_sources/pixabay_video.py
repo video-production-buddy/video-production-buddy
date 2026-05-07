@@ -24,7 +24,7 @@ import os
 from pathlib import Path
 from typing import Any, Optional
 
-from .base import Candidate, SearchFilters
+from .base import Candidate, SearchFilters, stable_source_id
 
 
 _API_URL = "https://pixabay.com/api/videos/"
@@ -80,13 +80,18 @@ class PixabayVideoSource:
 
             duration = float(h.get("duration", 0) or 0)
             tags = h.get("tags", "") or ""
+            download_url = rend["url"]
+            source_url = h.get("pageURL", "") or ""
+            source_id = str(h.get("id") or "").strip()
+            if not source_id:
+                source_id = stable_source_id(self.name, download_url or source_url)
 
             out.append(
                 Candidate(
                     source=self.name,
-                    source_id=str(h.get("id")),
-                    source_url=h.get("pageURL", "") or "",
-                    download_url=rend["url"],
+                    source_id=source_id,
+                    source_url=source_url,
+                    download_url=download_url,
                     kind="video",
                     width=rend["width"],
                     height=rend["height"],

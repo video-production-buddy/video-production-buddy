@@ -23,6 +23,7 @@ from tools.base_tool import (
     ToolStatus,
     ToolTier,
 )
+from tools.video._shared import validate_video_operation
 
 _RATIO_MAP = {
     "16:9": "1280:720",
@@ -59,7 +60,7 @@ class RunwayVideo(BaseTool):
     determinism = Determinism.STOCHASTIC
     runtime = ToolRuntime.API
 
-    dependencies = []
+    dependencies = ["env_any:RUNWAY_API_KEY,RUNWAYML_API_SECRET"]
     install_instructions = (
         "Set RUNWAY_API_KEY to your Runway API secret.\n"
         "  Get one at https://dev.runwayml.com/"
@@ -136,7 +137,16 @@ class RunwayVideo(BaseTool):
         cpu_cores=1, ram_mb=512, vram_mb=0, disk_mb=500, network_required=True
     )
     retry_policy = RetryPolicy(max_retries=2, retryable_errors=["rate_limit", "timeout", "THROTTLED"])
-    idempotency_key_fields = ["prompt", "model", "operation", "duration"]
+    idempotency_key_fields = [
+        "prompt",
+        "output_path",
+        "model",
+        "operation",
+        "duration",
+        "ratio",
+        "watermark",
+        "image_url",
+    ]
     side_effects = ["writes video file to output_path", "calls Runway API"]
     user_visible_verification = ["Watch generated clip for visual quality and motion coherence"]
 
@@ -165,11 +175,17 @@ class RunwayVideo(BaseTool):
                 error="RUNWAY_API_KEY not set. " + self.install_instructions,
             )
 
+        model = inputs.get("model", "gen4_turbo")
+        operation = inputs.get("operation", "text_to_video")
+        operation_error = validate_video_operation(operation, {"text_to_video", "image_to_video"})
+        if operation_error:
+            return ToolResult(success=False, error=operation_error)
+        if operation == "image_to_video" and not inputs.get("image_url"):
+            return ToolResult(success=False, error="image_to_video requires image_url")
+
         import requests
 
         start = time.time()
-        model = inputs.get("model", "gen4_turbo")
-        operation = inputs.get("operation", "text_to_video")
         ratio_friendly = inputs.get("ratio", "16:9")
         ratio_pixels = _RATIO_MAP.get(ratio_friendly, "1280:720")
 
@@ -180,7 +196,7 @@ class RunwayVideo(BaseTool):
             "ratio": ratio_pixels,
             "watermark": inputs.get("watermark", False),
         }
-        if operation == "image_to_video" and inputs.get("image_url"):
+        if operation == "image_to_video":
             task_payload["promptImage"] = inputs["image_url"]
 
         # Choose endpoint based on operation

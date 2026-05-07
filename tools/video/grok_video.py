@@ -25,6 +25,7 @@ from tools.base_tool import (
     ToolStatus,
     ToolTier,
 )
+from tools.video._shared import validate_video_operation
 
 
 def _file_to_data_uri(path_str: str) -> str:
@@ -57,7 +58,7 @@ class GrokVideo(BaseTool):
     determinism = Determinism.STOCHASTIC
     runtime = ToolRuntime.API
 
-    dependencies = []
+    dependencies = ["env:XAI_API_KEY"]
     install_instructions = (
         "Set XAI_API_KEY to your xAI API key.\n"
         "  Get one from the xAI developer console"
@@ -137,7 +138,19 @@ class GrokVideo(BaseTool):
         cpu_cores=1, ram_mb=512, vram_mb=0, disk_mb=500, network_required=True
     )
     retry_policy = RetryPolicy(max_retries=2, retryable_errors=["rate_limit", "timeout"])
-    idempotency_key_fields = ["prompt", "operation", "model", "duration", "aspect_ratio", "resolution"]
+    idempotency_key_fields = [
+        "prompt",
+        "output_path",
+        "operation",
+        "model",
+        "duration",
+        "aspect_ratio",
+        "resolution",
+        "image_url",
+        "image_path",
+        "reference_image_urls",
+        "reference_image_paths",
+    ]
     side_effects = ["writes video file to output_path", "calls xAI video API"]
     user_visible_verification = ["Watch generated clip for motion quality and prompt fidelity"]
 
@@ -224,6 +237,13 @@ class GrokVideo(BaseTool):
         from tools.video._shared import probe_output
 
         start = time.time()
+        operation = inputs.get("operation", "text_to_video")
+        operation_error = validate_video_operation(
+            operation,
+            {"text_to_video", "image_to_video", "reference_to_video"},
+        )
+        if operation_error:
+            return ToolResult(success=False, error=operation_error)
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",

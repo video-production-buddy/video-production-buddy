@@ -11,12 +11,12 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
-from .base import Candidate, SearchFilters
+from .base import Candidate, SearchFilters, stable_source_id
 
 
 _SEARCH_URL = "https://api.unsplash.com/search/photos"
 _UNSPLASH_LICENSE = "Unsplash License (use returned hotlinked image URLs)"
-_USER_AGENT = "OpenMontageBot/0.1 (https://github.com/calesthio/OpenMontage)"
+_USER_AGENT = "VideoProductionBuddyBot/0.1 (https://github.com/zhouzhoushen/video-production-buddy)"
 
 
 class UnsplashSource:
@@ -128,12 +128,17 @@ def _photo_to_candidate(photo: dict[str, Any], filters: SearchFilters) -> Candid
     source_tags = " ".join(part.strip() for part in description_parts if part).strip()
     if len(source_tags) > 500:
         source_tags = source_tags[:500]
+    source_url = links.get("html", "") or ""
+    download_url = _build_download_url(raw_url, target_width=max(filters.min_width or 0, 1920))
+    source_id = str(photo.get("id") or "").strip()
+    if not source_id:
+        source_id = stable_source_id(UnsplashSource.name, raw_url or source_url)
 
     return Candidate(
         source=UnsplashSource.name,
-        source_id=str(photo.get("id") or ""),
-        source_url=links.get("html", "") or "",
-        download_url=_build_download_url(raw_url, target_width=max(filters.min_width or 0, 1920)),
+        source_id=source_id,
+        source_url=source_url,
+        download_url=download_url,
         kind="image",
         width=width,
         height=height,

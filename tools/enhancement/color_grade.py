@@ -94,6 +94,10 @@ class ColorGrade(BaseTool):
         "grade_lut",
         "grade_custom",
     ]
+    best_for = [
+        "Applying deterministic color-grade presets to rendered video",
+        "Matching footage tone before final compose or publish QA",
+    ]
 
     input_schema = {
         "type": "object",
@@ -124,7 +128,16 @@ class ColorGrade(BaseTool):
     }
 
     resource_profile = ResourceProfile(cpu_cores=2, ram_mb=1024, vram_mb=0, disk_mb=2000)
-    idempotency_key_fields = ["input_path", "profile", "lut_path", "intensity"]
+    idempotency_key_fields = [
+        "input_path",
+        "output_path",
+        "profile",
+        "lut_path",
+        "intensity",
+        "custom_vf",
+        "codec",
+        "crf",
+    ]
     side_effects = ["writes graded video to output_path"]
     user_visible_verification = [
         "Compare graded output with original for color accuracy",
@@ -139,10 +152,14 @@ class ColorGrade(BaseTool):
         output_path = Path(
             inputs.get("output_path", str(input_path.with_stem(f"{input_path.stem}_graded")))
         )
+        output_path.parent.mkdir(parents=True, exist_ok=True)
         codec = inputs.get("codec", "libx264")
         crf = inputs.get("crf", 20)
 
-        vf = self._build_filter(inputs)
+        try:
+            vf = self._build_filter(inputs)
+        except ValueError as e:
+            return ToolResult(success=False, error=str(e))
         if not vf:
             return ToolResult(success=False, error="No profile, lut_path, or custom_vf specified")
 
@@ -161,6 +178,12 @@ class ColorGrade(BaseTool):
             self.run_command(cmd)
         except Exception as e:
             return ToolResult(success=False, error=f"FFmpeg failed: {e}")
+
+        if not output_path.exists():
+            return ToolResult(
+                success=False,
+                error=f"Expected output was not created: {output_path}",
+            )
 
         elapsed = time.time() - start
 
@@ -182,9 +205,21 @@ class ColorGrade(BaseTool):
         if "custom_vf" in inputs:
             return inputs["custom_vf"]
 
+        intensity = inputs.get("intensity", 1.0)
+        if intensity <= 0:
+            return "null"
+
         lut_path = inputs.get("lut_path")
-        if lut_path and Path(lut_path).exists():
-            safe_path = str(Path(lut_path).resolve()).replace("\\", "/").replace(":", "\\:")
+        if lut_path:
+            lut = Path(lut_path)
+            if not lut.exists():
+                raise ValueError(f"LUT not found: {lut}")
+            safe_path = (
+                str(lut.resolve())
+                .replace("\\", "/")
+                .replace(":", "\\:")
+                .replace("'", "\\'")
+            )
             return f"lut3d='{safe_path}'"
 
         profile_name = inputs.get("profile", "cinematic_warm")
@@ -195,7 +230,6 @@ class ColorGrade(BaseTool):
         vf = profile["vf"]
 
         # Apply intensity blending if < 1.0
-        intensity = inputs.get("intensity", 1.0)
         if 0 < intensity < 1.0:
             # Use split + overlay approach: blend graded with original
             vf = (

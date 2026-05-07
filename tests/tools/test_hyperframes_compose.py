@@ -9,7 +9,9 @@ in tests/qa/test_09_hyperframes_compose.py and are opt-in.
 from __future__ import annotations
 
 import json
+import uuid
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -76,6 +78,64 @@ def test_hyperframes_layer2_skill_names_correct_package():
         "published package). A Layer 2 skill missing this would leave agents "
         "stuck if they bypass the tool's install_instructions."
     )
+
+
+def test_hyperframes_scaffold_rejects_unknown_media_profile(tmp_path):
+    result = HyperFramesCompose().execute(
+        {
+            "operation": "scaffold_workspace",
+            "workspace_path": str(tmp_path / "hyperframes"),
+            "profile": "not-a-real-profile",
+            "edit_decisions": {
+                "cuts": [
+                    {
+                        "id": "cut-1",
+                        "type": "text_card",
+                        "in_seconds": 0,
+                        "out_seconds": 1,
+                        "text": "Hello",
+                    }
+                ]
+            },
+        }
+    )
+
+    assert not result.success
+    assert "Unknown profile" in (result.error or "")
+
+
+def test_hyperframes_idempotency_key_includes_workspace_render_inputs():
+    tool = HyperFramesCompose()
+    base = {
+        "operation": "render",
+        "workspace_path": "workspace-a",
+        "output_path": "out-a.mp4",
+        "edit_decisions": {"cuts": [{"id": "cut-1", "out_seconds": 1}]},
+        "asset_manifest": {"assets": [{"id": "video-1", "path": "a.mp4"}]},
+        "playbook": {"visual_style": {"palette": "a"}},
+        "profile": "youtube_landscape",
+        "quality": "standard",
+        "fps": 30,
+        "strict": False,
+        "skip_contrast": False,
+        "workers": 2,
+    }
+    variants = [
+        {"output_path": "out-b.mp4"},
+        {"asset_manifest": {"assets": [{"id": "video-1", "path": "b.mp4"}]}},
+        {"playbook": {"visual_style": {"palette": "b"}}},
+        {"profile": "tiktok"},
+        {"quality": "high"},
+        {"fps": 60},
+        {"strict": True},
+        {"skip_contrast": True},
+        {"workers": 4},
+    ]
+
+    base_key = tool.idempotency_key(base)
+
+    for variant in variants:
+        assert tool.idempotency_key({**base, **variant}) != base_key
 
 
 def test_animation_proposal_director_has_no_hardcoded_costs_or_keys():
@@ -374,6 +434,68 @@ def test_video_compose_governance_note_present():
     assert "silent swap" in info["runtime_governance"].lower()
 
 
+def test_video_compose_has_no_root_render_defaults():
+    body = (
+        Path(__file__).resolve().parent.parent.parent
+        / "tools"
+        / "video"
+        / "video_compose.py"
+    ).read_text(encoding="utf-8")
+
+    assert '"renders/output.mp4"' not in body
+    assert '"renders/remotion_output.mp4"' not in body
+
+
+def test_render_requires_output_path_before_creating_default_renders(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+
+    result = VideoCompose().execute(
+        {
+            "operation": "render",
+            "edit_decisions": {
+                "version": "1.0",
+                "render_runtime": "ffmpeg",
+                "cuts": [],
+            },
+            "asset_manifest": {"assets": []},
+        }
+    )
+
+    assert not result.success
+    assert "output_path required" in (result.error or "")
+    assert not (tmp_path / "renders").exists()
+
+
+def test_render_rejects_repo_root_renders_output_path(monkeypatch):
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    root_renders = repo_root / "renders"
+    had_root_renders = root_renders.exists()
+    output_name = f"would-create-root-folder-{uuid.uuid4().hex}.mp4"
+    rejected_output = root_renders / output_name
+    assert not rejected_output.exists()
+
+    monkeypatch.chdir(repo_root)
+    result = VideoCompose().execute(
+        {
+            "operation": "render",
+            "edit_decisions": {
+                "version": "1.0",
+                "render_runtime": "ffmpeg",
+                "cuts": [],
+            },
+            "asset_manifest": {"assets": []},
+            "output_path": f"renders/{output_name}",
+        }
+    )
+
+    assert not result.success
+    assert "project root" in (result.error or "").lower()
+    assert not rejected_output.exists()
+    assert root_renders.exists() == had_root_renders
+
+
 def test_video_compose_rejects_unknown_render_runtime(tmp_path):
     """Governance: an unknown render_runtime must fail, not silently fall back."""
     comp_out = tmp_path / "out.mp4"
@@ -437,6 +559,92 @@ def test_video_compose_rejects_missing_render_runtime(tmp_path):
     assert "remotion render failed" not in err
 
 
+def test_video_compose_blocks_unapproved_runtime_swap_before_render(
+    tmp_path, monkeypatch
+):
+    composer = VideoCompose()
+
+    def fail_if_rendered(*_args, **_kwargs):
+        raise AssertionError("renderer should not run before runtime governance")
+
+    monkeypatch.setattr(composer, "_compose", fail_if_rendered)
+    monkeypatch.setattr(composer, "_remotion_render", fail_if_rendered)
+
+    result = composer.execute(
+        {
+            "operation": "render",
+            "edit_decisions": {
+                "version": "1.0",
+                "render_runtime": "ffmpeg",
+                "renderer_family": "screen-demo",
+                "cuts": [
+                    {
+                        "id": "c1",
+                        "source": "a1",
+                        "in_seconds": 0,
+                        "out_seconds": 2,
+                    }
+                ],
+            },
+            "asset_manifest": {"assets": [{"id": "a1", "path": "missing.mp4"}]},
+            "brief": {"metadata": {"render_runtime": "remotion"}},
+            "output_path": str(tmp_path / "out.mp4"),
+        }
+    )
+
+    assert not result.success
+    err = (result.error or "").lower()
+    assert "unapproved render_runtime swap" in err
+    assert "before render" in err
+    assert not (tmp_path / "out.mp4").exists()
+
+
+def test_video_compose_blocks_revise_final_review(tmp_path, monkeypatch):
+    composer = VideoCompose()
+    output_path = tmp_path / "out.mp4"
+
+    monkeypatch.setattr(composer, "_pre_compose_validation", lambda *args, **kwargs: None)
+
+    def fake_compose(_inputs):
+        output_path.write_bytes(b"rendered")
+        return SimpleNamespace(success=True, error=None, data={"output": str(output_path)})
+
+    monkeypatch.setattr(composer, "_compose", fake_compose)
+    monkeypatch.setattr(
+        composer,
+        "_run_final_review",
+        lambda *args, **kwargs: {
+            "status": "revise",
+            "issues_found": ["runtime lock missing"],
+        },
+    )
+
+    result = composer.execute(
+        {
+            "operation": "render",
+            "edit_decisions": {
+                "version": "1.0",
+                "render_runtime": "ffmpeg",
+                "renderer_family": "screen-demo",
+                "cuts": [
+                    {
+                        "id": "c1",
+                        "source": "a1",
+                        "in_seconds": 0,
+                        "out_seconds": 2,
+                    }
+                ],
+            },
+            "asset_manifest": {"assets": [{"id": "a1", "path": "source.mp4"}]},
+            "output_path": str(output_path),
+        }
+    )
+
+    assert not result.success
+    assert result.data["final_review_status"] == "revise"
+    assert "not presentable as complete" in (result.error or "")
+
+
 def test_schemas_require_render_runtime():
     """Regression: both proposal_packet and edit_decisions schemas must
     REQUIRE render_runtime, not just declare it as an optional property."""
@@ -465,6 +673,21 @@ def test_schemas_require_render_runtime():
         "proposal_packet.production_plan must require render_runtime — "
         "the proposal stage MUST pick a runtime explicitly."
     )
+
+
+def test_video_compose_input_schema_accepts_all_runtime_lock_artifacts():
+    props = VideoCompose.input_schema["properties"]
+
+    assert "proposal_packet" in props
+    assert "production_proposal" in props
+    assert "brief" in props
+    assert "decision_log" in props
+
+
+def test_video_compose_idempotency_key_includes_runtime_lock_artifacts():
+    fields = set(VideoCompose.idempotency_key_fields)
+
+    assert {"proposal_packet", "production_proposal", "brief", "decision_log"} <= fields
 
 
 def test_runtime_swap_detected_flips_when_proposal_packet_disagrees(tmp_path):
@@ -508,6 +731,208 @@ def test_runtime_swap_detected_flips_when_proposal_packet_disagrees(tmp_path):
     assert "detected" in pp["runtime_swap_check"]
     # And the human-readable issues list mentions the swap.
     assert any("render_runtime changed" in i for i in pp.get("issues", []))
+    assert review["status"] == "revise"
+    assert review["recommended_action"] != "present_to_user"
+
+
+def test_runtime_swap_detected_flips_when_production_proposal_disagrees(tmp_path):
+    import subprocess
+
+    mp4 = tmp_path / "tiny.mp4"
+    subprocess.run(
+        [
+            "ffmpeg", "-y",
+            "-f", "lavfi", "-i", "color=c=#000000:s=320x240:d=2",
+            "-f", "lavfi", "-i", "sine=frequency=440:duration=2",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p",
+            "-c:a", "aac",
+            "-shortest", str(mp4),
+        ],
+        capture_output=True, check=True, timeout=30,
+    )
+
+    edit_decisions = {
+        "version": "1.0",
+        "render_runtime": "hyperframes",
+        "renderer_family": "product-reveal",
+        "cuts": [{"id": "c1", "source": "x", "in_seconds": 0, "out_seconds": 2}],
+    }
+    production_proposal = {"render_runtime": "remotion"}
+
+    review = VideoCompose()._run_final_review(
+        mp4,
+        edit_decisions,
+        production_proposal=production_proposal,
+    )
+    pp = review["checks"]["promise_preservation"]
+    assert pp.get("runtime_swap_detected") is True
+    assert "production_proposal.render_runtime" in pp["runtime_swap_check"]
+
+
+def test_final_review_honors_approved_runtime_decision_log_swap(tmp_path):
+    import subprocess
+
+    mp4 = tmp_path / "tiny.mp4"
+    subprocess.run(
+        [
+            "ffmpeg", "-y",
+            "-f", "lavfi", "-i", "color=c=#000000:s=320x240:d=2",
+            "-f", "lavfi", "-i", "sine=frequency=440:duration=2",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p",
+            "-c:a", "aac",
+            "-shortest", str(mp4),
+        ],
+        capture_output=True, check=True, timeout=30,
+    )
+
+    review = VideoCompose()._run_final_review(
+        mp4,
+        {
+            "version": "1.0",
+            "render_runtime": "hyperframes",
+            "renderer_family": "product-reveal",
+            "cuts": [{"id": "c1", "source": "x", "in_seconds": 0, "out_seconds": 2}],
+        },
+        production_proposal={"render_runtime": "remotion"},
+        decision_log={
+            "version": "1.0",
+            "project_id": "approved-runtime-swap",
+            "decisions": [
+                {
+                    "decision_id": "d-runtime-swap",
+                    "stage": "compose",
+                    "category": "render_runtime_selection",
+                    "subject": "composition runtime",
+                    "user_visible": True,
+                    "user_approved": True,
+                    "options_considered": [
+                        {
+                            "option_id": "remotion",
+                            "label": "Remotion",
+                            "score": 0.4,
+                            "reason": "Original approved runtime",
+                        },
+                        {
+                            "option_id": "hyperframes",
+                            "label": "HyperFrames",
+                            "score": 0.8,
+                            "reason": "Approved fallback for the blocked runtime",
+                        },
+                    ],
+                    "selected": "hyperframes",
+                    "reason": "User approved rerouting before compose.",
+                }
+            ],
+        },
+    )
+
+    pp = review["checks"]["promise_preservation"]
+    assert pp["render_runtime_used"] == "hyperframes"
+    assert pp["runtime_swap_detected"] is False
+    assert "decision_log.render_runtime_selection" in pp["runtime_swap_check"]
+    assert not any("render_runtime changed" in i for i in pp.get("issues", []))
+    assert review["status"] == "pass"
+
+
+def test_runtime_swap_detected_flips_when_brief_metadata_disagrees(tmp_path):
+    import subprocess
+
+    mp4 = tmp_path / "tiny.mp4"
+    subprocess.run(
+        [
+            "ffmpeg", "-y",
+            "-f", "lavfi", "-i", "color=c=#000000:s=320x240:d=2",
+            "-f", "lavfi", "-i", "sine=frequency=440:duration=2",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p",
+            "-c:a", "aac",
+            "-shortest", str(mp4),
+        ],
+        capture_output=True, check=True, timeout=30,
+    )
+
+    edit_decisions = {
+        "version": "1.0",
+        "render_runtime": "ffmpeg",
+        "renderer_family": "screen-demo",
+        "cuts": [{"id": "c1", "source": "x", "in_seconds": 0, "out_seconds": 2}],
+    }
+    brief = {"metadata": {"render_runtime": "remotion"}}
+
+    review = VideoCompose()._run_final_review(mp4, edit_decisions, brief=brief)
+    pp = review["checks"]["promise_preservation"]
+    assert pp.get("runtime_swap_detected") is True
+    assert "brief.metadata.render_runtime" in pp["runtime_swap_check"]
+
+
+def test_brief_runtime_lock_prefers_direct_metadata_over_legacy_nested_plan(tmp_path):
+    import subprocess
+
+    mp4 = tmp_path / "tiny.mp4"
+    subprocess.run(
+        [
+            "ffmpeg", "-y",
+            "-f", "lavfi", "-i", "color=c=#000000:s=320x240:d=2",
+            "-f", "lavfi", "-i", "sine=frequency=440:duration=2",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p",
+            "-c:a", "aac",
+            "-shortest", str(mp4),
+        ],
+        capture_output=True, check=True, timeout=30,
+    )
+
+    review = VideoCompose()._run_final_review(
+        mp4,
+        {
+            "version": "1.0",
+            "render_runtime": "ffmpeg",
+            "renderer_family": "screen-demo",
+            "cuts": [{"id": "c1", "source": "x", "in_seconds": 0, "out_seconds": 2}],
+        },
+        brief={
+            "metadata": {
+                "render_runtime": "remotion",
+                "production_plan": {"render_runtime": "ffmpeg"},
+            },
+        },
+    )
+
+    pp = review["checks"]["promise_preservation"]
+    assert pp.get("runtime_swap_detected") is True
+    assert "brief.metadata.render_runtime" in pp["runtime_swap_check"]
+    assert "brief.metadata.production_plan.render_runtime" not in pp["runtime_swap_check"]
+
+
+def test_final_review_revises_when_brief_runtime_lock_missing(tmp_path):
+    import subprocess
+
+    mp4 = tmp_path / "tiny.mp4"
+    subprocess.run(
+        [
+            "ffmpeg", "-y",
+            "-f", "lavfi", "-i", "color=c=#000000:s=320x240:d=2",
+            "-f", "lavfi", "-i", "sine=frequency=440:duration=2",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p",
+            "-c:a", "aac",
+            "-shortest", str(mp4),
+        ],
+        capture_output=True, check=True, timeout=30,
+    )
+
+    review = VideoCompose()._run_final_review(
+        mp4,
+        {
+            "version": "1.0",
+            "render_runtime": "ffmpeg",
+            "renderer_family": "screen-demo",
+            "cuts": [{"id": "c1", "source": "x", "in_seconds": 0, "out_seconds": 2}],
+        },
+        brief={"version": "1.0", "metadata": {}},
+    )
+
+    pp = review["checks"]["promise_preservation"]
+    assert pp["runtime_swap_check"].startswith("missing")
+    assert any("render_runtime lock missing" in i for i in pp["issues"])
+    assert review["status"] == "revise"
 
 
 def test_runtime_swap_detected_stays_false_when_proposal_matches(tmp_path):
@@ -625,6 +1050,31 @@ def test_decision_log_accepts_render_runtime_selection_with_both_options():
     }
     # No raise = valid.
     jsonschema.validate(log, schema)
+
+
+def test_brief_schema_requires_metadata_render_runtime():
+    from copy import deepcopy
+
+    from schemas.artifacts import validate_artifact
+
+    brief = {
+        "version": "1.0",
+        "title": "Brief Runtime Lock",
+        "hook": "Show the workflow clearly.",
+        "key_points": ["Point"],
+        "tone": "direct",
+        "style": "clean-professional",
+        "target_platform": "youtube",
+        "target_duration_seconds": 30,
+        "metadata": {"render_runtime": "remotion"},
+    }
+
+    validate_artifact("brief", brief)
+
+    missing = deepcopy(brief)
+    del missing["metadata"]["render_runtime"]
+    with pytest.raises(Exception, match="render_runtime"):
+        validate_artifact("brief", missing)
 
 
 def test_transcript_comparison_catches_literal_punctuation_leak(tmp_path):
@@ -760,6 +1210,7 @@ def test_run_final_review_includes_transcript_comparison_section(tmp_path):
     the final_review output — even when the caller doesn't provide a
     transcript. A missing section = silent governance failure."""
     import subprocess
+    from schemas.artifacts import validate_artifact
 
     # Build a minimal MP4 so _run_final_review can probe it.
     mp4 = tmp_path / "out.mp4"
@@ -790,6 +1241,188 @@ def test_run_final_review_includes_transcript_comparison_section(tmp_path):
     )
     tc = review["checks"]["transcript_comparison"]
     assert any("not provided" in i for i in tc["issues"])
+    validate_artifact("final_review", review)
+
+
+def test_run_final_review_payload_validates_for_ad_video_context(tmp_path):
+    import subprocess
+    from schemas.artifacts import validate_artifact
+
+    mp4 = tmp_path / "ad-video-review.mp4"
+    subprocess.run(
+        [
+            "ffmpeg", "-y",
+            "-f", "lavfi", "-i", "testsrc=size=640x360:rate=30:duration=2",
+            "-f", "lavfi", "-i", "sine=frequency=440:duration=2",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-shortest", str(mp4),
+        ],
+        capture_output=True, check=True, timeout=30,
+    )
+
+    review = VideoCompose()._run_final_review(
+        mp4,
+        edit_decisions={
+            "version": "1.0",
+            "renderer_family": "product-reveal",
+            "render_runtime": "ffmpeg",
+            "metadata": {
+                "proposal_render_runtime": "ffmpeg",
+                "delivery_promise": {
+                    "promise_type": "source_led",
+                    "motion_required": False,
+                    "source_required": False,
+                    "tone_mode": "corporate",
+                    "quality_floor": "presentable",
+                },
+            },
+            "subtitles": {"enabled": False},
+            "cuts": [
+                {
+                    "id": "c1",
+                    "source": str(mp4),
+                    "in_seconds": 0,
+                    "out_seconds": 2,
+                }
+            ],
+        },
+    )
+
+    assert review["status"] == "pass"
+    assert review["issues_found"] == []
+    assert review["checks"]["subtitle_check"] == {
+        "subtitles_expected": False,
+        "subtitles_present": False,
+        "coverage_ratio": 0.0,
+        "timing_drift_detected": False,
+        "issues": [],
+    }
+    assert any(
+        "transcript_comparison skipped" in issue
+        for issue in review["checks"]["transcript_comparison"]["issues"]
+    )
+    validate_artifact(
+        "final_review",
+        review,
+        pipeline_type="ad-video",
+        related_artifacts={
+            "production_proposal": {
+                "subtitles": {"mode": "off"},
+                "music_strategy": "generative_loose",
+            },
+        },
+    )
+
+
+def test_run_final_review_does_not_mark_narration_as_music_when_strategy_none(tmp_path):
+    import subprocess
+
+    mp4 = tmp_path / "ad-video-no-music.mp4"
+    subprocess.run(
+        [
+            "ffmpeg", "-y",
+            "-f", "lavfi", "-i", "testsrc=size=640x360:rate=30:duration=2",
+            "-f", "lavfi", "-i", "sine=frequency=440:duration=2",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-shortest", str(mp4),
+        ],
+        capture_output=True, check=True, timeout=30,
+    )
+
+    review = VideoCompose()._run_final_review(
+        mp4,
+        edit_decisions={
+            "version": "1.0",
+            "renderer_family": "product-reveal",
+            "render_runtime": "ffmpeg",
+            "music_strategy": "none",
+            "metadata": {"proposal_render_runtime": "ffmpeg"},
+            "subtitles": {"enabled": False},
+            "cuts": [
+                {
+                    "id": "c1",
+                    "source": str(mp4),
+                    "in_seconds": 0,
+                    "out_seconds": 2,
+                }
+            ],
+        },
+    )
+
+    assert review["checks"]["audio_spotcheck"]["narration_present"] is True
+    assert review["checks"]["audio_spotcheck"]["music_present"] is False
+
+
+def test_run_final_review_validates_without_delivery_promise_metadata(tmp_path):
+    import subprocess
+    from schemas.artifacts import validate_artifact
+
+    mp4 = tmp_path / "ad-video-no-promise.mp4"
+    subprocess.run(
+        [
+            "ffmpeg", "-y",
+            "-f", "lavfi", "-i", "testsrc=size=640x360:rate=30:duration=2",
+            "-f", "lavfi", "-i", "sine=frequency=440:duration=2",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-shortest", str(mp4),
+        ],
+        capture_output=True, check=True, timeout=30,
+    )
+
+    review = VideoCompose()._run_final_review(
+        mp4,
+        edit_decisions={
+            "version": "1.0",
+            "renderer_family": "product-reveal",
+            "render_runtime": "ffmpeg",
+            "metadata": {"proposal_render_runtime": "ffmpeg"},
+            "subtitles": {"enabled": False},
+            "cuts": [
+                {
+                    "id": "c1",
+                    "source": str(mp4),
+                    "in_seconds": 0,
+                    "out_seconds": 2,
+                }
+            ],
+        },
+    )
+
+    assert review["status"] == "pass"
+    assert "motion_ratio_actual" not in review["checks"]["promise_preservation"]
+    validate_artifact("final_review", review, pipeline_type="ad-video")
+
+
+def test_final_review_flags_audio_truncation_as_rerender_issue(tmp_path):
+    import subprocess
+
+    mp4 = tmp_path / "truncated-audio.mp4"
+    subprocess.run(
+        [
+            "ffmpeg", "-y",
+            "-f", "lavfi", "-i", "color=c=#000000:s=320x240:d=4",
+            "-f", "lavfi", "-i", "sine=frequency=440:duration=2",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", str(mp4),
+        ],
+        capture_output=True, check=True, timeout=30,
+    )
+
+    review = VideoCompose()._run_final_review(
+        mp4,
+        edit_decisions={
+            "version": "1.0",
+            "total_duration_seconds": 4.0,
+            "render_runtime": "remotion",
+            "cuts": [{"id": "c1", "source": "x", "in_seconds": 0, "out_seconds": 4}],
+        },
+    )
+
+    technical_probe = review["checks"]["technical_probe"]
+    assert "audio_truncation_check" in technical_probe
+    assert any("Audio truncation" in issue for issue in review["issues_found"])
+    assert review["status"] == "revise"
+    assert review["recommended_action"] == "re_render"
 
 
 def test_hyperframes_root_composition_has_data_start_and_duration(tmp_path):
@@ -942,6 +1575,7 @@ def test_scaffold_workspace_generates_html_and_assets(tmp_path: Path):
     assert 'paused: true' in html
     assert 'class="clip' in html
     assert "gsap" in html.lower()
+    assert "https://cdn.jsdelivr.net" not in html
 
     # Text card for c2 must carry data-start and data-duration.
     assert 'data-start="3"' in html
@@ -1006,29 +1640,40 @@ def test_style_bridge_picks_up_playbook_palette():
     from lib.hyperframes_style_bridge import style_bridge
 
     playbook = {
-        "name": "neon-test",
+        "identity": {
+            "name": "Neon Test",
+            "pace": "fast",
+        },
         "visual_language": {
             "color_palette": {
                 "background": "#000000",
                 "text": "#FFFFFF",
+                "muted": "#999999",
                 "accent": ["#FF00FF", "#FF66FF"],
                 "primary": "#00FFFF",
             }
         },
         "typography": {
-            "heading": {"font": "Space Grotesk"},
+            "headings": {"font": "Space Grotesk"},
             "body": {"font": "Inter"},
         },
-        "motion": {"pace": "fast"},
+        "motion": {
+            "pacing_rules": {"transition_duration_seconds": 0.25},
+        },
+        "chart_palette": ["#111111", "#222222", "#333333"],
     }
     css, design = style_bridge(playbook, None)
     assert css["--color-bg"] == "#000000"
     assert css["--color-accent"] == "#FF00FF"  # list → first
     assert css["--color-primary"] == "#00FFFF"
+    assert css["--color-secondary"] == "#FF66FF"
+    assert css["--color-muted"] == "#999999"
     assert css["--font-heading"] == "Space Grotesk"
+    assert css["--chart-color-1"] == "#111111"
+    assert css["--chart-color-3"] == "#333333"
     # Fast pace → shorter entrance duration.
-    assert css["--duration-entrance"].startswith("0.")
-    assert "neon-test" in design
+    assert css["--duration-entrance"] == "0.25s"
+    assert "Neon Test" in design
 
 
 def test_style_bridge_edit_decision_override_wins():

@@ -45,6 +45,10 @@ class VisualQA(BaseTool):
         "probe_video",
         "check_audio_levels",
     ]
+    best_for = [
+        "Probing rendered video properties before checkpoint or publish",
+        "Extracting review frames and audio-level evidence for human QA",
+    ]
 
     input_schema = {
         "type": "object",
@@ -112,7 +116,13 @@ class VisualQA(BaseTool):
     }
 
     resource_profile = ResourceProfile(cpu_cores=1, ram_mb=512, vram_mb=0, disk_mb=200)
-    idempotency_key_fields = ["operation", "input_path", "timestamps"]
+    idempotency_key_fields = [
+        "operation",
+        "input_path",
+        "timestamps",
+        "output_dir",
+        "expected",
+    ]
     side_effects = ["writes frame images to output_dir"]
     user_visible_verification = [
         "Visually inspect extracted frames for quality issues",

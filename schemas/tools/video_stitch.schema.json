@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "openmontage/tools/video_stitch",
+  "$id": "video-production-buddy/tools/video_stitch",
   "title": "Video Stitch Tool",
   "description": "Multi-clip assembly tool with validation, transitions, and spatial layouts.",
   "type": "object",
@@ -105,7 +105,12 @@
   "allOf": [
     {
       "if": { "properties": { "operation": { "const": "stitch" } } },
-      "then": { "required": ["clips"] }
+      "then": {
+        "required": ["clips"],
+        "properties": {
+          "clips": { "minItems": 2 }
+        }
+      }
     },
     {
       "if": { "properties": { "operation": { "const": "validate" } } },
@@ -113,11 +118,21 @@
     },
     {
       "if": { "properties": { "operation": { "const": "preview_stitch" } } },
-      "then": { "required": ["clips"] }
+      "then": {
+        "required": ["clips"],
+        "properties": {
+          "clips": { "minItems": 2 }
+        }
+      }
     },
     {
       "if": { "properties": { "operation": { "const": "spatial" } } },
-      "then": { "required": ["clips", "layout"] }
+      "then": {
+        "required": ["clips", "layout"],
+        "properties": {
+          "clips": { "minItems": 2 }
+        }
+      }
     }
   ],
   "additionalProperties": false

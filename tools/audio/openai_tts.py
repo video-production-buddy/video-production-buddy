@@ -32,7 +32,7 @@ class OpenAITTS(BaseTool):
     determinism = Determinism.STOCHASTIC
     runtime = ToolRuntime.API
 
-    dependencies = []
+    dependencies = ["env:OPENAI_API_KEY"]
     install_instructions = (
         "Set the OPENAI_API_KEY environment variable:\n"
         "  export OPENAI_API_KEY=your_key_here\n"
@@ -40,7 +40,7 @@ class OpenAITTS(BaseTool):
     )
     fallback = "piper_tts"
     fallback_tools = ["piper_tts"]
-    agent_skills = ["openai-docs"]
+    agent_skills = ["text-to-speech"]
 
     capabilities = [
         "text_to_speech",
@@ -85,6 +85,13 @@ class OpenAITTS(BaseTool):
                 "type": "string",
                 "description": "Optional delivery instructions for the voice",
             },
+            "speed": {
+                "type": "number",
+                "default": 1.0,
+                "minimum": 0.25,
+                "maximum": 4.0,
+                "description": "Speech speed multiplier. 1.0 is normal speed.",
+            },
             "output_path": {"type": "string"},
         },
     }
@@ -93,7 +100,15 @@ class OpenAITTS(BaseTool):
         cpu_cores=1, ram_mb=256, vram_mb=0, disk_mb=50, network_required=True
     )
     retry_policy = RetryPolicy(max_retries=2, retryable_errors=["rate_limit", "timeout"])
-    idempotency_key_fields = ["text", "voice", "model", "format"]
+    idempotency_key_fields = [
+        "text",
+        "output_path",
+        "voice",
+        "model",
+        "format",
+        "instructions",
+        "speed",
+    ]
     side_effects = ["writes audio file to output_path", "calls OpenAI API"]
     user_visible_verification = ["Listen to generated audio for intelligibility and tone"]
 

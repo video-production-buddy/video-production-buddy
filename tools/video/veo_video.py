@@ -26,6 +26,7 @@ from tools.base_tool import (
     ToolStatus,
     ToolTier,
 )
+from tools.video._shared import validate_video_operation
 
 
 class VeoVideo(BaseTool):
@@ -39,7 +40,7 @@ class VeoVideo(BaseTool):
     determinism = Determinism.STOCHASTIC
     runtime = ToolRuntime.API
 
-    dependencies = []
+    dependencies = ["env_any:FAL_KEY,FAL_AI_API_KEY"]
     install_instructions = (
         "Set FAL_KEY or FAL_AI_API_KEY to your fal.ai API key.\n"
         "  Get one at https://fal.ai/dashboard/keys"
@@ -132,7 +133,26 @@ class VeoVideo(BaseTool):
         cpu_cores=1, ram_mb=512, vram_mb=0, disk_mb=500, network_required=True
     )
     retry_policy = RetryPolicy(max_retries=2, retryable_errors=["rate_limit", "timeout"])
-    idempotency_key_fields = ["prompt", "model_variant", "operation", "duration"]
+    idempotency_key_fields = [
+        "prompt",
+        "output_path",
+        "model_variant",
+        "operation",
+        "duration",
+        "aspect_ratio",
+        "resolution",
+        "generate_audio",
+        "negative_prompt",
+        "seed",
+        "image_url",
+        "image_path",
+        "reference_image_urls",
+        "reference_image_paths",
+        "first_frame_url",
+        "first_frame_path",
+        "last_frame_url",
+        "last_frame_path",
+    ]
     side_effects = ["writes video file to output_path", "calls fal.ai API"]
     user_visible_verification = [
         "Watch generated clip for visual quality and motion",
@@ -199,10 +219,17 @@ class VeoVideo(BaseTool):
                 error="FAL_KEY / FAL_AI_API_KEY not set. " + self.install_instructions,
             )
 
+        operation = inputs.get("operation", "text_to_video")
+        operation_error = validate_video_operation(
+            operation,
+            {"text_to_video", "image_to_video", "reference_to_video", "first_last_frame_to_video"},
+        )
+        if operation_error:
+            return ToolResult(success=False, error=operation_error)
+
         import requests
 
         start = time.time()
-        operation = inputs.get("operation", "text_to_video")
         variant = inputs.get("model_variant", "veo3.1")
         duration = inputs.get("duration", "8s")
 
@@ -332,6 +359,9 @@ class VeoVideo(BaseTool):
         except Exception as e:
             return ToolResult(success=False, error=f"Veo video generation failed: {e}")
 
+        from tools.video._shared import probe_output
+
+        probed = probe_output(output_path)
         return ToolResult(
             success=True,
             data={
@@ -339,8 +369,11 @@ class VeoVideo(BaseTool):
                 "model": f"fal-ai/{model_path}",
                 "prompt": inputs["prompt"],
                 "output": str(output_path),
+                "output_path": str(output_path),
                 "has_audio": inputs.get("generate_audio", True),
                 "operation": operation,
+                "format": "mp4",
+                **probed,
             },
             artifacts=[str(output_path)],
             cost_usd=self.estimate_cost(inputs),

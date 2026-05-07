@@ -105,7 +105,11 @@ class TranscriptFetcher(BaseTool):
         cpu_cores=1, ram_mb=256, vram_mb=0, disk_mb=10,
         network_required=True,
     )
-    idempotency_key_fields = ["url_or_video_id", "languages"]
+    idempotency_key_fields = [
+        "url_or_video_id",
+        "languages",
+        "include_auto_generated",
+    ]
     side_effects = []
     fallback = "transcriber"
     user_visible_verification = [
@@ -130,6 +134,25 @@ class TranscriptFetcher(BaseTool):
         # If nothing matched, try using the whole string as ID
         return url_or_id.strip()
 
+    def _fetch_transcript_result(
+        self,
+        ytt: Any,
+        video_id: str,
+        languages: list[str],
+        include_auto_generated: bool,
+    ) -> tuple[Any, Any]:
+        if include_auto_generated:
+            transcript_result = ytt.fetch(video_id, languages=languages)
+            return transcript_result, transcript_result
+
+        transcript = ytt.list(video_id).find_manually_created_transcript(languages)
+        return transcript.fetch(), transcript
+
+    def _snippet_value(self, snippet: Any, key: str, default: Any = None) -> Any:
+        if isinstance(snippet, dict):
+            return snippet.get(key, default)
+        return getattr(snippet, key, default)
+
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
         video_id = self._extract_video_id(inputs["url_or_video_id"])
         languages = inputs.get("languages", ["en"])
@@ -142,26 +165,43 @@ class TranscriptFetcher(BaseTool):
 
             ytt = YouTubeTranscriptApi()
 
-            # Fetch transcript using the instance-based API (v1.0+)
-            transcript_result = ytt.fetch(video_id, languages=languages)
+            # Fetch transcript using the instance-based API (v1.0+). When the
+            # caller disables auto-generated captions, choose a manual transcript
+            # explicitly instead of letting fetch() select generated captions.
+            transcript_result, transcript_meta = self._fetch_transcript_result(
+                ytt,
+                video_id,
+                languages,
+                include_auto,
+            )
 
             # Build segments and full text from snippets
             segments = []
             full_text_parts = []
-            for snippet in transcript_result.snippets:
+            for snippet in getattr(transcript_result, "snippets", transcript_result):
                 segments.append({
-                    "text": snippet.text,
-                    "start": round(snippet.start, 3),
-                    "duration": round(snippet.duration, 3),
+                    "text": self._snippet_value(snippet, "text", ""),
+                    "start": round(float(self._snippet_value(snippet, "start", 0)), 3),
+                    "duration": round(float(self._snippet_value(snippet, "duration", 0)), 3),
                 })
-                full_text_parts.append(snippet.text)
+                full_text_parts.append(self._snippet_value(snippet, "text", ""))
 
             full_text = " ".join(full_text_parts)
             word_count = len(full_text.split())
 
             # Get auto-generated status and language from the result
-            is_auto = getattr(transcript_result, "is_generated", False)
-            detected_lang = getattr(transcript_result, "language", languages[0])
+            is_auto = bool(
+                getattr(
+                    transcript_meta,
+                    "is_generated",
+                    getattr(transcript_result, "is_generated", False),
+                )
+            )
+            detected_lang = (
+                getattr(transcript_meta, "language_code", None)
+                or getattr(transcript_meta, "language", None)
+                or getattr(transcript_result, "language", languages[0])
+            )
             # If language is an object, get the code
             if hasattr(detected_lang, "code"):
                 detected_lang = detected_lang.code

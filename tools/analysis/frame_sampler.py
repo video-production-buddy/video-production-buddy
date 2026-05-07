@@ -24,6 +24,10 @@ from tools.base_tool import (
 )
 
 
+STRATEGIES = ["interval", "count", "timestamps", "scene_guided"]
+FORMATS = ["png", "jpg"]
+
+
 class FrameSampler(BaseTool):
     name = "frame_sampler"
     version = "0.1.0"
@@ -34,7 +38,7 @@ class FrameSampler(BaseTool):
     execution_mode = ExecutionMode.SYNC
     determinism = Determinism.DETERMINISTIC
 
-    dependencies = ["cmd:ffmpeg"]
+    dependencies = ["cmd:ffmpeg", "cmd:ffprobe"]
     install_instructions = (
         "Install FFmpeg: https://ffmpeg.org/download.html"
     )
@@ -46,6 +50,10 @@ class FrameSampler(BaseTool):
         "extract_frames_timestamps",
         "extract_frames_scene_guided",
     ]
+    best_for = [
+        "Extracting review keyframes from generated or source video",
+        "Sampling scene start/mid/end frames for visual and hallucination checks",
+    ]
 
     input_schema = {
         "type": "object",
@@ -54,7 +62,7 @@ class FrameSampler(BaseTool):
             "input_path": {"type": "string"},
             "strategy": {
                 "type": "string",
-                "enum": ["interval", "count", "timestamps", "scene_guided"],
+                "enum": STRATEGIES,
             },
             "interval_seconds": {
                 "type": "number",
@@ -89,13 +97,24 @@ class FrameSampler(BaseTool):
                 "description": "Max frames to extract (for scene_guided strategy)",
             },
             "output_dir": {"type": "string"},
-            "format": {"type": "string", "enum": ["png", "jpg"], "default": "jpg"},
+            "format": {"type": "string", "enum": FORMATS, "default": "jpg"},
             "quality": {"type": "integer", "minimum": 1, "maximum": 31, "default": 2},
         },
     }
 
     resource_profile = ResourceProfile(cpu_cores=1, ram_mb=512, vram_mb=0, disk_mb=500)
-    idempotency_key_fields = ["input_path", "strategy", "interval_seconds", "count"]
+    idempotency_key_fields = [
+        "input_path",
+        "strategy",
+        "interval_seconds",
+        "count",
+        "timestamps",
+        "scene_boundaries",
+        "max_frames",
+        "output_dir",
+        "format",
+        "quality",
+    ]
     side_effects = ["writes frame images to output_dir"]
     user_visible_verification = ["Inspect extracted frames for representative coverage"]
 
@@ -107,6 +126,8 @@ class FrameSampler(BaseTool):
         strategy = inputs["strategy"]
         fmt = inputs.get("format", "jpg")
         quality = inputs.get("quality", 2)
+        if fmt not in FORMATS:
+            return ToolResult(success=False, error=f"Unknown format: {fmt}")
         output_dir = Path(inputs.get("output_dir", input_path.parent / "frames"))
         output_dir.mkdir(parents=True, exist_ok=True)
 

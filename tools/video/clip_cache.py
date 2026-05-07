@@ -1,7 +1,7 @@
 """Shared clip bytes cache for the corpus builder.
 
 Phase 1 of the shared-corpus architecture: a process-safe, LRU-evicted
-cache of downloaded clip files at ``~/.openmontage/clips_cache/``.
+cache of downloaded clip files at ``~/.video-production-buddy/clips_cache/``.
 When the corpus builder decides to fetch a candidate, it first asks
 this cache whether the bytes are already on disk from a previous
 project run. If yes, the cache hard-links (or copies on cross-drive)
@@ -37,7 +37,7 @@ Design decisions
   caller doesn't need to care either way.
 
 - **LRU eviction at cap.** Default cap is 20 GB, overridable via
-  ``OPENMONTAGE_CACHE_MAX_GB``. When ``ingest()`` would push total
+  ``VIDEO_PRODUCTION_BUDDY_CACHE_MAX_GB``. When ``ingest()`` would push total
   bytes above the cap, the cache evicts least-recently-accessed
   entries until there's room. Evictions unlink the blob file and drop
   the manifest row. In-flight entries (currently being ingested) are
@@ -60,7 +60,9 @@ Non-goals (intentional for Phase 1)
 from __future__ import annotations
 
 import json
+import hashlib
 import os
+import re
 import shutil
 import tempfile
 import time
@@ -76,12 +78,15 @@ except ImportError:
     _HAVE_FILELOCK = False
 
 
-# Default 20 GB cap. Overridable via OPENMONTAGE_CACHE_MAX_GB.
+# Default 20 GB cap. Overridable via VIDEO_PRODUCTION_BUDDY_CACHE_MAX_GB.
 _DEFAULT_MAX_TOTAL_BYTES = 20 * 1024 * 1024 * 1024
 
 # Reject ingesting a source file under this size — almost always a
 # failed/empty download that the caller didn't catch.
 _MIN_USABLE_BYTES = 1024
+_BLOB_SAFE_CHARS_RE = re.compile(r"[^A-Za-z0-9._-]+")
+_MAX_BLOB_FILE_NAME_LENGTH = 120
+_BLOB_DIGEST_LENGTH = 12
 
 
 # ----------------------------------------------------------------------
@@ -92,25 +97,22 @@ _MIN_USABLE_BYTES = 1024
 def default_cache_dir() -> Path:
     """Resolve the cache directory.
 
-    Honors ``OPENMONTAGE_CACHE_DIR`` if set, else falls back to
-    ``~/.openmontage/clips_cache``. Does not create the directory —
-    that happens in ``ClipCache.__init__`` on first use.
+    Honors ``VIDEO_PRODUCTION_BUDDY_CACHE_DIR``. Without an env var, uses
+    ``~/.video-production-buddy/clips_cache``.
     """
-    override = os.environ.get("OPENMONTAGE_CACHE_DIR")
+    override = os.environ.get("VIDEO_PRODUCTION_BUDDY_CACHE_DIR")
     if override:
         return Path(override).expanduser()
-    return Path.home() / ".openmontage" / "clips_cache"
+    return Path.home() / ".video-production-buddy" / "clips_cache"
 
 
 def default_max_total_bytes() -> int:
     """Resolve the max-cache-size budget.
 
-    Honors ``OPENMONTAGE_CACHE_MAX_GB`` (float or int) if set, else
-    returns the default 20 GB. Invalid overrides silently fall back to
-    the default rather than crashing — the cache shouldn't bring down
-    a production run over a bad env var.
+    Honors ``VIDEO_PRODUCTION_BUDDY_CACHE_MAX_GB``. Invalid overrides silently
+    fall back to the default rather than crashing.
     """
-    override = os.environ.get("OPENMONTAGE_CACHE_MAX_GB")
+    override = os.environ.get("VIDEO_PRODUCTION_BUDDY_CACHE_MAX_GB")
     if override:
         try:
             return int(float(override) * 1024 * 1024 * 1024)
@@ -334,8 +336,8 @@ class ClipCache:
                 self.misses += 1
                 return False
 
-            blob_path = self.cache_dir / entry.file_name
-            if not blob_path.exists():
+            blob_path = _resolve_cache_blob_path(self.cache_dir, entry.file_name)
+            if blob_path is None or not blob_path.exists() or blob_path.is_symlink():
                 # Drift — prune and miss.
                 del entries[clip_id]
                 self._write_manifest(entries)
@@ -343,15 +345,8 @@ class ClipCache:
                 return False
 
             dest.parent.mkdir(parents=True, exist_ok=True)
-            # Remove any existing file at dest first so the hard link
-            # can be created cleanly. Harmless if dest didn't exist.
-            if dest.exists() or dest.is_symlink():
-                try:
-                    dest.unlink()
-                except OSError:
-                    pass
 
-            if not _link_or_copy(blob_path, dest):
+            if not _materialize_blob(blob_path, dest):
                 # Link and copy both failed — treat as miss so the
                 # caller redownloads. Leave the cache entry alone;
                 # the blob is still valid, we just can't reach dest.
@@ -397,13 +392,25 @@ class ClipCache:
         with self._locked():
             entries = self._read_manifest()
 
-            # Already cached → just bump last_access and return.
-            if clip_id in entries and (
-                self.cache_dir / entries[clip_id].file_name
-            ).exists():
-                entries[clip_id].last_access_at = time.time()
+            # Already cached → just bump last_access and return. If a
+            # manifest row points outside cache_dir, prune it and replace
+            # with a sanitized entry below.
+            existing = entries.get(clip_id)
+            if existing is not None:
+                existing_blob = _resolve_cache_blob_path(
+                    self.cache_dir, existing.file_name
+                )
+                if (
+                    existing_blob is not None
+                    and existing_blob.exists()
+                    and not existing_blob.is_symlink()
+                ):
+                    existing.last_access_at = time.time()
+                    entries[clip_id] = existing
+                    self._write_manifest(entries)
+                    return True
+                del entries[clip_id]
                 self._write_manifest(entries)
-                return True
 
             # Make room.
             self._evict_to_fit_locked(entries, size_bytes)
@@ -411,7 +418,7 @@ class ClipCache:
             # Name the blob ``{clip_id}{ext}``. Stable and collision-free
             # as long as clip_ids are unique (they are — {source}_{source_id}).
             ext = source_path.suffix or ""
-            blob_name = f"{clip_id}{ext}"
+            blob_name = _safe_blob_name(clip_id, ext)
             blob_path = self.cache_dir / blob_name
 
             # Clean any stale blob at the same path (drift or interrupted
@@ -497,7 +504,11 @@ class ClipCache:
         for victim in sorted_victims:
             if current_bytes + needed_bytes <= self.max_total_bytes:
                 break
-            blob_path = self.cache_dir / victim.file_name
+            blob_path = _resolve_cache_blob_path(self.cache_dir, victim.file_name)
+            if blob_path is None:
+                current_bytes -= victim.size_bytes
+                del entries[victim.clip_id]
+                continue
             unlinked = False
             try:
                 if blob_path.exists():
@@ -518,6 +529,33 @@ class ClipCache:
 # ----------------------------------------------------------------------
 # Module-level helpers
 # ----------------------------------------------------------------------
+
+
+def _safe_blob_name(clip_id: str, ext: str) -> str:
+    """Return a cache-local blob file name for an arbitrary source clip id."""
+    raw = str(clip_id)
+    safe = _BLOB_SAFE_CHARS_RE.sub("_", raw).strip("._-")
+    if not safe:
+        safe = "clip"
+    if safe != raw or len(f"{safe}{ext}") > _MAX_BLOB_FILE_NAME_LENGTH:
+        digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:_BLOB_DIGEST_LENGTH]
+        max_stem = max(
+            1,
+            _MAX_BLOB_FILE_NAME_LENGTH - len(ext) - len(digest) - 1,
+        )
+        safe = f"{safe[:max_stem]}-{digest}"
+    return f"{safe}{ext}"
+
+
+def _resolve_cache_blob_path(cache_dir: Path, file_name: str) -> Optional[Path]:
+    """Resolve a manifest blob name only if it stays under cache_dir."""
+    base = Path(cache_dir).resolve()
+    candidate = (base / file_name).resolve()
+    try:
+        candidate.relative_to(base)
+    except ValueError:
+        return None
+    return candidate
 
 
 def _link_or_copy(src: Path, dst: Path) -> bool:
@@ -543,6 +581,30 @@ def _link_or_copy(src: Path, dst: Path) -> bool:
         return False
 
 
+def _materialize_blob(src: Path, dest: Path) -> bool:
+    """Materialize src at dest without clobbering dest unless materialization works."""
+    dest = Path(dest)
+    tmp_fd, tmp_name = tempfile.mkstemp(
+        prefix=f".{dest.name}.", suffix=".cachetmp", dir=str(dest.parent)
+    )
+    os.close(tmp_fd)
+    tmp_path = Path(tmp_name)
+    try:
+        tmp_path.unlink()
+        if not _link_or_copy(src, tmp_path):
+            return False
+        os.replace(tmp_path, dest)
+        return True
+    except OSError:
+        return False
+    finally:
+        try:
+            if tmp_path.exists() or tmp_path.is_symlink():
+                tmp_path.unlink()
+        except OSError:
+            pass
+
+
 # ----------------------------------------------------------------------
 # Default-singleton accessor
 # ----------------------------------------------------------------------
@@ -566,7 +628,7 @@ def get_default_cache() -> ClipCache:
 
 def reset_default_cache() -> None:
     """Drop the cached singleton so a subsequent ``get_default_cache()``
-    re-reads env vars. Useful for tests that mutate ``OPENMONTAGE_CACHE_DIR``.
+    re-reads cache env vars.
     """
     global _DEFAULT_CACHE
     _DEFAULT_CACHE = None

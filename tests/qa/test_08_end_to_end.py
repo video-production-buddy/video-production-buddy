@@ -233,9 +233,55 @@ try:
 except Exception as e:
     check("Proposal packet validates against schema", False, str(e))
 
+decision_log = {
+    "version": "1.0",
+    "project_id": PROJECT_ID,
+    "decisions": [
+        {
+            "decision_id": "d-runtime-001",
+            "stage": "proposal",
+            "category": "render_runtime_selection",
+            "subject": "Render runtime",
+            "options_considered": [
+                {
+                    "option_id": "remotion",
+                    "label": "Remotion",
+                    "score": 1.0,
+                    "reason": "Best fit for the approved animated-explainer scene stack",
+                },
+                {
+                    "option_id": "hyperframes",
+                    "label": "HyperFrames",
+                    "score": 0.7,
+                    "reason": "Strong for HTML motion, but not needed for this fixture",
+                    "rejected_because": "fixture exercises the Remotion-aligned explainer path",
+                },
+                {
+                    "option_id": "ffmpeg",
+                    "label": "FFmpeg",
+                    "score": 0.4,
+                    "reason": "Useful for local composition, but less representative of the approved explainer proposal",
+                    "rejected_because": "fixture proposal locks remotion",
+                },
+            ],
+            "selected": "remotion",
+            "reason": "Matches the approved proposal runtime",
+            "user_visible": True,
+            "user_approved": True,
+            "confidence": 1.0,
+        }
+    ],
+}
+
+try:
+    validate_artifact("decision_log", decision_log)
+    check("Decision log validates against schema", True)
+except Exception as e:
+    check("Decision log validates against schema", False, str(e))
+
 cp_path = write_checkpoint(
     PIPELINE_DIR, PROJECT_ID, "proposal", "completed",
-    artifacts={"proposal_packet": proposal_packet},
+    artifacts={"proposal_packet": proposal_packet, "decision_log": decision_log},
     pipeline_type="animated-explainer",
     style_playbook="clean-professional",
 )
@@ -252,7 +298,7 @@ SECTIONS = [
     ("s1_hook",    "Hook",    0,  8, "What if creating a professional video took less time than making your morning coffee?"),
     ("s2_setup",   "Setup",   8, 20, "Traditional video production involves scripting, filming, editing, and post-production. It takes days, sometimes weeks."),
     ("s3_build",   "Build",  20, 38, "Now imagine an AI that handles all of that. You type a topic, and it writes the script, generates visuals, creates narration, mixes audio, and delivers a finished video."),
-    ("s4_climax",  "Climax", 38, 50, "This is not science fiction. OpenMontage is an open-source platform that orchestrates AI tools into a complete video pipeline."),
+    ("s4_climax",  "Climax", 38, 50, "This is not science fiction. Video Production Buddy is an open-source platform that orchestrates AI tools into a complete video pipeline."),
     ("s5_landing", "Landing", 50, 60, "The future of video creation is open, automated, and available right now. Try it yourself."),
 ]
 
@@ -424,6 +470,7 @@ for i, scene in enumerate(scene_plan["scenes"]):
 
 edit_decisions = {
     "version": "1.0",
+    "render_runtime": "ffmpeg",
     "cuts": [
         {
             "id": f"cut_{scene['id']}",
@@ -547,6 +594,11 @@ if os.path.exists(final_video):
     check("Video has video track", bool(video_stream))
     check("Duration > 30s", duration > 30, f"{duration:.1f}s")
 
+output_resolution = (
+    f"{video_stream.get('width', 1280)}x{video_stream.get('height', 720)}"
+)
+output_file_size = os.path.getsize(final_video) if os.path.exists(final_video) else 0
+
 render_report = {
     "version": "1.0",
     "outputs": [
@@ -555,10 +607,10 @@ render_report = {
             "format": "mp4",
             "codec": video_stream.get("codec_name", "h264"),
             "audio_codec": audio_stream.get("codec_name", "aac"),
-            "resolution": f"{video_stream.get('width', 1280)}x{video_stream.get('height', 720)}",
+            "resolution": output_resolution,
             "fps": 30,
             "duration_seconds": round(duration, 2),
-            "file_size_bytes": os.path.getsize(final_video) if os.path.exists(final_video) else 0,
+            "file_size_bytes": output_file_size,
             "platform_target": "youtube",
         }
     ],
@@ -571,9 +623,68 @@ try:
 except Exception as e:
     check("Render report validates against schema", False, str(e))
 
+final_review = {
+    "version": "1.0",
+    "output_path": final_video,
+    "status": "pass",
+    "checks": {
+        "technical_probe": {
+            "valid_container": True,
+            "duration_seconds": round(duration, 2),
+            "resolution": output_resolution,
+            "fps": 30,
+            "has_audio": True,
+            "codec": video_stream.get("codec_name", "h264"),
+            "file_size_bytes": output_file_size,
+            "issues": [],
+        },
+        "visual_spotcheck": {
+            "frames_sampled": 4,
+            "frame_paths": [],
+            "black_frames_detected": False,
+            "broken_overlays": False,
+            "missing_assets": False,
+            "unreadable_text": False,
+            "issues": [],
+        },
+        "audio_spotcheck": {
+            "narration_present": True,
+            "music_present": True,
+            "unexpected_silence": False,
+            "clipping_detected": False,
+            "mix_intelligible": True,
+            "issues": [],
+        },
+        "promise_preservation": {
+            "delivery_promise_honored": True,
+            "renderer_family_used": "explainer-data",
+            "render_runtime_used": "ffmpeg",
+            "runtime_swap_detected": False,
+            "runtime_swap_check": "ok - fixture render used the expected local runtime",
+            "silent_downgrade_detected": False,
+            "issues": [],
+        },
+        "subtitle_check": {
+            "subtitles_expected": True,
+            "subtitles_present": True,
+            "coverage_ratio": 1.0,
+            "timing_drift_detected": False,
+            "issues": [],
+        },
+    },
+    "issues_found": [],
+    "recommended_action": "present_to_user",
+}
+
+try:
+    validate_artifact("final_review", final_review)
+    check("Final review validates against schema", True)
+except Exception as e:
+    check("Final review validates against schema", False, str(e))
+
 write_checkpoint(
     PIPELINE_DIR, PROJECT_ID, "compose", "completed",
-    artifacts={"render_report": render_report},
+    artifacts={"render_report": render_report, "final_review": final_review},
     pipeline_type="animated-explainer",
     cost_snapshot=tracker.cost_snapshot(),
 )
@@ -594,12 +705,12 @@ publish_log = {
             "metadata_used": {
                 "title": "AI Video Production in 60 Seconds",
                 "description": "See how AI orchestrates an entire video production pipeline.",
-                "hashtags": ["#AI", "#VideoProduction", "#OpenMontage"],
+                "hashtags": ["#AI", "#VideoProduction", "#Video Production Buddy"],
                 "chapters": [
                     {"time": "0:00", "label": "Hook"},
                     {"time": "0:08", "label": "The Problem"},
                     {"time": "0:20", "label": "The Solution"},
-                    {"time": "0:38", "label": "OpenMontage"},
+                    {"time": "0:38", "label": "Video Production Buddy"},
                     {"time": "0:50", "label": "Try It"},
                 ],
             },

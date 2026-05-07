@@ -1,6 +1,6 @@
 """Base tool class implementing the expanded ToolContract.
 
-Every tool in OpenMontage inherits from BaseTool. This enforces a uniform
+Every tool in Video Production Buddy inherits from BaseTool. This enforces a uniform
 interface for discovery, execution, cost estimation, and health reporting.
 """
 
@@ -23,29 +23,11 @@ from typing import Any, Callable, Optional
 def _load_dotenv() -> None:
     """Load .env into os.environ once at import time.
 
-    This ensures API keys are available before any tool is instantiated,
-    even when tools are imported directly without going through the registry.
-    Only sets variables that are not already in the environment.
+    Delegates to the shared loader in lib/dotenv_loader.py.
     """
-    env_path = Path(__file__).resolve().parent.parent / ".env"
-    if not env_path.is_file():
-        return
-    with open(env_path, encoding="utf-8", errors="ignore") as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, _, value = line.partition("=")
-            key = key.strip()
-            value = value.strip().strip("'\"")
-            # Strip inline comments: VAR=value  # comment
-            # But only if the # is preceded by whitespace (avoid stripping from values like colors)
-            if "  #" in value:
-                value = value[:value.index("  #")].rstrip()
-            elif "\t#" in value:
-                value = value[:value.index("\t#")].rstrip()
-            if key and key not in os.environ:
-                os.environ[key] = value
+    from lib.dotenv_loader import load_dotenv as _load
+
+    _load(Path(__file__).resolve().parent.parent / ".env")
 
 
 _load_dotenv()
@@ -130,7 +112,7 @@ class ToolResult:
 
 
 class BaseTool(ABC):
-    """Abstract base class for all OpenMontage tools."""
+    """Abstract base class for all Video Production Buddy tools."""
 
     # --- Identity (override in subclasses) ---
     name: str = ""
@@ -148,7 +130,7 @@ class BaseTool(ABC):
 
     # --- Capabilities ---
     capability: str = "generic"
-    provider: str = "openmontage"
+    provider: str = "video_production_buddy"
     capabilities: list[str] = []
     input_schema: dict = {}
     output_schema: dict = {}
@@ -173,9 +155,9 @@ class BaseTool(ABC):
     fallback_tools: list[str] = []
 
     # --- Agent skills (Layer 3 references) ---
-    # Names of installed agent skills in .agents/skills/ that teach the
-    # underlying technology. The orchestrator uses these to load relevant
-    # API knowledge when planning tool usage.
+    # Names of Layer 3 agent skills declared in .agents/components.yaml and
+    # materialized under .agents/skills/. The orchestrator uses these to load
+    # relevant API knowledge when planning tool usage.
     agent_skills: list[str] = []
 
     # --- Verification ---
@@ -202,8 +184,8 @@ class BaseTool(ABC):
     def check_dependencies(self) -> None:
         """Verify all dependencies are installed. Raises DependencyError if not."""
         for dep in self.dependencies:
-            if dep.startswith("cmd:"):
-                cmd_name = dep[4:]
+            if dep.startswith("cmd:") or dep.startswith("binary:"):
+                cmd_name = dep.split(":", 1)[1]
                 if shutil.which(cmd_name) is None:
                     raise DependencyError(
                         f"Command {cmd_name!r} not found. {self.install_instructions}"
@@ -214,6 +196,24 @@ class BaseTool(ABC):
                     raise DependencyError(
                         f"Environment variable {env_name!r} not set. {self.install_instructions}"
                     )
+            elif dep.startswith("env_any:"):
+                groups = _parse_env_any_dependency(dep)
+                if not groups:
+                    raise DependencyError(
+                        f"Malformed env_any dependency declaration {dep!r}."
+                    )
+                if not any(
+                    all(os.environ.get(env_name) for env_name in group)
+                    for group in groups
+                ):
+                    options = [
+                        "+".join(group)
+                        for group in groups
+                    ]
+                    raise DependencyError(
+                        "At least one environment variable option must be set "
+                        f"from {options!r}. {self.install_instructions}"
+                    )
             elif dep.startswith("python:"):
                 module_name = dep[7:]
                 try:
@@ -222,6 +222,11 @@ class BaseTool(ABC):
                     raise DependencyError(
                         f"Python module {module_name!r} not installed. {self.install_instructions}"
                     )
+            else:
+                raise DependencyError(
+                    f"Unknown dependency declaration {dep!r}. "
+                    "Use cmd:, binary:, env:, env_any:, or python: prefixes."
+                )
 
     def get_info(self) -> dict[str, Any]:
         """Return full tool contract info for registry/discovery."""
@@ -335,3 +340,20 @@ class BaseTool(ABC):
 class DependencyError(Exception):
     """Raised when a tool's dependency is not satisfied."""
     pass
+
+
+def _parse_env_any_dependency(dep: str) -> list[list[str]]:
+    """Parse env_any: declarations into alternative env-var groups.
+
+    Syntax examples:
+    - env_any:FAL_KEY,FAL_AI_API_KEY means either variable is enough.
+    - env_any:HIGGSFIELD_KEY,HIGGSFIELD_API_KEY+HIGGSFIELD_API_SECRET means
+      either the combined key or the key+secret pair is enough.
+    """
+    raw = dep.split(":", 1)[1]
+    groups: list[list[str]] = []
+    for option in raw.replace("|", ",").split(","):
+        group = [part.strip() for part in option.split("+") if part.strip()]
+        if group:
+            groups.append(group)
+    return groups

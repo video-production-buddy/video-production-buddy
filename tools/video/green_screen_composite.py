@@ -55,6 +55,10 @@ class GreenScreenComposite(BaseTool):
         "layout_preset",
         "alpha_composite",
     ]
+    best_for = [
+        "Compositing keyed presenter footage over generated backgrounds",
+        "Building speaker overlay layouts for talking-head and hybrid videos",
+    ]
 
     input_schema = {
         "type": "object",
@@ -111,8 +115,14 @@ class GreenScreenComposite(BaseTool):
     retry_policy = RetryPolicy(max_retries=1, retryable_errors=["FFmpeg error"])
     resume_support = ResumeSupport.FROM_START
     idempotency_key_fields = [
-        "speaker_path", "background_path", "layout",
-        "speaker_scale", "bg_shift_up", "bg_color_hex",
+        "speaker_path",
+        "background_path",
+        "output_path",
+        "original_audio_path",
+        "layout",
+        "speaker_scale",
+        "bg_shift_up",
+        "bg_color_hex",
     ]
     side_effects = ["writes composite video to output_path"]
     user_visible_verification = [
@@ -127,6 +137,8 @@ class GreenScreenComposite(BaseTool):
         output_path = Path(inputs["output_path"])
         original_audio_path = inputs.get("original_audio_path")
         layout = inputs.get("layout", "news_anchor")
+        if layout not in {"news_anchor", "full_behind", "pip", "split"}:
+            return ToolResult(success=False, error=f"Unknown layout: {layout}")
         speaker_scale = inputs.get("speaker_scale", 0.65)
         bg_shift_up = inputs.get("bg_shift_up", 300)
         bg_color_hex = inputs.get("bg_color_hex", "#0E172A")
@@ -381,6 +393,9 @@ class GreenScreenComposite(BaseTool):
 
             canvas.paste(speaker_left, (0, 0), speaker_left)
             canvas.paste(bg_right, (half_w, 0), bg_right)
+
+        else:
+            raise ValueError(f"Unknown layout: {layout}")
 
         # Convert to RGB for output
         return canvas.convert("RGB")

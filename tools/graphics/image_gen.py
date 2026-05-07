@@ -45,7 +45,7 @@ class ImageGen(BaseTool):
     determinism = Determinism.SEEDED
     runtime = ToolRuntime.HYBRID  # API (DALL-E/FLUX) or local (diffusers)
 
-    dependencies = []  # checked dynamically based on provider
+    dependencies = ["env_any:OPENAI_API_KEY,FAL_KEY,FAL_AI_API_KEY"]
     install_instructions = (
         "Set one of these environment variables:\n"
         "  OPENAI_API_KEY — for DALL-E 3\n"
@@ -94,7 +94,16 @@ class ImageGen(BaseTool):
         cpu_cores=1, ram_mb=512, vram_mb=0, disk_mb=100, network_required=True
     )
     retry_policy = RetryPolicy(max_retries=2, retryable_errors=["rate_limit", "timeout"])
-    idempotency_key_fields = ["prompt", "width", "height", "seed"]
+    idempotency_key_fields = [
+        "prompt",
+        "output_path",
+        "negative_prompt",
+        "width",
+        "height",
+        "provider",
+        "model",
+        "seed",
+    ]
     side_effects = ["writes image file to output_path", "calls external API"]
     user_visible_verification = [
         "Inspect generated image for relevance and quality",

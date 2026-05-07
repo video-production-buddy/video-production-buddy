@@ -27,7 +27,13 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from .base import Candidate, SearchFilters
+from .base import (
+    Candidate,
+    SearchFilters,
+    absolute_url,
+    stable_source_id,
+    url_path_has_extension,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -116,7 +122,7 @@ class LibraryOfCongressSource:
             subjects = " ".join(s for s in subjects if isinstance(s, str))
         source_tags = f"{title} {description} {subjects}".strip()
 
-        source_url = item_id if item_id.startswith("http") else f"https://www.loc.gov{item_id}"
+        source_url = absolute_url("https://www.loc.gov", item_id)
 
         # Determine rights
         rights = item.get("rights", []) or []
@@ -155,11 +161,11 @@ class LibraryOfCongressSource:
                         continue
 
                     is_video = "video" in mime or any(
-                        url.lower().endswith(ext)
+                        url_path_has_extension(url, (ext,))
                         for ext in (".mp4", ".mov", ".avi", ".webm")
                     )
                     is_image = "image" in mime or any(
-                        url.lower().endswith(ext)
+                        url_path_has_extension(url, (ext,))
                         for ext in (".jpg", ".jpeg", ".png", ".tif")
                     )
 
@@ -170,12 +176,12 @@ class LibraryOfCongressSource:
                     if not is_video and not is_image:
                         continue
 
-                    full_url = url if url.startswith("http") else f"https://www.loc.gov{url}"
+                    full_url = absolute_url("https://www.loc.gov", url)
 
                     out.append(
                         Candidate(
                             source=self.name,
-                            source_id=f"loc_{hash(full_url) & 0xFFFFFFFF:08x}",
+                            source_id=stable_source_id("loc", full_url),
                             source_url=source_url,
                             download_url=full_url,
                             kind="video" if is_video else "image",
@@ -195,11 +201,11 @@ class LibraryOfCongressSource:
 
         # If no resources found but we have an image_url for image kind
         if not out and kind in ("image", "any") and image_url:
-            full_url = image_url if image_url.startswith("http") else f"https://www.loc.gov{image_url}"
+            full_url = absolute_url("https://www.loc.gov", image_url)
             out.append(
                 Candidate(
                     source=self.name,
-                    source_id=f"loc_{hash(full_url) & 0xFFFFFFFF:08x}",
+                    source_id=stable_source_id("loc", full_url),
                     source_url=source_url,
                     download_url=full_url,
                     kind="image",

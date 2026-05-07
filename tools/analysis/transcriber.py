@@ -26,6 +26,9 @@ from tools.base_tool import (
 )
 
 
+MODEL_SIZES = ["tiny", "base", "small", "medium", "large-v2", "large-v3"]
+
+
 class Transcriber(BaseTool):
     name = "transcriber"
     version = "0.1.0"
@@ -50,6 +53,10 @@ class Transcriber(BaseTool):
         "diarization",
         "language_detection",
     ]
+    best_for = [
+        "Local speech transcription with segment and word timing",
+        "Preparing captions, subtitles, and transcript-driven edits",
+    ]
 
     input_schema = {
         "type": "object",
@@ -58,7 +65,7 @@ class Transcriber(BaseTool):
             "input_path": {"type": "string", "description": "Path to audio or video file"},
             "model_size": {
                 "type": "string",
-                "enum": ["tiny", "base", "small", "medium", "large-v2", "large-v3"],
+                "enum": MODEL_SIZES,
                 "default": "base",
             },
             "language": {"type": "string", "description": "ISO 639-1 language code, or null for auto-detect"},
@@ -87,7 +94,7 @@ class Transcriber(BaseTool):
 
     retry_policy = RetryPolicy(max_retries=1, retryable_errors=["MemoryError"])
     resume_support = ResumeSupport.FROM_START
-    idempotency_key_fields = ["input_path", "model_size", "language"]
+    idempotency_key_fields = ["input_path", "output_dir", "model_size", "language", "diarize"]
     side_effects = ["writes transcript JSON to output_dir"]
     fallback = None
     user_visible_verification = [
@@ -119,6 +126,8 @@ class Transcriber(BaseTool):
         language = inputs.get("language")
         diarize = inputs.get("diarize", False)
         output_dir = Path(inputs.get("output_dir", input_path.parent))
+        if model_size not in MODEL_SIZES:
+            return ToolResult(success=False, error=f"Unknown model_size: {model_size}")
 
         if not input_path.exists():
             return ToolResult(success=False, error=f"Input file not found: {input_path}")

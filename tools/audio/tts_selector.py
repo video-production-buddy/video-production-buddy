@@ -20,7 +20,11 @@ class TTSSelector(BaseTool):
     provider = "selector"
     stability = ToolStability.BETA
     runtime = ToolRuntime.HYBRID
-    agent_skills = ["text-to-speech", "elevenlabs", "openai-docs"]
+    install_instructions = (
+        "Routes to discovered TTS providers. Use provider_menu_summary() to see "
+        "which local/API voices are configured and each provider's setup steps."
+    )
+    agent_skills: list[str] = []
 
     capabilities = [
         "text_to_speech",
@@ -34,6 +38,19 @@ class TTSSelector(BaseTool):
     best_for = [
         "preflight tool selection",
         "user-facing recommendation flows",
+    ]
+    idempotency_key_fields = [
+        "text",
+        "voice_id",
+        "model_id",
+        "stability",
+        "similarity_boost",
+        "style",
+        "output_format",
+        "output_path",
+        "preferred_provider",
+        "allowed_providers",
+        "operation",
     ]
 
     input_schema = {
@@ -125,6 +142,7 @@ class TTSSelector(BaseTool):
 
         # Rank mode — return scored provider rankings without generating
         if inputs.get("operation") == "rank":
+            candidates = _allowed_candidates(inputs, candidates)
             rankings = rank_providers(candidates, task_context)
             return ToolResult(
                 success=True,
@@ -140,7 +158,7 @@ class TTSSelector(BaseTool):
         if tool is None:
             return ToolResult(success=False, error="No TTS provider available.")
 
-        result = tool.execute(inputs)
+        result = tool.execute(self._provider_inputs(inputs, tool))
         if result.success:
             result.data.setdefault("selected_tool", tool.name)
             result.data["selected_provider"] = tool.provider
@@ -164,27 +182,49 @@ class TTSSelector(BaseTool):
         from lib.scoring import rank_providers
 
         preferred = inputs.get("preferred_provider", "auto")
-        allowed = set(inputs.get("allowed_providers") or [])
-        if allowed:
-            candidates = [tool for tool in candidates if tool.provider in allowed]
+        candidates = _allowed_candidates(inputs, candidates)
 
         rankings = rank_providers(candidates, task_context)
 
-        tool_by_provider: dict[str, BaseTool] = {}
+        available_by_name: dict[str, BaseTool] = {}
         for tool in candidates:
-            if tool.provider not in tool_by_provider and tool.get_status() == ToolStatus.AVAILABLE:
-                tool_by_provider[tool.provider] = tool
+            if tool.get_status() == ToolStatus.AVAILABLE:
+                available_by_name[tool.name] = tool
 
         if preferred != "auto":
             for score_item in rankings:
-                if score_item.provider == preferred and score_item.provider in tool_by_provider:
-                    return tool_by_provider[score_item.provider], score_item
+                if score_item.provider == preferred or score_item.tool_name == preferred:
+                    tool = available_by_name.get(score_item.tool_name)
+                    if tool is not None:
+                        return tool, score_item
 
         for score_item in rankings:
-            if score_item.provider in tool_by_provider:
-                return tool_by_provider[score_item.provider], score_item
+            tool = available_by_name.get(score_item.tool_name)
+            if tool is not None:
+                return tool, score_item
 
         return None, None
+
+    def _provider_inputs(self, inputs: dict[str, Any], tool: BaseTool) -> dict[str, Any]:
+        """Map selector-level fields to the selected provider's declared schema."""
+        properties = getattr(tool, "input_schema", {}).get("properties", {})
+        adapted = dict(inputs)
+
+        if "voice" in properties and "voice" not in adapted and "voice_id" in adapted:
+            adapted["voice"] = adapted["voice_id"]
+        if "model" in properties and "model" not in adapted and "model_id" in adapted:
+            adapted["model"] = adapted["model_id"]
+        if "resource_id" in properties and "resource_id" not in adapted and "model_id" in adapted:
+            adapted["resource_id"] = adapted["model_id"]
+
+        output_format = adapted.get("output_format")
+        if isinstance(output_format, str):
+            if "format" in properties and "format" not in adapted:
+                adapted["format"] = _format_for_provider(output_format)
+            if "audio_encoding" in properties and "audio_encoding" not in adapted:
+                adapted["audio_encoding"] = _audio_encoding_for_provider(output_format)
+
+        return {key: value for key, value in adapted.items() if key in properties}
 
     def _prepare_task_context(self, inputs: dict[str, Any]) -> dict[str, Any]:
         from lib.scoring import normalize_task_context
@@ -217,6 +257,41 @@ class TTSSelector(BaseTool):
                 item["agent_skills"] = info.get("agent_skills", [])
                 item["usage_location"] = info.get("usage_location")
                 item["best_for"] = info.get("best_for", [])
-                item["status"] = str(tool.get_status())
+                item["status"] = tool.get_status().value
             serialized.append(item)
         return serialized
+
+
+def _allowed_candidates(
+    inputs: dict[str, Any],
+    candidates: list[BaseTool],
+) -> list[BaseTool]:
+    allowed = set(inputs.get("allowed_providers") or [])
+    if not allowed:
+        return candidates
+    return [
+        tool for tool in candidates
+        if tool.provider in allowed or tool.name in allowed
+    ]
+
+
+def _format_for_provider(output_format: str) -> str:
+    normalized = output_format.lower()
+    if normalized.startswith("mp3"):
+        return "mp3"
+    if normalized.startswith("pcm"):
+        return "pcm"
+    if normalized in {"wav", "ogg_opus", "ogg"}:
+        return normalized
+    return normalized.split("_", 1)[0]
+
+
+def _audio_encoding_for_provider(output_format: str) -> str:
+    normalized = output_format.lower()
+    if normalized.startswith("mp3"):
+        return "MP3"
+    if normalized.startswith("pcm") or normalized == "wav":
+        return "LINEAR16"
+    if normalized in {"ogg", "ogg_opus"}:
+        return "OGG_OPUS"
+    return output_format.upper()

@@ -54,7 +54,7 @@ class GrokImage(BaseTool):
     determinism = Determinism.STOCHASTIC
     runtime = ToolRuntime.API
 
-    dependencies = []
+    dependencies = ["env:XAI_API_KEY"]
     install_instructions = (
         "Set XAI_API_KEY to your xAI API key.\n"
         "  Get one from the xAI developer console"
@@ -131,7 +131,19 @@ class GrokImage(BaseTool):
         cpu_cores=1, ram_mb=512, vram_mb=0, disk_mb=100, network_required=True
     )
     retry_policy = RetryPolicy(max_retries=2, retryable_errors=["rate_limit", "timeout"])
-    idempotency_key_fields = ["prompt", "generation_mode", "model", "aspect_ratio", "resolution", "n"]
+    idempotency_key_fields = [
+        "prompt",
+        "output_path",
+        "generation_mode",
+        "model",
+        "aspect_ratio",
+        "resolution",
+        "n",
+        "image_url",
+        "image_path",
+        "image_urls",
+        "image_paths",
+    ]
     side_effects = ["writes image file(s) to output_path", "calls xAI image API"]
     user_visible_verification = ["Inspect generated image(s) for composition quality and edit fidelity"]
 
@@ -158,6 +170,8 @@ class GrokImage(BaseTool):
 
     def _build_payload(self, inputs: dict[str, Any]) -> tuple[str, dict[str, Any]]:
         mode = inputs.get("generation_mode", "generate")
+        if mode not in {"generate", "edit"}:
+            raise ValueError(f"Unsupported generation_mode '{mode}'.")
         payload: dict[str, Any] = {
             "model": inputs.get("model", "grok-imagine-image"),
             "prompt": inputs["prompt"],

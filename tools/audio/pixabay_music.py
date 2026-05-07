@@ -102,7 +102,7 @@ class PixabayMusic(BaseTool):
         cpu_cores=1, ram_mb=256, vram_mb=0, disk_mb=50, network_required=True
     )
     retry_policy = RetryPolicy(max_retries=2, retryable_errors=["timeout"])
-    idempotency_key_fields = ["query", "min_duration", "max_duration"]
+    idempotency_key_fields = ["query", "output_path", "min_duration", "max_duration"]
     side_effects = ["writes audio file to output_path", "scrapes Pixabay website"]
     user_visible_verification = [
         "Listen to downloaded track for mood and quality",

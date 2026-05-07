@@ -121,10 +121,14 @@ class CostTracker:
         when the action exceeds the single-action approval threshold.
         """
         entry = self._find(entry_id)
+        self._require_status(entry, EntryStatus.ESTIMATED, "reserved")
         estimated = entry["estimated_usd"]
 
         # Check single-action approval threshold
-        if estimated > self.single_action_approval_usd:
+        if (
+            estimated > self.single_action_approval_usd
+            and not entry.get("single_action_approved", False)
+        ):
             if self.mode != BudgetMode.OBSERVE:
                 raise ApprovalRequiredError(
                     f"Action costs ${estimated:.2f}, exceeds "
@@ -155,10 +159,20 @@ class CostTracker:
     def approve_tool(self, tool: str) -> None:
         """Mark a tool as approved for paid operations."""
         self._approved_tools.add(tool)
+        self._save()
+
+    def approve_action(self, entry_id: str) -> None:
+        """Mark one estimated action as approved above the single-action threshold."""
+        entry = self._find(entry_id)
+        self._require_status(entry, EntryStatus.ESTIMATED, "approved")
+        entry["single_action_approved"] = True
+        entry["approved_at"] = self._now()
+        self._save()
 
     def reconcile(self, entry_id: str, actual_usd: float, success: bool = True) -> None:
         """Reconcile actual spend after tool execution."""
         entry = self._find(entry_id)
+        self._require_status(entry, EntryStatus.RESERVED, "reconciled")
         entry["status"] = EntryStatus.COMPLETED.value if success else EntryStatus.FAILED.value
         entry["actual_usd"] = round(actual_usd, 4)
         entry["reserved_usd"] = 0.0
@@ -168,6 +182,7 @@ class CostTracker:
     def refund(self, entry_id: str) -> None:
         """Cancel a reservation without executing."""
         entry = self._find(entry_id)
+        self._require_status(entry, EntryStatus.RESERVED, "refunded")
         entry["status"] = EntryStatus.REFUNDED.value
         entry["reserved_usd"] = 0.0
         entry["timestamp"] = self._now()
@@ -488,6 +503,9 @@ class CostTracker:
             "budget_reserved_usd": round(self.budget_reserved_usd, 4),
             "budget_spent_usd": round(self.budget_spent_usd, 4),
             "entries": self.entries,
+            "metadata": {
+                "approved_tools": sorted(self._approved_tools),
+            },
         }
         self.cost_log_path.parent.mkdir(parents=True, exist_ok=True)
         with open(self.cost_log_path, "w") as f:
@@ -498,6 +516,16 @@ class CostTracker:
             data = json.load(f)
         self.entries = data.get("entries", [])
         self.budget_total_usd = data.get("budget_total_usd", self.budget_total_usd)
+        metadata = data.get("metadata", {})
+        approved_tools = metadata.get("approved_tools", [])
+        if isinstance(approved_tools, list):
+            self._approved_tools = {str(tool) for tool in approved_tools}
+        self._approved_tools.update(
+            entry["tool"]
+            for entry in self.entries
+            if entry.get("estimated_usd", 0.0) > 0
+            and entry.get("status") != EntryStatus.ESTIMATED.value
+        )
 
     # ---- Helpers ----
 
@@ -506,6 +534,19 @@ class CostTracker:
             if entry["id"] == entry_id:
                 return entry
         raise KeyError(f"Cost entry {entry_id!r} not found")
+
+    @staticmethod
+    def _require_status(
+        entry: dict[str, Any],
+        expected: EntryStatus,
+        action: str,
+    ) -> None:
+        current = entry.get("status")
+        if current != expected.value:
+            raise ValueError(
+                f"Cost entry {entry.get('id', '<unknown>')!r} is {current!r} "
+                f"and cannot be {action}; expected status {expected.value!r}"
+            )
 
     @staticmethod
     def _new_id() -> str:

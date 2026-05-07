@@ -21,7 +21,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from .base import Candidate, SearchFilters
+from .base import Candidate, SearchFilters, absolute_url, url_path_has_extension
 
 _log = logging.getLogger(__name__)
 
@@ -65,7 +65,7 @@ class MixkitSource:
             r = requests.get(
                 search_url,
                 timeout=30,
-                headers={"User-Agent": "OpenMontage/1.0"},
+                headers={"User-Agent": "Video Production Buddy/1.0"},
             )
             r.raise_for_status()
         except Exception as e:
@@ -85,8 +85,7 @@ class MixkitSource:
             href = link_el.get("href", "")
             if not href:
                 continue
-            if not href.startswith("http"):
-                href = f"https://mixkit.co{href}"
+            href = absolute_url("https://mixkit.co", href)
 
             # Skip non-video links
             if "/free-stock-video/" not in href and "/video/" not in href:
@@ -104,6 +103,7 @@ class MixkitSource:
             img_el = card.select_one("img")
             if img_el:
                 thumb = img_el.get("src", "") or img_el.get("data-src", "") or ""
+                thumb = absolute_url("https://mixkit.co", thumb)
 
             # Video preview
             video_el = card.select_one("video source[src], video[src]")
@@ -148,13 +148,13 @@ class MixkitSource:
         detail_url = candidate.extra.get("detail_url", candidate.download_url)
 
         # Direct media URL
-        if any(detail_url.lower().endswith(ext) for ext in (".mp4", ".mov", ".webm")):
+        if url_path_has_extension(detail_url, (".mp4", ".mov", ".webm")):
             return self._stream_download(detail_url, out_path)
 
         try:
             r = requests.get(
                 detail_url, timeout=30,
-                headers={"User-Agent": "OpenMontage/1.0"},
+                headers={"User-Agent": "Video Production Buddy/1.0"},
             )
             r.raise_for_status()
             soup = BeautifulSoup(r.text, "html.parser")
@@ -193,8 +193,7 @@ class MixkitSource:
             if not download_url:
                 raise ValueError(f"Could not find download URL on Mixkit page: {detail_url}")
 
-            if not download_url.startswith("http"):
-                download_url = f"https://mixkit.co{download_url}"
+            download_url = absolute_url("https://mixkit.co", download_url)
 
             return self._stream_download(download_url, out_path)
 
@@ -206,7 +205,7 @@ class MixkitSource:
 
         with requests.get(
             url, stream=True, timeout=120,
-            headers={"User-Agent": "OpenMontage/1.0"},
+            headers={"User-Agent": "Video Production Buddy/1.0"},
         ) as r:
             r.raise_for_status()
             with open(out_path, "wb") as f:

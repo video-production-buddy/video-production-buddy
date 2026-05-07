@@ -6,26 +6,11 @@ import {
   Sequence,
   interpolate,
   spring,
-  staticFile,
   useCurrentFrame,
   useVideoConfig,
 } from "remotion";
 import { loadFont } from "@remotion/google-fonts/SpaceGrotesk";
-
-// Resolve asset path — handle URLs, absolute paths (Windows/Unix), and public/ relative paths
-function resolveAsset(src: string): string {
-  if (src.startsWith("http://") || src.startsWith("https://") || src.startsWith("data:")) {
-    return src;
-  }
-  // Strip any file:// prefix
-  const clean = src.replace(/^file:\/\/\/?/, "");
-  // Absolute paths (Unix: /foo, Windows: C:\foo or C:/foo) — convert to file:// URI
-  // staticFile() only accepts relative paths within public/, so absolute paths must bypass it
-  if (clean.startsWith("/") || /^[A-Za-z]:[\\/]/.test(clean)) {
-    return `file:///${clean.replace(/\\/g, "/")}`;
-  }
-  return staticFile(clean);
-}
+import { resolveAsset } from "./assetPath";
 import { TextCard } from "./components/TextCard";
 import { StatCard } from "./components/StatCard";
 import { CalloutBox } from "./components/CalloutBox";
@@ -46,6 +31,16 @@ import type { TerminalStep } from "./components/TerminalScene";
 import { ScreenshotScene } from "./components/ScreenshotScene";
 import type { ScreenshotStep } from "./components/ScreenshotScene";
 import { ProviderChip } from "./components/ProviderChip";
+import { NotificationScene } from "./components/NotificationScene";
+import { DashboardScene } from "./components/DashboardScene";
+import { BrandCardScene } from "./components/BrandCardScene";
+import { CheckmarkScene } from "./components/CheckmarkScene";
+import { BrowserTabsScene } from "./components/BrowserTabsScene";
+import { BadgeFreezeScene } from "./components/BadgeFreezeScene";
+import { LineConnectionScene } from "./components/LineConnectionScene";
+import { StatRollScene } from "./components/StatRollScene";
+import { CreatorWorkflowScene } from "./components/CreatorWorkflowScene";
+import type { StyleLayerConfig } from "./components/StyleLayers";
 import type { ParticleType } from "./components/ParticleOverlay";
 import { resolveTheme, type ThemeConfig, DEFAULT_THEME } from "./Root";
 
@@ -264,6 +259,44 @@ interface Cut {
   steps?: TerminalStep[];
   terminalTitle?: string;
   prompt?: string;
+  // NotificationScene props (type: "notification_scene")
+  badgeStart?: number;
+  badgeEnd?: number;
+  badgeColor?: string;
+  banners?: string[];
+  // DashboardScene props (type: "dashboard_scene")
+  toastText?: string;
+  toastDelay?: number;
+  sidebarItems?: string[];
+  panelTitle?: string;
+  // BrandCardScene props (type: "brand_card")
+  brandName?: string;
+  tagline?: string;
+  ctaText?: string;
+  productImage?: string;
+  hardwareTreatment?: "synthetic_laptop";
+  // CheckmarkScene props (type: "checkmark_scene")
+  label?: string;
+  // BrowserTabsScene props (type: "browser_tabs_scene")
+  tabCount?: number;
+  showKeyboardPill?: boolean;
+  keyShortcut?: string;
+  // BadgeFreezeScene props (type: "badge_freeze_scene")
+  startCount?: number;
+  endCount?: number;
+  freezeAtSeconds?: number;
+  showThumb?: boolean;
+  // LineConnectionScene props (type: "line_connection_scene")
+  // leftLabel/rightLabel already declared above for ComparisonCard
+  leftSubLabel?: string;
+  rightSubLabel?: string;
+  drawDelay?: number;
+  // StatRollScene props (type: "stat_roll_scene")
+  targetValue?: number;
+  unitLabel?: string;
+  rollDurationSeconds?: number;
+  // Composable atmosphere/style layers (every dynamic scene component)
+  styleLayers?: StyleLayerConfig[];
   // Screenshot scene props (type: "screenshot_scene")
   screenshotSteps?: ScreenshotStep[];
   screenshotSize?: { width: number; height: number };
@@ -705,6 +738,142 @@ const SceneRenderer: React.FC<{ cut: Cut; theme: ThemeConfig }> = ({ cut, theme 
     );
   }
 
+  // --- Dynamic ad-video scene types ---
+
+  if (cut.type === "notification_scene") {
+    return (
+      <NotificationScene
+        badgeStart={cut.badgeStart}
+        badgeEnd={cut.badgeEnd}
+        badgeColor={cut.badgeColor || cut.accentColor}
+        banners={cut.banners}
+        backgroundColor={cut.backgroundColor}
+        sceneDurationSeconds={cut.out_seconds - cut.in_seconds}
+        styleLayers={cut.styleLayers}
+      />
+    );
+  }
+
+  if (cut.type === "creator_workflow_scene") {
+    return (
+      <CreatorWorkflowScene
+        mode={cut.animation === "workflow" ? "workflow" : "opening"}
+        productImage={cut.productImage}
+        hardwareTreatment={cut.hardwareTreatment}
+        title={cut.text || cut.title}
+        subtitle={cut.subtitle || cut.tagline}
+        labels={cut.banners}
+        workflowItems={cut.sidebarItems}
+        accentColor={cut.accentColor}
+        backgroundColor={cut.backgroundColor}
+        sceneDurationSeconds={cut.out_seconds - cut.in_seconds}
+        styleLayers={cut.styleLayers}
+      />
+    );
+  }
+
+  if (cut.type === "dashboard_scene") {
+    return (
+      <DashboardScene
+        primaryColor={cut.backgroundColor}
+        accentColor={cut.accentColor || cut.color}
+        toastText={cut.toastText}
+        toastDelay={cut.toastDelay}
+        sidebarItems={cut.sidebarItems}
+        panelTitle={cut.panelTitle}
+        sceneDurationSeconds={cut.out_seconds - cut.in_seconds}
+        styleLayers={cut.styleLayers}
+      />
+    );
+  }
+
+  if (cut.type === "brand_card") {
+    return (
+      <BrandCardScene
+        brandName={cut.brandName || cut.text}
+        tagline={cut.tagline || cut.heroSubtitle || cut.subtitle}
+        ctaText={cut.ctaText}
+        productImage={cut.productImage}
+        hardwareTreatment={cut.hardwareTreatment}
+        accentColor={cut.accentColor}
+        backgroundColor={cut.backgroundColor}
+        sceneDurationSeconds={cut.out_seconds - cut.in_seconds}
+        styleLayers={cut.styleLayers}
+      />
+    );
+  }
+
+  if (cut.type === "checkmark_scene") {
+    return (
+      <CheckmarkScene
+        accentColor={cut.accentColor}
+        backgroundColor={cut.backgroundColor}
+        label={cut.label}
+        sceneDurationSeconds={cut.out_seconds - cut.in_seconds}
+        styleLayers={cut.styleLayers}
+      />
+    );
+  }
+
+  if (cut.type === "browser_tabs_scene") {
+    return (
+      <BrowserTabsScene
+        tabCount={cut.tabCount}
+        showKeyboardPill={cut.showKeyboardPill}
+        keyShortcut={cut.keyShortcut}
+        backgroundColor={cut.backgroundColor}
+        sceneDurationSeconds={cut.out_seconds - cut.in_seconds}
+        styleLayers={cut.styleLayers}
+      />
+    );
+  }
+
+  if (cut.type === "badge_freeze_scene") {
+    return (
+      <BadgeFreezeScene
+        startCount={cut.startCount}
+        endCount={cut.endCount}
+        accentColor={cut.accentColor}
+        backgroundColor={cut.backgroundColor}
+        freezeAtSeconds={cut.freezeAtSeconds}
+        showThumb={cut.showThumb}
+        sceneDurationSeconds={cut.out_seconds - cut.in_seconds}
+        styleLayers={cut.styleLayers}
+      />
+    );
+  }
+
+  if (cut.type === "line_connection_scene" && cut.leftLabel && cut.rightLabel) {
+    return (
+      <LineConnectionScene
+        leftLabel={cut.leftLabel}
+        rightLabel={cut.rightLabel}
+        leftSubLabel={cut.leftSubLabel}
+        rightSubLabel={cut.rightSubLabel}
+        accentColor={cut.accentColor}
+        backgroundColor={cut.backgroundColor}
+        drawDelay={cut.drawDelay}
+        sceneDurationSeconds={cut.out_seconds - cut.in_seconds}
+        styleLayers={cut.styleLayers}
+      />
+    );
+  }
+
+  if (cut.type === "stat_roll_scene" && typeof cut.targetValue === "number") {
+    return (
+      <StatRollScene
+        targetValue={cut.targetValue}
+        unitLabel={cut.unitLabel}
+        subtitle={cut.subtitle}
+        accentColor={cut.accentColor}
+        backgroundColor={cut.backgroundColor}
+        rollDurationSeconds={cut.rollDurationSeconds}
+        sceneDurationSeconds={cut.out_seconds - cut.in_seconds}
+        styleLayers={cut.styleLayers}
+      />
+    );
+  }
+
   // --- Media types (image / video fallback) ---
   const animation = cut.animation || cut.transform?.animation;
 
@@ -733,7 +902,7 @@ const OverlayRenderer: React.FC<{ overlay: Overlay }> = ({ overlay }) => {
   if (overlay.type === "section_title") {
     return (
       <SectionTitle
-        title={overlay.text}
+        title={overlay.text ?? ""}
         subtitle={overlay.subtitle}
         accentColor={overlay.accentColor}
         position={(overlay.position as any) || "top-left"}
@@ -743,7 +912,7 @@ const OverlayRenderer: React.FC<{ overlay: Overlay }> = ({ overlay }) => {
   if (overlay.type === "stat_reveal") {
     return (
       <StatReveal
-        stat={overlay.text}
+        stat={overlay.text ?? ""}
         label={overlay.subtitle}
         accentColor={overlay.accentColor}
         position={(overlay.position as any) || "bottom-right"}
@@ -751,7 +920,7 @@ const OverlayRenderer: React.FC<{ overlay: Overlay }> = ({ overlay }) => {
     );
   }
   if (overlay.type === "hero_title") {
-    return <HeroTitle title={overlay.text} subtitle={overlay.subtitle} />;
+    return <HeroTitle title={overlay.text ?? ""} subtitle={overlay.subtitle} />;
   }
   if (overlay.type === "provider_chip" && overlay.providers) {
     return (

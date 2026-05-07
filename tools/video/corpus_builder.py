@@ -53,6 +53,8 @@ sensible defaults.
 """
 from __future__ import annotations
 
+import os
+import tempfile
 import time
 import urllib.parse
 from pathlib import Path
@@ -69,6 +71,7 @@ from tools.base_tool import (
     ToolStatus,
     ToolTier,
 )
+from tools.video.stock_sources import safe_clip_file_name
 
 
 class CorpusBuilder(BaseTool):
@@ -76,7 +79,7 @@ class CorpusBuilder(BaseTool):
     version = "0.1.0"
     tier = ToolTier.SOURCE
     capability = "corpus_population"
-    provider = "openmontage"
+    provider = "video_production_buddy"
     stability = ToolStability.EXPERIMENTAL
     execution_mode = ExecutionMode.SYNC
     determinism = Determinism.DETERMINISTIC
@@ -189,6 +192,15 @@ class CorpusBuilder(BaseTool):
     resource_profile = ResourceProfile(
         cpu_cores=2, ram_mb=2048, vram_mb=0, disk_mb=4000, network_required=True
     )
+    idempotency_key_fields = [
+        "corpus_dir",
+        "queries",
+        "sources",
+        "filters",
+        "max_new_clips",
+        "skip_existing",
+        "thumbs_per_video",
+    ]
     side_effects = [
         "downloads clips to <corpus_dir>/clips",
         "writes thumbnails under <corpus_dir>/thumbnails",
@@ -381,9 +393,9 @@ class CorpusBuilder(BaseTool):
                         added_ids.append(rec.clip_id)
                         per_source_counts[src.name] = per_source_counts.get(src.name, 0) + 1
 
-            # Single save at the end. Corpus.save() writes JSONL first
-            # (source of truth) then both .npy files, so a crash mid-save
-            # still leaves a loadable corpus.
+            # Single save at the end. Corpus.save() materializes temp
+            # files first and replaces the persisted corpus only after
+            # every piece is written.
             corp.save()
 
             elapsed = time.time() - start
@@ -447,7 +459,7 @@ class CorpusBuilder(BaseTool):
         Raises on unexpected errors (the caller logs them).
 
         Before downloading, consults the shared clip bytes cache at
-        ``~/.openmontage/clips_cache/``: if the file is already on
+        ``~/.video-production-buddy/clips_cache/``: if the file is already on
         disk from a previous run (the same clip surfaced for a
         different project), the cache hard-links it straight into
         ``local_abs`` and we skip the network fetch entirely. On a
@@ -463,7 +475,7 @@ class CorpusBuilder(BaseTool):
         # Pick file extension from the URL path (sources give us
         # stable .mp4/.jpg/.png URLs) with a kind-aware fallback.
         ext = _guess_ext(cand)
-        local_rel = Path("clips") / f"{cand.clip_id}{ext}"
+        local_rel = Path("clips") / safe_clip_file_name(cand.clip_id, ext)
         local_abs = corp.corpus_dir / local_rel
 
         # Try the shared cache first. A hit links the cached blob
@@ -486,18 +498,20 @@ class CorpusBuilder(BaseTool):
                 pass
         else:
             run_cache_stats["misses"] += 1
-            # Download. Any HTTP/IO exception propagates up to the
-            # per-candidate try in execute().
-            src.download(cand, local_abs)
-            if not local_abs.exists() or local_abs.stat().st_size < 1024:
+            # Download to a sibling temp file first so interrupted
+            # provider writes never become reusable corpus clips.
+            tmp_local_abs = _temp_sibling(local_abs)
+            try:
+                src.download(cand, tmp_local_abs)
+            except Exception:
+                _unlink_quietly(tmp_local_abs)
+                raise
+            if not tmp_local_abs.exists() or tmp_local_abs.stat().st_size < 1024:
                 # Empty / near-empty file = bad download. Clean up so a
                 # retry doesn't mistake it for success.
-                try:
-                    if local_abs.exists():
-                        local_abs.unlink()
-                except OSError:
-                    pass
+                _unlink_quietly(tmp_local_abs)
                 return None
+            tmp_local_abs.replace(local_abs)
 
             # Ingest the fresh file into the shared cache so the
             # next run can hit it. Swallow ingest failures — the
@@ -519,7 +533,7 @@ class CorpusBuilder(BaseTool):
             except Exception:
                 pass
 
-        thumb_dir_rel = Path("thumbnails") / cand.clip_id
+        thumb_dir_rel = Path("thumbnails") / safe_clip_file_name(cand.clip_id, "")
         thumb_dir_abs = corp.corpus_dir / thumb_dir_rel
         thumb_dir_abs.mkdir(parents=True, exist_ok=True)
 
@@ -599,6 +613,28 @@ def _guess_ext(cand) -> str:
     return ".mp4" if cand.kind == "video" else ".jpg"
 
 
+def _temp_sibling(path: Path) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=f".{path.name}.",
+        suffix=f"{path.suffix}.download.tmp",
+        dir=path.parent,
+    )
+    try:
+        os.close(fd)
+    finally:
+        _unlink_quietly(Path(tmp_name))
+    return Path(tmp_name)
+
+
+def _unlink_quietly(path: Path) -> None:
+    try:
+        if path.exists():
+            path.unlink()
+    except OSError:
+        pass
+
+
 def _extract_video_thumbs(
     video_path: Path, out_dir: Path, n_frames: int
 ) -> tuple[list[Path], dict]:
@@ -638,9 +674,9 @@ def _extract_video_thumbs(
         if not ok or frame is None:
             continue
         dst = out_dir / f"frame_{idx:02d}.jpg"
-        cv2.imwrite(str(dst), frame, [int(cv2.IMWRITE_JPEG_QUALITY), 88])
-        thumb_paths.append(dst)
-        captured.append(frame)
+        if cv2.imwrite(str(dst), frame, [int(cv2.IMWRITE_JPEG_QUALITY), 88]):
+            thumb_paths.append(dst)
+            captured.append(frame)
     cap.release()
 
     motion = 0.0
@@ -670,5 +706,4 @@ def _save_as_jpeg(src_path: Path, dst_path: Path) -> bool:
     img = cv2.imread(str(src_path))
     if img is None:
         return False
-    cv2.imwrite(str(dst_path), img, [int(cv2.IMWRITE_JPEG_QUALITY), 88])
-    return True
+    return bool(cv2.imwrite(str(dst_path), img, [int(cv2.IMWRITE_JPEG_QUALITY), 88]))

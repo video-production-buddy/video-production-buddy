@@ -31,6 +31,7 @@ class LTXVideoModal(BaseTool):
     determinism = Determinism.STOCHASTIC
     runtime = ToolRuntime.API
 
+    dependencies = ["env:MODAL_LTX2_ENDPOINT_URL"]
     install_instructions = (
         "Set the MODAL_LTX2_ENDPOINT_URL environment variable to your deployed LTX endpoint:\n"
         "  set MODAL_LTX2_ENDPOINT_URL=https://<your-modal-endpoint>"
@@ -79,7 +80,20 @@ class LTXVideoModal(BaseTool):
 
     resource_profile = ResourceProfile(cpu_cores=1, ram_mb=512, vram_mb=0, disk_mb=500, network_required=True)
     retry_policy = RetryPolicy(max_retries=2, backoff_seconds=10.0, retryable_errors=["timeout", "server_error"])
-    idempotency_key_fields = ["prompt", "aspect_ratio", "num_frames", "seed"]
+    idempotency_key_fields = [
+        "prompt",
+        "output_path",
+        "operation",
+        "reference_image_url",
+        "reference_image_path",
+        "aspect_ratio",
+        "duration_hint",
+        "width",
+        "height",
+        "num_frames",
+        "num_inference_steps",
+        "seed",
+    ]
     side_effects = ["writes video file to output_path", "calls modal endpoint"]
     user_visible_verification = ["Watch generated clip for motion quality and prompt adherence"]
 

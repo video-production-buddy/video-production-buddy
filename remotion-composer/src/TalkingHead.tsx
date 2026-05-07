@@ -6,6 +6,7 @@ import {
   useCurrentFrame,
   useVideoConfig,
 } from "remotion";
+import { resolveAsset } from "./assetPath";
 import { CaptionOverlay, WordCaption } from "./components/CaptionOverlay";
 import { TextCard } from "./components/TextCard";
 import { StatCard } from "./components/StatCard";
@@ -313,14 +314,17 @@ export const TalkingHead: React.FC<TalkingHeadProps> = ({
   highlightColor = "#22D3EE",
 }) => {
   const { fps } = useVideoConfig();
+  const hasVideo = videoSrc.trim().length > 0;
 
   return (
     <AbsoluteFill style={{ backgroundColor: "#000" }}>
       {/* Layer 1: Video background */}
-      <OffthreadVideo
-        src={videoSrc}
-        style={{ width: "100%", height: "100%", objectFit: "cover" }}
-      />
+      {hasVideo && (
+        <OffthreadVideo
+          src={resolveAsset(videoSrc)}
+          style={{ width: "100%", height: "100%", objectFit: "cover" }}
+        />
+      )}
 
       {/* Layer 2: Overlays (charts, stats, callouts, etc.) */}
       {overlays?.map((overlay, i) => {
