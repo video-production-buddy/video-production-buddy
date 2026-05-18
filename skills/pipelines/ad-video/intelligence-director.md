@@ -41,8 +41,11 @@ templates have been executed.
 
 ### Step 0: Build Validation Agenda from Hypothesis Flags
 
-Read `enriched_brief.hypothesis_flags`. For every entry with `status == "INFERRED"`,
-this dimension is a **validation target** — intelligence must return a verdict on it.
+Read `enriched_brief.hypothesis_flags`. For every entry where
+`status == "INFERRED" or status == "DELEGATED"`, this dimension is a
+**validation target** — intelligence must return a verdict on it. Delegated dimensions
+are recommendations the user asked the creative director to make, so they need the same
+evidence check as inferred dimensions.
 
 Build a checklist before starting research. Common dimensions to expect:
 
@@ -58,7 +61,7 @@ Validation agenda (example):
   [ ] tagline_direction
   [ ] narration_voice
   [ ] brand_colors
-  ... (any other INFERRED dimensions from enriched_brief.hypothesis_flags)
+  ... (any other INFERRED or DELEGATED dimensions from enriched_brief.hypothesis_flags)
 ```
 
 Dimensions with `status == "FROM BRIEF"` (stated by the user) are NOT validation targets
@@ -236,8 +239,8 @@ After all batches, synthesize with confidence tiers:
 
 ### Step 5b: Dimension Verdicts
 
-After completing Steps 1–5, return a verdict for every INFERRED dimension in the
-validation agenda built in Step 0.
+After completing Steps 1–5, return a verdict for every INFERRED or DELEGATED dimension
+in the validation agenda built in Step 0.
 
 **For each validation-target dimension, produce:**
 

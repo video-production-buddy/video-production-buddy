@@ -57,8 +57,11 @@ stages:
   human_approval_default: true
   review_focus:
     - user_approved == true (G-0 requires explicit APPROVE reply — not implicit agreement)
+    - creative_requirements contains every required worksheet dimension before enriched brief approval
+    - every creative_requirements.*.source is FROM BRIEF or DELEGATED
+    - No required worksheet dimension is INFERRED
     - All 5 narrative arc beats populated with full visual + emotional + key_action detail
-    - hypothesis_flags non-empty — every INFERRED dimension listed with specific basis
+    - hypothesis_flags non-empty — every INFERRED or DELEGATED dimension listed with specific basis
     - No empty strings in product_brief or ad_specification
     - prohibited_elements contains at least 3 category-specific rules
   success_criteria:
@@ -138,9 +141,9 @@ stages:
   - Budget confirmed and itemized by stage
   success_criteria:
   - Schema-valid production_proposal artifact produced
-  - style_mode locked in production_bible.visual.style_mode
-  - render_runtime locked in production_bible.visual.render_runtime
-  - deliverables.derivatives populated in production_bible
+  - style_mode locked in production_proposal.style_mode
+  - render_runtime locked in production_proposal.render_runtime
+  - derivatives locked in production_proposal.derivatives_added
 - name: script
   skill: pipelines/ad-video/script-director
   required_artifacts_in:
@@ -155,13 +158,13 @@ stages:
   human_approval_default: true
   review_focus:
   - 'Four beats present: hook, build, reveal, cta_brand'
-  - Word count within ±10% of duration_target_seconds × 2.5
+  - Word count within ±10% of target_duration_seconds × production_proposal.audio_contract.target_speed_wps
   - Mode annotations present on lines where animated/cinematic treatment differs
   - CTA section ends with brand name — non-negotiable
   - User has READ and APPROVED the full narration text before TTS generation begins
   success_criteria:
   - script artifact produced with sections array
-  - total_words within ±10% of target
+  - total_words within ±10% of target_duration_seconds × production_proposal.audio_contract.target_speed_wps
   - script.user_approved == true (user explicitly approved the narration text)
 - name: scene_plan
   skill: pipelines/ad-video/scene-director
@@ -179,14 +182,14 @@ stages:
   - 'All broll and generated scenes have motion_required: true — stills only permitted
     for text_card and packshot scene types'
   - Total scene duration covers script duration (±0.5s)
-  - crop_regions present for every scene when derivatives opted in
+  - crop_regions present on every scene with entries for every opted-in derivative variant
   - core field present on every scene
   - No more than 3 consecutive scenes of same type
   - motion_required field present on scenes requiring actual video
   success_criteria:
   - scene_plan artifact produced
   - sum(scene.duration) within ±0.5s of total script duration
-  - 'If derivative_variants non-empty: all scenes have crop_regions'
+  - 'If derivative_variants non-empty: all scenes have crop_regions entries for every selected variant'
 - name: assets
   skill: pipelines/ad-video/asset-director
   required_artifacts_in:

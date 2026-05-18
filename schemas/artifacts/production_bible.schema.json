@@ -218,12 +218,18 @@
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["moment_id", "description", "maps_to_beat", "mandatory"],
+            "required": ["moment_id", "description", "maps_to_beat", "mandatory", "required_motion_primitives"],
             "properties": {
               "moment_id": { "type": "string" },
               "description": { "type": "string" },
               "maps_to_beat": { "type": "string" },
-              "mandatory": { "type": "boolean" }
+              "mandatory": { "type": "boolean" },
+              "required_motion_primitives": {
+                "type": "array",
+                "description": "Scene motion primitive IDs required to fulfill this key visual moment. Scene-director maps these to motion_specs and scene_fidelity_check validates component support.",
+                "minItems": 1,
+                "items": { "type": "string", "minLength": 1 }
+              }
             }
           }
         },

@@ -7,6 +7,9 @@ import re
 from copy import deepcopy
 from pathlib import Path
 
+import pytest
+import yaml
+
 from schemas.artifacts import validate_artifact
 from tools.validation.runtime_consistency_check import check_runtime_consistency
 from tools.validation.scene_fidelity_check import check_kvm_coverage
@@ -15,10 +18,15 @@ from tools.video.video_compose import VideoCompose
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 AD_VIDEO_SKILLS = ROOT / "skills" / "pipelines" / "ad-video"
+AD_VIDEO_MANIFEST = ROOT / "pipeline_defs" / "ad-video.yaml"
 
 
 def _read_skill(name: str) -> str:
     return (AD_VIDEO_SKILLS / name).read_text(encoding="utf-8")
+
+
+def _load_ad_video_manifest() -> dict:
+    return yaml.safe_load(AD_VIDEO_MANIFEST.read_text(encoding="utf-8"))
 
 
 def _json_fences(markdown: str) -> list[str]:
@@ -39,6 +47,8 @@ def test_scene_plan_schema_accepts_animated_scene_contract_fields() -> None:
                 "description": "Hook text slams into frame.",
                 "start_seconds": 0,
                 "end_seconds": 5,
+                "core": True,
+                "motion_required": False,
                 "fulfills_kvm": ["KVM-1"],
                 "motion_specs": ["text_entrance_fade"],
                 "style_layers": [
@@ -52,6 +62,66 @@ def test_scene_plan_schema_accepts_animated_scene_contract_fields() -> None:
     validate_artifact("scene_plan", scene_plan)
 
 
+def test_ad_video_scene_plan_schema_requires_scene_governance_fields() -> None:
+    """Ad-video scene plans must carry fields used by derivative and motion gates."""
+    scene_plan = {
+        "version": "1.0",
+        "style_mode": "cinematic",
+        "total_duration_seconds": 5,
+        "scenes": [
+            {
+                "id": "scene-1",
+                "type": "generated",
+                "description": "A moving lifestyle scene.",
+                "start_seconds": 0,
+                "end_seconds": 5,
+            }
+        ],
+    }
+
+    with pytest.raises(Exception):
+        validate_artifact("scene_plan", scene_plan)
+
+
+def test_ad_video_scene_plan_schema_requires_crop_regions_for_derivatives() -> None:
+    """Derivative variants are not renderable unless every scene has crop regions."""
+    scene_plan = {
+        "version": "1.0",
+        "style_mode": "cinematic",
+        "total_duration_seconds": 5,
+        "derivative_variants": ["9:16"],
+        "scenes": [
+            {
+                "id": "scene-1",
+                "type": "generated",
+                "description": "A moving lifestyle scene.",
+                "start_seconds": 0,
+                "end_seconds": 5,
+                "core": True,
+                "motion_required": True,
+            }
+        ],
+    }
+
+    with pytest.raises(Exception):
+        validate_artifact("scene_plan", scene_plan)
+
+    scene_plan["scenes"][0]["crop_regions"] = {}
+    with pytest.raises(Exception):
+        validate_artifact("scene_plan", scene_plan)
+
+    scene_plan["scenes"][0]["crop_regions"] = {
+        "1:1": {"x": 0, "y": 0, "w": 1080, "h": 1080}
+    }
+    with pytest.raises(Exception):
+        validate_artifact("scene_plan", scene_plan)
+
+    scene_plan["scenes"][0]["crop_regions"] = {
+        "9:16": {"x": 656, "y": 0, "w": 608, "h": 1080}
+    }
+    validate_artifact("scene_plan", scene_plan)
+
+
 def test_production_bible_schema_allows_runtime_deferral_until_proposal() -> None:
     """Bible runs before proposal, so render_runtime must be optional there."""
     from tests.qa.test_artifact_chain import PRODUCTION_BIBLE_VALID
@@ -60,6 +130,26 @@ def test_production_bible_schema_allows_runtime_deferral_until_proposal() -> Non
     bible["visual"].pop("render_runtime")
 
     validate_artifact("production_bible", bible)
+
+
+def test_production_bible_schema_requires_kvm_motion_primitives() -> None:
+    """Bible KVMs must name the scene motion primitives needed to fulfill them."""
+    from tests.qa.test_artifact_chain import PRODUCTION_BIBLE_VALID
+
+    bible = deepcopy(PRODUCTION_BIBLE_VALID)
+    for kvm in bible["visual"]["key_visual_moments"]:
+        kvm["required_motion_primitives"] = ["text_entrance_fade"]
+    validate_artifact("production_bible", bible)
+
+    bad = deepcopy(bible)
+    del bad["visual"]["key_visual_moments"][0]["required_motion_primitives"]
+    with pytest.raises(Exception):
+        validate_artifact("production_bible", bad)
+
+    bad = deepcopy(bible)
+    bad["visual"]["key_visual_moments"][0]["required_motion_primitives"] = []
+    with pytest.raises(Exception):
+        validate_artifact("production_bible", bad)
 
 
 def test_ad_video_ep_reads_proposal_locks_after_proposal_approval() -> None:
@@ -72,6 +162,96 @@ def test_ad_video_ep_reads_proposal_locks_after_proposal_approval() -> None:
     assert "`render_runtime` from `production_bible.visual.render_runtime`" not in ep
     assert "`derivative_variants` from `production_bible.deliverables.derivatives`" not in ep
     assert "render_runtime locked in production_bible.visual.render_runtime" not in ep
+
+
+def test_brief_enrichment_director_references_artifact_schema_path() -> None:
+    """Skill prerequisites should point to the real schema location."""
+    brief_enrichment = _read_skill("brief-enrichment-director.md")
+
+    assert "schemas/artifacts/enriched_brief.schema.json" in brief_enrichment
+    assert "schemas/enriched_brief.schema.json" not in brief_enrichment
+
+
+def test_brief_enrichment_director_requires_creative_requirements_worksheet_before_g0() -> None:
+    """Every ad-video brief must pass a structured creative-director worksheet before G-0."""
+    brief_enrichment = _read_skill("brief-enrichment-director.md")
+
+    assert "Creative Requirements Worksheet" in brief_enrichment
+    assert "`creative_requirements`" in brief_enrichment
+    assert "`product_model`" in brief_enrichment
+    assert "`core_selling_points`" in brief_enrichment
+    assert "`platform_duration`" in brief_enrichment
+    assert "`target_audience`" in brief_enrichment
+    assert "`tone_style`" in brief_enrichment
+    assert "`visual_approach`" in brief_enrichment
+    assert "`language_voiceover`" in brief_enrichment
+    assert "`mandatory_marketing`" in brief_enrichment
+    assert "`cta`" in brief_enrichment
+    assert "`product_fidelity_references`" in brief_enrichment
+    assert "RECOMMEND FOR ME" in brief_enrichment
+    assert "FROM BRIEF or DELEGATED" in brief_enrichment
+
+
+def test_intelligence_director_validates_delegated_dimensions() -> None:
+    """Delegated dimensions are recommendations, so intelligence must validate them."""
+    intelligence = _read_skill("intelligence-director.md")
+
+    assert "status == \"INFERRED\" or status == \"DELEGATED\"" in intelligence
+    assert "DELEGATED" in intelligence
+    assert "FROM BRIEF" in intelligence
+
+
+def test_executive_producer_gate_g0_checks_creative_requirements() -> None:
+    """EP Gate G-0 must block if the worksheet is missing or silently inferred."""
+    ep = _read_skill("executive-producer.md")
+
+    assert "creative_requirements" in ep
+    assert "product_model" in ep
+    assert "product_fidelity_references" in ep
+    assert "FROM BRIEF or DELEGATED" in ep
+
+
+def test_ad_video_manifest_brief_enrichment_review_focus_checks_creative_requirements() -> None:
+    """Manifest review focus should make worksheet completeness a stage contract."""
+    manifest = _load_ad_video_manifest()
+    brief_enrichment_stage = next(stage for stage in manifest["stages"] if stage["name"] == "brief_enrichment")
+    focus_text = "\n".join(brief_enrichment_stage.get("review_focus", []))
+
+    assert "creative_requirements" in focus_text
+    assert "FROM BRIEF or DELEGATED" in focus_text
+    assert "No required worksheet dimension is INFERRED" in focus_text
+
+
+def test_ad_video_manifest_proposal_success_criteria_use_proposal_locks() -> None:
+    """The manifest should not require back-writing proposal locks into bible."""
+    manifest = _load_ad_video_manifest()
+    proposal_stage = next(stage for stage in manifest["stages"] if stage["name"] == "proposal")
+    success_text = "\n".join(proposal_stage.get("success_criteria", []))
+
+    assert "production_proposal.render_runtime" in success_text
+    assert "production_proposal.derivatives_added" in success_text
+    assert "production_bible.visual.render_runtime" not in success_text
+    assert "deliverables.derivatives populated in production_bible" not in success_text
+
+
+def test_executive_producer_script_gate_uses_locked_audio_contract_rate() -> None:
+    """EP script review must mirror script-director's target_speed_wps contract."""
+    ep = _read_skill("executive-producer.md")
+
+    assert "production_proposal.audio_contract.target_speed_wps" in ep
+    assert "target_words = target_duration_seconds × 2.5" not in ep
+
+
+def test_ad_video_manifest_script_gate_uses_locked_audio_contract_rate() -> None:
+    """The manifest script-stage review contract must match the EP/script-director gate."""
+    manifest = _load_ad_video_manifest()
+    script_stage = next(stage for stage in manifest["stages"] if stage["name"] == "script")
+    gate_text = "\n".join(
+        script_stage.get("review_focus", []) + script_stage.get("success_criteria", [])
+    )
+
+    assert "production_proposal.audio_contract.target_speed_wps" in gate_text
+    assert "target_duration_seconds × 2.5" not in gate_text
 
 
 def test_proposal_director_does_not_teach_backwriting_locks_to_bible() -> None:

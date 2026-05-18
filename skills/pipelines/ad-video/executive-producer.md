@@ -143,7 +143,7 @@ CHECK: Subtitle & dubbing explicitly captured
 ### After SCRIPT stage
 ```
 CHECK: Word count vs duration
-- target_words = target_duration_seconds × 2.5
+- target_words = target_duration_seconds × production_proposal.audio_contract.target_speed_wps
 - If total_words > target_words × 1.10: REVISE — "Script is N words. Target is T words (±10%). Cut X words."
 - If total_words < target_words × 0.90: REVISE — "Script is too short. Add X words."
 CHECK: Beat coverage (verify against production_bible)
@@ -260,7 +260,7 @@ Actual: {what was produced}
 
 | Gate | After Stage | Critical Checks | Fail Action |
 |------|------------|----------------|-------------|
-| G-0 | brief_enrichment | Three blockers resolved; user_approved=true | Wait for user |
+| G-0 | brief_enrichment | Three blockers resolved; creative_requirements complete; user_approved=true | Wait for user |
 | G1 | idea | Brief completeness, style_mode_candidate, ref role annotations | Revise idea |
 | G2 | proposal | User approval, style_mode locked, derivatives locked | Wait for user |
 | G3 | script | Word count ±10%, four beats, brand name in CTA | Revise script |
@@ -294,6 +294,11 @@ CHECK: Brief enrichment approval — HARD STOP if not satisfied
   IF enriched_brief.user_approved == false:
     STOP. Re-present G-0 block. Wait for APPROVE or EDIT.
   VERIFY: all 6 sections populated (no empty strings);
+          creative_requirements contains product_model, core_selling_points,
+          platform_duration, target_audience, tone_style, visual_approach,
+          language_voiceover, mandatory_marketing, cta, and product_fidelity_references;
+          every creative_requirements.*.source is FROM BRIEF or DELEGATED;
+          no required worksheet dimension is INFERRED;
           narrative_arc has exactly 5 beats;
           hypothesis_flags non-empty.
   ONLY THEN: advance to intelligence-director.

@@ -20,7 +20,11 @@
     },
     "derivative_variants": {
       "type": "array",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string",
+        "enum": ["9:16", "1:1", "15s", "15s_short"]
+      },
+      "uniqueItems": true,
       "description": "Variant ids (e.g. '9:16', '1:1', '15s_short') the user opted into at proposal. When non-empty, every scene must declare crop_regions. Mirrors production_proposal.derivatives_added."
     },
     "scenes": {
@@ -151,7 +155,11 @@
           },
           "crop_regions": {
             "type": "object",
+            "minProperties": 1,
             "description": "Per-aspect-ratio crop rectangles for derivative renders. Keys are aspect-ratio strings (e.g. '9:16', '1:1'); values are {x, y, w, h} pixel rectangles into the primary frame.",
+            "propertyNames": {
+              "enum": ["9:16", "1:1", "15s", "15s_short"]
+            },
             "additionalProperties": {
               "type": "object",
               "required": ["x", "y", "w", "h"],
@@ -183,5 +191,125 @@
     },
     "metadata": { "type": "object" }
   },
+  "allOf": [
+    {
+      "if": {
+        "required": ["style_mode"],
+        "properties": {
+          "style_mode": { "enum": ["animated", "cinematic"] }
+        }
+      },
+      "then": {
+        "properties": {
+          "scenes": {
+            "items": {
+              "required": ["core", "motion_required"]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["derivative_variants"],
+        "properties": {
+          "derivative_variants": { "minItems": 1 }
+        }
+      },
+      "then": {
+        "properties": {
+          "scenes": {
+            "items": {
+              "required": ["crop_regions"]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["derivative_variants"],
+        "properties": {
+          "derivative_variants": { "contains": { "const": "9:16" } }
+        }
+      },
+      "then": {
+        "properties": {
+          "scenes": {
+            "items": {
+              "properties": {
+                "crop_regions": {
+                  "required": ["9:16"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["derivative_variants"],
+        "properties": {
+          "derivative_variants": { "contains": { "const": "1:1" } }
+        }
+      },
+      "then": {
+        "properties": {
+          "scenes": {
+            "items": {
+              "properties": {
+                "crop_regions": {
+                  "required": ["1:1"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["derivative_variants"],
+        "properties": {
+          "derivative_variants": { "contains": { "const": "15s" } }
+        }
+      },
+      "then": {
+        "properties": {
+          "scenes": {
+            "items": {
+              "properties": {
+                "crop_regions": {
+                  "required": ["15s"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["derivative_variants"],
+        "properties": {
+          "derivative_variants": { "contains": { "const": "15s_short" } }
+        }
+      },
+      "then": {
+        "properties": {
+          "scenes": {
+            "items": {
+              "properties": {
+                "crop_regions": {
+                  "required": ["15s_short"]
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
   "additionalProperties": false
 }

@@ -4,6 +4,7 @@
   "description": "AI-expanded creative brief produced by brief-enrichment-director. Reviewed and approved by the user at Gate G-0 before intelligence research begins. Contents are a HYPOTHESIS — subject to validation and challenge by intelligence-director.",
   "type": "object",
   "required": [
+    "creative_requirements",
     "product_brief",
     "ad_specification",
     "narrative_arc",
@@ -14,6 +15,35 @@
   ],
   "additionalProperties": false,
   "properties": {
+    "creative_requirements": {
+      "type": "object",
+      "description": "Pre-brief creative-director worksheet. Every required dimension must be explicitly supplied by the user or explicitly delegated to the creative director before the enriched brief is drafted.",
+      "required": [
+        "product_model",
+        "core_selling_points",
+        "platform_duration",
+        "target_audience",
+        "tone_style",
+        "visual_approach",
+        "language_voiceover",
+        "mandatory_marketing",
+        "cta",
+        "product_fidelity_references"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "product_model": { "$ref": "#/definitions/creative_requirement_dimension" },
+        "core_selling_points": { "$ref": "#/definitions/creative_requirement_dimension" },
+        "platform_duration": { "$ref": "#/definitions/creative_requirement_dimension" },
+        "target_audience": { "$ref": "#/definitions/creative_requirement_dimension" },
+        "tone_style": { "$ref": "#/definitions/creative_requirement_dimension" },
+        "visual_approach": { "$ref": "#/definitions/creative_requirement_dimension" },
+        "language_voiceover": { "$ref": "#/definitions/creative_requirement_dimension" },
+        "mandatory_marketing": { "$ref": "#/definitions/creative_requirement_dimension" },
+        "cta": { "$ref": "#/definitions/creative_requirement_dimension" },
+        "product_fidelity_references": { "$ref": "#/definitions/creative_requirement_dimension" }
+      }
+    },
     "product_brief": {
       "type": "object",
       "description": "Core product identity section.",
@@ -189,7 +219,7 @@
     },
     "hypothesis_flags": {
       "type": "array",
-      "description": "Every dimension the brief contains, labelled INFERRED or FROM BRIEF. Intelligence uses this as its validation agenda.",
+      "description": "Every dimension the brief contains, labelled INFERRED, DELEGATED, or FROM BRIEF. Intelligence uses INFERRED and DELEGATED entries as its validation agenda.",
       "minItems": 1,
       "items": {
         "type": "object",
@@ -202,12 +232,12 @@
           },
           "status": {
             "type": "string",
-            "enum": ["INFERRED", "FROM BRIEF"],
-            "description": "INFERRED = director filled this in from creative judgment; FROM BRIEF = user explicitly stated this."
+            "enum": ["INFERRED", "DELEGATED", "FROM BRIEF"],
+            "description": "INFERRED = director filled this in from creative judgment; DELEGATED = user explicitly asked the director to recommend this dimension; FROM BRIEF = user explicitly stated this."
           },
           "basis": {
             "type": "string",
-            "description": "One-line rationale: why this value was chosen (INFERRED) or what the user said (FROM BRIEF)."
+            "description": "One-line rationale: why this value was chosen (INFERRED or DELEGATED) or what the user said (FROM BRIEF)."
           }
         }
       }
@@ -239,6 +269,31 @@
     "hook_mechanic": {
       "type": "string",
       "description": "Hypothesised hook mechanic (e.g. 'question', 'visual-contrast', 'stat'). Optional. Same role as arc_type — surfaced via hypothesis_flags and validated by intelligence."
+    }
+  },
+  "definitions": {
+    "creative_requirement_dimension": {
+      "type": "object",
+      "description": "One required worksheet dimension. Required dimensions cannot be silently inferred; source must be FROM BRIEF or DELEGATED.",
+      "required": ["value", "source", "basis"],
+      "additionalProperties": false,
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The user-supplied value or the concrete recommendation the user delegated to the creative director."
+        },
+        "source": {
+          "type": "string",
+          "enum": ["FROM BRIEF", "DELEGATED"],
+          "description": "FROM BRIEF = user explicitly supplied or edited this value. DELEGATED = user chose recommend-for-me for this dimension."
+        },
+        "basis": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The user's stated basis or the explicit delegation record."
+        }
+      }
     }
   }
 }

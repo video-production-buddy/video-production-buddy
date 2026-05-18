@@ -163,7 +163,7 @@
     },
     "dimension_verdicts": {
       "type": "array",
-      "description": "Verdict for each INFERRED dimension from enriched_brief.hypothesis_flags. Produced by Step 5b of intelligence-director.",
+      "description": "Verdict for each INFERRED or DELEGATED dimension from enriched_brief.hypothesis_flags. Produced by Step 5b of intelligence-director.",
       "items": {
         "type": "object",
         "required": ["dimension", "confidence", "verdict"],

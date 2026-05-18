@@ -118,6 +118,10 @@ rules.
 dimensions carry forward from enriched_brief unchanged. The Step 0 provenance
 audit ensures `research-grounded` actually means cited; uncited claims have
 already been demoted to `pattern-inferred` and will not trigger an override.
+When the challenged dimension has `status == "DELEGATED"` in
+`enriched_brief.hypothesis_flags`, present it to the user as "Current recommended brief"
+instead of "Your brief"; delegated choices are the director's recommendation, not a user
+preference being contradicted.
 
 ### Step 2 — Design emotional beat sequence
 
@@ -222,7 +226,7 @@ already been demoted to `pattern-inferred` and will not trigger an override.
   derive-from-intensity should set `editing_rhythm[].confidence = "default-heuristic"`
   uniformly so the failure_action policy picks `flag` (not `revise`).
 - `key_visual_moments`: one mandatory moment per beat with a concrete visual requirement.
-  **MANDATORY new field per KVM:** `required_motion_primitives: string[]` — list the
+  **MANDATORY new field per KVM:** `required_motion_primitives: string[]` — list one or more
   motion primitives the scene must implement (e.g. `["counter_roll", "thumb_silhouette_swipe", "freeze_pulse"]`
   for KVM-1). Each entry must be a key in
   `remotion-composer/scene_type_registry.json#motion_primitives_index`. scene-director
@@ -395,6 +399,8 @@ CONFIRMED ✓  (research supports your brief)
 CHALLENGED ✗  (strong evidence contradicts your brief)
   [dimension]
     Your brief:          [enriched_brief value for this dimension]
+    (Use "Current recommended brief" instead of "Your brief" when the dimension's
+     hypothesis flag status is DELEGATED.)
     Research found:      [challenge_evidence — specific, named examples or metrics]
     Recommendation:      [specific alternative the research supports]
     Your choice:         [ Keep my choice ]  or  [ Accept recommendation ]
@@ -405,6 +411,8 @@ CHALLENGED ✗  (strong evidence contradicts your brief)
 FLAGGED ⚠  (moderate signal — your call)
   [dimension]
     Your brief:          [enriched_brief value]
+    (Use "Current recommended brief" instead of "Your brief" when the dimension's
+     hypothesis flag status is DELEGATED.)
     Research suggests:   [what intelligence found, with confidence tier noted]
     Your choice:         [ Keep ]  or  [ Update to: _____ ]
 

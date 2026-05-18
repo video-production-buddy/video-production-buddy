@@ -52,8 +52,59 @@ def _minimal_beat(n: int, start: int, end: int) -> dict:
     }
 
 
+def _minimal_creative_requirements() -> dict:
+    def delegated() -> dict:
+        return {
+            "value": "Recommend a category-fit value from the brief.",
+            "source": "DELEGATED",
+            "basis": "User explicitly delegated this worksheet dimension to the creative director.",
+        }
+
+    return {
+        "product_model": {
+            "value": "Acme Floral Water summer edition",
+            "source": "FROM BRIEF",
+            "basis": "User specified the exact product name.",
+        },
+        "core_selling_points": {
+            "value": "Cooling sensation, natural citronella, pocketable frosted bottle",
+            "source": "FROM BRIEF",
+            "basis": "User listed the product benefits.",
+        },
+        "platform_duration": {
+            "value": "TikTok, 9:16, 30 seconds",
+            "source": "FROM BRIEF",
+            "basis": "User selected TikTok and 30s delivery.",
+        },
+        "target_audience": {
+            "value": "Urban women 20-35, active outdoors in summer evenings",
+            "source": "FROM BRIEF",
+            "basis": "User described the audience and usage occasion.",
+        },
+        "tone_style": delegated(),
+        "visual_approach": delegated(),
+        "language_voiceover": {
+            "value": "English narration with English burnt-in subtitles",
+            "source": "FROM BRIEF",
+            "basis": "User requested English narration.",
+        },
+        "mandatory_marketing": {
+            "value": "Include 'Cool. Calm. Protected.' and show the product bottle clearly.",
+            "source": "FROM BRIEF",
+            "basis": "User supplied slogan and product-visibility requirement.",
+        },
+        "cta": {
+            "value": "Shop Acme Floral Water today",
+            "source": "FROM BRIEF",
+            "basis": "User supplied CTA copy.",
+        },
+        "product_fidelity_references": delegated(),
+    }
+
+
 def _minimal_enriched_brief() -> dict:
     return {
+        "creative_requirements": _minimal_creative_requirements(),
         "product_brief": {
             "product_name": "Acme Floral Water",
             "product_type": "Personal care / mosquito-repellent floral water",
@@ -111,6 +162,7 @@ def _minimal_enriched_brief() -> dict:
             {"dimension": "arc_type", "status": "INFERRED", "basis": "problem-solution dominant in personal-care TikTok ads"},
             {"dimension": "music_direction", "status": "INFERRED", "basis": "platform norm: upbeat for summer personal-care"},
             {"dimension": "target_demographic", "status": "FROM BRIEF", "basis": "user stated 'young women'"},
+            {"dimension": "visual_approach", "status": "DELEGATED", "basis": "user chose recommend-for-me in the creative requirements worksheet"},
         ],
         "user_approved": False,
     }
@@ -222,6 +274,31 @@ class TestEnrichedBriefSchema:
         instance = _minimal_enriched_brief()
         instance["user_edits"] = [
             {"section": "Narrative Arc", "field": "arc_type", "original": "problem-solution", "revised": "contrast"}
+        ]
+        validate(instance, self.schema)
+
+    def test_rejects_missing_creative_requirement_dimension(self):
+        instance = _minimal_enriched_brief()
+        del instance["creative_requirements"]["cta"]
+        try:
+            validate(instance, self.schema)
+            assert False, "Expected ValidationError for missing cta creative requirement"
+        except jsonschema.ValidationError:
+            pass
+
+    def test_rejects_inferred_required_creative_requirement(self):
+        instance = _minimal_enriched_brief()
+        instance["creative_requirements"]["tone_style"]["source"] = "INFERRED"
+        try:
+            validate(instance, self.schema)
+            assert False, "Expected ValidationError because required worksheet dimensions must be FROM_BRIEF or DELEGATED"
+        except jsonschema.ValidationError:
+            pass
+
+    def test_accepts_delegated_hypothesis_flag_status(self):
+        instance = _minimal_enriched_brief()
+        instance["hypothesis_flags"] = [
+            {"dimension": "tone_style", "status": "DELEGATED", "basis": "user asked the creative director to recommend it"}
         ]
         validate(instance, self.schema)
 
@@ -667,6 +744,9 @@ if __name__ == "__main__":
         "test_rejects_empty_hypothesis_flags",
         "test_rejects_missing_product_brief",
         "test_user_edits_optional",
+        "test_rejects_missing_creative_requirement_dimension",
+        "test_rejects_inferred_required_creative_requirement",
+        "test_accepts_delegated_hypothesis_flag_status",
     ]:
         run_test(TestEnrichedBriefSchema(), method)
 

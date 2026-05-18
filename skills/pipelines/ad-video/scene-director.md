@@ -65,7 +65,8 @@ Rules for core tagging:
 
 ## Crop Regions
 
-When `derivative_variants` is non-empty, every scene must declare `crop_regions`:
+When `derivative_variants` is non-empty, every scene must declare `crop_regions`
+with one entry for each opted-in variant:
 
 ```json
 "crop_regions": {
@@ -118,7 +119,7 @@ After reading this base document:
 
 - [ ] `sum(scene.duration_seconds)` within ±0.5s of script's total `duration_estimate_seconds`
 - [ ] Every scene has `core` field
-- [ ] If derivative_variants non-empty: every scene has `crop_regions`
+- [ ] If derivative_variants non-empty: every scene has `crop_regions` entries for each opted-in variant
 - [ ] No more than 3 consecutive scenes of the same `scene_type`
 - [ ] Scenes with `motion_required: true` are realistic given production plan
 - [ ] CTA scene is center-weighted and brand name visible in all crop regions

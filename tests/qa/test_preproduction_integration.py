@@ -130,8 +130,20 @@ REALISTIC_BIBLE = {
             {"motif": "notification avalanche", "mandatory": True, "minimum_scene_count": 1},
         ],
         "key_visual_moments": [
-            {"moment_id": "KV1", "description": "Acme app interface reveal", "maps_to_beat": "B3", "mandatory": True},
-            {"moment_id": "KV2", "description": "Acme logo + CTA text", "maps_to_beat": "B5", "mandatory": True},
+            {
+                "moment_id": "KV1",
+                "description": "Acme app interface reveal",
+                "maps_to_beat": "B3",
+                "mandatory": True,
+                "required_motion_primitives": ["text_entrance_fade"],
+            },
+            {
+                "moment_id": "KV2",
+                "description": "Acme logo + CTA text",
+                "maps_to_beat": "B5",
+                "mandatory": True,
+                "required_motion_primitives": ["text_entrance_fade"],
+            },
         ],
         "editing_rhythm": [
             {"maps_to_beat": "B1", "cuts_density": "rapid", "avg_shot_duration_seconds": 1.5, "transition_style": "hard_cut", "confidence": "pattern-inferred"},
