@@ -55,6 +55,7 @@ Each tool's `agent_skills[]` field bridges Layer 1 → Layer 3. See `skills/INDE
 - **Reviewer** is a meta skill (`skills/meta/reviewer.md`), advisory, max 2 rounds
 - **Cost tracker** (`tools/cost_tracker.py`) manages budget: estimate -> reserve -> reconcile
 - **Canonical artifacts** validated against JSON schemas in `schemas/artifacts/`
+- **GenUI interaction layer:** optional local browser forms for dense human gates; forms write `ui_response`, while the agent still writes canonical artifacts.
 
 ## Key Files
 
@@ -69,6 +70,8 @@ Each tool's `agent_skills[]` field bridges Layer 1 → Layer 3. See `skills/INDE
 | `tools/base_tool.py` | ToolContract base class |
 | `tools/tool_registry.py` | Tool discovery and reporting |
 | `tools/cost_tracker.py` | Budget governance |
+| `lib/genui/` | GenUI config validation, local HTML rendering, and ui_response helpers |
+| `tools/interaction/genui_form.py` | Local form/questionnaire tool for dense human gates; writes ui_response only |
 | `tools/compliance/compliance_check.py` | Deterministic structural compliance checks for `compliance_manifest` checkpoints (timing/presence/beat-mapping) |
 | `tools/video/video_stitch.py` | Multi-clip assembly (stitch, spatial, validate, preview) |
 | `tools/video/video_compose.py` | Runtime-aware composition orchestrator — routes to Remotion / HyperFrames / FFmpeg based on `edit_decisions.render_runtime` |

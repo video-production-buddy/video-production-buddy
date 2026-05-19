@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "openmontage/artifacts/ui_response",
+  "title": "GenUI Response",
+  "description": "Human submission captured from a GenUI form. The agent validates this artifact before updating canonical pipeline artifacts or checkpoints.",
+  "type": "object",
+  "required": [
+    "version",
+    "response_id",
+    "config_id",
+    "project_id",
+    "pipeline_type",
+    "stage",
+    "gate",
+    "submitted_at",
+    "action",
+    "values"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "type": "string", "const": "1.0" },
+    "response_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+$"
+    },
+    "config_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+$"
+    },
+    "project_id": { "type": "string", "minLength": 1 },
+    "pipeline_type": { "type": "string", "minLength": 1 },
+    "stage": { "type": "string", "minLength": 1 },
+    "gate": { "type": "string", "minLength": 1 },
+    "submitted_at": { "type": "string", "format": "date-time" },
+    "action": {
+      "type": "string",
+      "enum": ["submit", "approve", "revise", "abort"]
+    },
+    "values": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "browser_events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "validation": {
+      "type": "object",
+      "required": ["status", "errors"],
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["pending", "valid", "invalid"]
+        },
+        "errors": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  }
+}

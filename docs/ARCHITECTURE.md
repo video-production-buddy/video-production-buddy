@@ -1,6 +1,6 @@
 # OpenMontage Architecture
 
-> Last updated: 2026-05-19 | Derived from code exploration, not prior documentation.
+> Last updated: 2026-05-20 | Derived from code exploration, not prior documentation.
 
 OpenMontage is an **agent-orchestrated video production platform**. An LLM coding assistant (Claude Code, Cursor, Copilot, etc.) acts as the orchestrator — reading pipeline manifests, following skill instructions, calling Python tools, and checkpointing state. There is no runtime Python orchestrator; the agent _is_ the control plane.
 
@@ -20,7 +20,7 @@ For each stage:
    2. Agent calls Python tools via tool registry
    3. Agent writes checkpoint (JSON) with artifacts
    4. Agent self-reviews using meta/reviewer skill
-   5. Human approval gate (if configured)
+   5. Human approval gate (if configured, optionally through GenUI)
         |
         v
 Final video output
@@ -37,6 +37,7 @@ OpenMontage/
 │   ├── checkpoint.py       # Pipeline state persistence & stage transitions
 │   ├── pipeline_loader.py  # YAML manifest loading & validation
 │   ├── media_profiles.py   # Platform-specific render profiles (YouTube, TikTok, etc.)
+│   ├── genui/              # Visual form configs, HTML rendering, response helpers
 │   ├── env_loader.py       # .env variable management
 │   └── providers/          # (Reserved for future provider abstractions)
 │
@@ -49,6 +50,7 @@ OpenMontage/
 │   ├── avatar/             # Talking head animation, lip sync
 │   ├── enhancement/        # Upscale, bg removal, face enhance/restore, color grading
 │   ├── graphics/           # Image gen (FLUX, DALL-E, Recraft, local diffusion), stock, diagrams, code snippets, math animation
+│   ├── interaction/         # GenUI local form tool for dense human gates
 │   ├── publishers/         # (Reserved)
 │   ├── subtitle/           # SRT/VTT generation from timestamps
 │   └── video/              # 13 video gen providers, composition, stitching, trimming
@@ -96,6 +98,18 @@ OpenMontage does not call LLM APIs at runtime. The coding assistant running in t
 ### 3. Dual-Provider Support
 
 Every capability must support both **API providers** (cloud, paid) and **local/open-source alternatives** (free, GPU-dependent). The selector pattern enforces this by routing to whatever is available.
+
+### 4. GenUI Is an Interaction Layer, Not an Orchestrator
+
+OpenMontage can present dense human gates as local browser forms instead of
+long CLI questionnaires. The agent generates `ui_form_config`, calls
+`genui_form`, validates the submitted `ui_response`, and then writes canonical
+artifacts itself.
+
+GenUI does not change stage order, provider/runtime governance, review policy,
+checkpoint policy, or canonical artifact ownership. The local form server must
+not write `enriched_brief`, `production_proposal`, `decision_log`, or
+checkpoints directly.
 
 ---
 
@@ -161,6 +175,8 @@ Selectors route based on: user preference when explicitly set, then scored ranki
 **Graphics (13):** flux_image, grok_image, google_imagen, openai_image, recraft_image, local_diffusion, pexels_image, pixabay_image, image_selector, code_snippet, diagram_gen, math_animate (ManimCE), image_gen (deprecated)
 
 **Subtitle (1):** subtitle_gen
+
+**Interaction (1):** genui_form (local visual form/questionnaire server for human gates)
 
 **Video (18):** grok_video, heygen_video, higgsfield_video, veo_video, kling_video, runway_video, minimax_video, wan_video, hunyuan_video, cogvideo_video, ltx_video_local, ltx_video_modal, pexels_video, pixabay_video, video_selector, video_compose (FFmpeg), video_stitch, video_trimmer
 
@@ -272,7 +288,7 @@ Checkpoints persist pipeline state as JSON in the project's `projects/` director
 
 **Functions:** `write_checkpoint()`, `read_checkpoint()`, `get_latest_checkpoint()`, `get_completed_stages()`, `get_next_stage()`
 
-### Artifact Schemas (28 types, all JSON-schema validated)
+### Artifact Schemas (30 types, all JSON-schema validated)
 
 | Artifact | Stage | Contains |
 |----------|-------|----------|
@@ -288,6 +304,8 @@ Checkpoints persist pipeline state as JSON in the project's `projects/` director
 | `review` | (any) | Reviewer feedback and approval records |
 | `cost_log` | (any) | Budget tracking entries |
 | `decision_log` | (any) | Governance decisions such as approved runtime/provider substitutions |
+| `ui_form_config` | human gate | GenUI form sections, fields, defaults, recommendations, and artifact bindings |
+| `ui_response` | human gate | Submitted GenUI values pending agent validation and canonical artifact writes |
 | `user_request` | intake | Original user request captured for project provenance |
 | `intake_brief` | intake | Research-direction fields for ad/commercial workflows |
 | `enriched_brief` | brief_enrichment | Structured worksheet expanding sparse ad briefs before strategy |

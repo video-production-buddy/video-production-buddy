@@ -86,6 +86,26 @@ Pre-fill every answer you can from `intake_brief`, the raw prompt, and reference
 For any unclear dimension, provide a recommended default and let the user either edit it
 or reply `RECOMMEND FOR ME`.
 
+### Step 2a: GenUI Form-First Path
+
+For the Creative Requirements Worksheet, use GenUI by default when `genui_form`
+is available and the user can open a local browser. Generate a project-specific
+`ui_form_config` for Gate G-0 with all required worksheet dimensions, prefilled
+values, recommended defaults, help text, and bindings to the future
+`enriched_brief.creative_requirements.*.value` fields.
+
+After the user submits the form, read and validate the `ui_response`. Summarize
+the submitted values and revisions before generating the enriched brief. The
+GenUI path must not write canonical artifacts directly: it must not write
+`enriched_brief`, checkpoints, or decision logs. The agent writes those only
+after validating `ui_response` and applying the normal review/checkpoint
+protocol.
+
+CLI fallback: if `genui_form` is unavailable, the browser cannot be opened, or
+the user asks to stay in terminal, present the worksheet in the CLI shape below.
+The CLI fallback captures the same dimensions and must follow the same
+FROM BRIEF / DELEGATED source rules.
+
 Do not generate the enriched brief until every required worksheet dimension is recorded in
 `creative_requirements` with `source` equal to **FROM BRIEF or DELEGATED**. No required
 worksheet dimension may be `INFERRED`.

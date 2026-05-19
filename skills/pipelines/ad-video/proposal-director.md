@@ -69,6 +69,23 @@ Extract `deliverables.primary` as baseline for derivative options.
 
 Present each responsibility item to the user in a single structured message:
 
+Use GenUI by default for this proposal gate when `genui_form` is available and
+the user can open a local browser. Generate a project-specific `ui_form_config`
+covering derivative variants, subtitles, dubbing, style mode, render runtime,
+product identity reference strategy, budget, voice/audio contract, and visual
+contract. The form should preselect recommended defaults but still show the
+alternatives required by AGENT_GUIDE, especially the full render-runtime
+shortlist.
+
+After the browser form is submitted, read and validate `ui_response`, summarize
+the selected technical locks, and only then write `production_proposal` and the
+required `decision_log` entries. The GenUI path must not write canonical
+artifacts directly: it must not write `production_proposal`, `decision_log`, or
+checkpoints. The agent performs those writes after validation and review.
+
+CLI fallback: if `genui_form` is unavailable, the browser path fails, or the
+user asks to stay in terminal, present the structured CLI path below.
+
 ```
 PRODUCTION PARAMETERS — [Brand Name] [Platform] Ad
 

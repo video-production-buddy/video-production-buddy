@@ -277,6 +277,7 @@ Cross-cutting skills that apply to all pipelines:
 | Skill | File | Purpose |
 |-------|------|---------|
 | Onboarding | `meta/onboarding.md` | First-interaction greeting, capability discovery, starter prompts |
+| GenUI Interaction | `meta/genui-interaction.md` | Form-first human gates, ui_response review, and CLI fallback |
 | Reviewer | `meta/reviewer.md` | Self-review protocol after every stage |
 | Checkpoint Protocol | `meta/checkpoint-protocol.md` | When/how to checkpoint and request human approval |
 | Skill Creator | `meta/skill-creator.md` | Dynamically create new skills during pipeline runs |

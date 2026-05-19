@@ -163,6 +163,32 @@ This applies especially to:
 - prompt-only substitutes for reference-driven generation,
 - still-image animatics in place of true motion.
 
+## GenUI Interaction Layer
+
+OpenMontage may use GenUI forms for dense human gates where a visual worksheet is
+clearer than a long CLI prompt. GenUI is an interaction layer, not an orchestrator.
+It does not change pipeline stage order, stage director
+responsibilities, review policy, checkpoint rules, provider/runtime governance,
+or canonical artifact contracts.
+
+When a stage director skill says to use GenUI:
+
+1. Generate a project-specific `ui_form_config` with defaults, recommendations,
+   field help, choices, and bindings to the artifact fields the agent will later
+   update.
+2. Call `genui_form` when the local browser path is available.
+3. If the user cannot use the browser or `genui_form` is unavailable, use the
+   CLI fallback in the stage director skill.
+4. Read and validate the submitted `ui_response`.
+5. Summarize the submitted choices to the user.
+6. Only after agent validation, write canonical artifacts such as
+   `enriched_brief`, `production_proposal`, `decision_log`, and checkpoints.
+
+The GenUI server must not write canonical artifacts directly. It writes only
+`ui_response` under the project workspace so the agent can review it. This keeps
+human-friendly input separate from OpenMontage's auditable source of truth:
+schemas, canonical artifacts, decision logs, and checkpoints.
+
 ## Orchestrator
 
 The agent itself orchestrates the production state machine:

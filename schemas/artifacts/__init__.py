@@ -35,6 +35,8 @@ ARTIFACT_NAMES = [
     "review",
     "cost_log",
     "decision_log",
+    "ui_form_config",
+    "ui_response",
     "source_media_review",
     "final_review",
     "character_qa_report",
