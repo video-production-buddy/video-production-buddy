@@ -146,11 +146,11 @@ authoritative runtime lock for downstream stages.
 
 Present voice candidates to the user (provider, voice_id, model, and a short sample when practical) and get explicit sign-off **before** batch TTS spend. Voice choice is locked here so all sections in the script use the same voice — preventing tone drift across narration segments. Also lock the expressive performance contract: perceived gender/register, persona, emotion arc, intonation, rhythm, and pause policy. The proposal must reject a voice whose provider description conflicts with `production_bible.audio.voice_character.persona` (for example, do not lock a male voice when the bible calls for a female narrator).
 
-For Qwen/DashScope narration, use `qwen3-tts-instruct-flash` whenever script sections will carry `speaker_directions` or `voice_performance`. Do not pair `qwen3-tts-flash` with delivery instructions; that model does not accept them and will make the narration sound generic.
+For Qwen/DashScope narration, use `qwen3-tts-instruct-flash` whenever script sections will carry `speaker_directions` or `voice_performance`. Do not pair `qwen3-tts-flash` with delivery instructions; that model does not accept them and will make the narration sound generic. For OpenAI narration, use `gpt-4o-mini-tts`, which accepts delivery instructions. Do not lock CosyVoice-family or ElevenLabs models for this contract until the corresponding asset-stage tool path can consume section instructions.
 
 ```json
 "audio_contract": {
-  "voice_provider": "cosyvoice",        // cosyvoice | elevenlabs | openai
+  "voice_provider": "qwen3",            // qwen3 | openai
   "voice_id": "Dylan",                   // provider-specific voice id
   "voice_model": "qwen3-tts-instruct-flash",
   "voice_gender": "male",                // female | male | neutral | mixed | unspecified

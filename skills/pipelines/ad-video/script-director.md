@@ -166,6 +166,14 @@ Derive these from `production_bible.audio.voice_character`, `production_proposal
       "start_seconds": 5,
       "end_seconds": 11,
       "duration_estimate_seconds": 6,
+      "speaker_directions": "Tighter, lightly clipped delivery; make each pain point land as a separate beat.",
+      "voice_performance": {
+        "emotion": "contained frustration",
+        "intonation": "flat punch on each one-word pain point, slight lift on the final clause",
+        "rhythm": "staccato first three phrases, then one longer release",
+        "pace": "conversational",
+        "pause_after_seconds": 0.2
+      },
       "mode_annotations": {
         "animated": "Split-screen pain points with motion graphics labels",
         "cinematic": "Quick cuts: traffic jam, queue, frustrated face"
@@ -179,6 +187,14 @@ Derive these from `production_bible.audio.voice_character`, `production_proposal
       "start_seconds": 11,
       "end_seconds": 18,
       "duration_estimate_seconds": 7,
+      "speaker_directions": "Credible and matter-of-fact; treat the statistic as useful proof, not hype.",
+      "voice_performance": {
+        "emotion": "analytical concern",
+        "intonation": "emphasize '4 hours a week' with a restrained downward resolve",
+        "rhythm": "steady proof-point cadence with a short breath before 'in seconds'",
+        "pace": "measured",
+        "pause_after_seconds": 0.25
+      },
       "mode_annotations": {
         "animated": "Animated stat card: 4 HRS/WEEK",
         "cinematic": "Stat text overlay on footage of desk work"
@@ -192,6 +208,14 @@ Derive these from `production_bible.audio.voice_character`, `production_proposal
       "start_seconds": 18,
       "end_seconds": 25,
       "duration_estimate_seconds": 7,
+      "speaker_directions": "Shift into confident reveal energy; keep it intimate and product-led.",
+      "voice_performance": {
+        "emotion": "relief and confidence",
+        "intonation": "gentle lift on 'Introducing Flowcut', clear resolve on 'eliminates the drag'",
+        "rhythm": "open with a reveal pause, then smooth connected phrasing",
+        "pace": "conversational",
+        "pause_after_seconds": 0.35
+      },
       "mode_annotations": {
         "animated": "Product logo reveal with motion graphics burst",
         "cinematic": "Hero product shot, camera push-in"
@@ -205,6 +229,14 @@ Derive these from `production_bible.audio.voice_character`, `production_proposal
       "start_seconds": 25,
       "end_seconds": 29,
       "duration_estimate_seconds": 4,
+      "speaker_directions": "Clean, low-pressure CTA; make the final brand name feel like a signature.",
+      "voice_performance": {
+        "emotion": "calm assurance",
+        "intonation": "slight upward invitation on the URL, final downward resolve on brand name",
+        "rhythm": "short CTA phrase, clean beat, final brand tag",
+        "pace": "measured",
+        "pause_after_seconds": 0.5
+      },
       "mode_annotations": {
         "animated": "URL text animation + brand logo hold",
         "cinematic": "URL lower-third overlay, brand logo fade in"

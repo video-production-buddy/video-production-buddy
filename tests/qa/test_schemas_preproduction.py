@@ -870,6 +870,101 @@ class TestProductionBibleSchema:
         validate(instance, self.schema)
 
 
+MINIMAL_PRODUCTION_PROPOSAL = {
+    "version": "1.0",
+    "selected_idea_id": "C1",
+    "style_mode": "animated",
+    "render_runtime": "remotion",
+    "product_reference_strategy": "generate_concept_reference",
+    "subtitles": {
+        "mode": "burnt-in",
+        "language": "en",
+        "user_confirmed": True,
+    },
+    "dubbing": [],
+    "derivatives_added": [],
+    "budget_confirmed": True,
+    "approved_budget_usd": 5.0,
+    "audio_contract": {
+        "voice_provider": "qwen3",
+        "voice_id": "Dylan",
+        "voice_model": "qwen3-tts-instruct-flash",
+        "voice_gender": "male",
+        "voice_persona": "warm product narrator with documentary restraint",
+        "voice_performance": {
+            "tone": "warm, confident, and precise; not an announcer",
+            "baseline_emotion": "calm assurance",
+            "emotion_arc": "curiosity -> tactile reveal -> confident CTA",
+            "intonation": "natural conversational rises and gentle downward resolves",
+            "rhythm": "varied phrase lengths with breath room around reveals",
+            "pause_policy": "0.3-0.5s after major claims and before the CTA",
+        },
+        "voice_sample_approved": True,
+        "target_speed_wps": 2.5,
+        "target_lufs": -14,
+        "max_section_drift_pct": 5,
+        "duck_depth_db": -18,
+    },
+    "visual_contract": {
+        "style_direction": "editorial-tech",
+        "typography_pairing": {
+            "display": "Inter 800",
+            "body": "Inter 400",
+        },
+        "color_rhythm": "held-accent",
+        "atmosphere": {
+            "default_layers": [],
+        },
+        "anti_template_checklist": [
+            "non-uniform spacing across scenes",
+        ],
+    },
+}
+
+
+class TestProductionProposalSchema:
+    def setup_method(self):
+        self.schema = load_schema("production_proposal")
+
+    def test_valid_qwen_instruction_model(self):
+        validate(copy.deepcopy(MINIMAL_PRODUCTION_PROPOSAL), self.schema)
+
+    def test_valid_openai_instruction_model(self):
+        instance = copy.deepcopy(MINIMAL_PRODUCTION_PROPOSAL)
+        instance["audio_contract"]["voice_provider"] = "openai"
+        instance["audio_contract"]["voice_id"] = "alloy"
+        instance["audio_contract"]["voice_model"] = "gpt-4o-mini-tts"
+        instance["audio_contract"]["voice_gender"] = "neutral"
+        validate(instance, self.schema)
+
+    def test_rejects_cosyvoice_family_model_for_locked_instructions(self):
+        instance = copy.deepcopy(MINIMAL_PRODUCTION_PROPOSAL)
+        instance["audio_contract"]["voice_model"] = "cosyvoice-v3-flash"
+        try:
+            validate(instance, self.schema)
+            assert False, "Expected ValidationError for CosyVoice model that drops instructions"
+        except jsonschema.ValidationError:
+            pass
+
+    def test_rejects_unknown_qwen_model_typo(self):
+        instance = copy.deepcopy(MINIMAL_PRODUCTION_PROPOSAL)
+        instance["audio_contract"]["voice_model"] = "qwen3-tts-instruct"
+        try:
+            validate(instance, self.schema)
+            assert False, "Expected ValidationError for unsupported qwen3 TTS model"
+        except jsonschema.ValidationError:
+            pass
+
+    def test_rejects_qwen_provider_with_cosyvoice_voice_id(self):
+        instance = copy.deepcopy(MINIMAL_PRODUCTION_PROPOSAL)
+        instance["audio_contract"]["voice_id"] = "longanyang"
+        try:
+            validate(instance, self.schema)
+            assert False, "Expected ValidationError for voice id unsupported by qwen3 instruct"
+        except jsonschema.ValidationError:
+            pass
+
+
 # ============================================================
 # Standalone runner (no pytest required)
 # ============================================================
@@ -946,6 +1041,16 @@ if __name__ == "__main__":
         "test_note_cta_null_with_execution_approved_passes_schema",
     ]:
         run_test(TestProductionBibleSchema(), method)
+
+    print("\n--- TestProductionProposalSchema ---")
+    for method in [
+        "test_valid_qwen_instruction_model",
+        "test_valid_openai_instruction_model",
+        "test_rejects_cosyvoice_family_model_for_locked_instructions",
+        "test_rejects_unknown_qwen_model_typo",
+        "test_rejects_qwen_provider_with_cosyvoice_voice_id",
+    ]:
+        run_test(TestProductionProposalSchema(), method)
 
     total = PASS + FAIL
     print(f"\nResults: {PASS}/{total} passed, {FAIL} failed")

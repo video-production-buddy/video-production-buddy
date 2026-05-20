@@ -125,22 +125,53 @@
       "allOf": [
         {
           "if": {
-            "required": ["voice_model"],
+            "required": ["voice_provider"],
             "properties": {
-              "voice_model": { "pattern": "^qwen3-tts-" }
+              "voice_provider": { "const": "qwen3" }
             }
           },
           "then": {
             "properties": {
-              "voice_model": { "const": "qwen3-tts-instruct-flash" }
+              "voice_model": { "const": "qwen3-tts-instruct-flash" },
+              "voice_id": {
+                "enum": ["Cherry", "Ethan", "Serena", "Dylan", "Kai"]
+              }
             }
           }
         },
         {
           "if": {
-            "required": ["voice_model", "voice_id"],
+            "required": ["voice_provider"],
             "properties": {
-              "voice_model": { "pattern": "^qwen3-tts-" },
+              "voice_provider": { "const": "openai" }
+            }
+          },
+          "then": {
+            "properties": {
+              "voice_model": { "const": "gpt-4o-mini-tts" },
+              "voice_id": {
+                "enum": [
+                  "alloy",
+                  "ash",
+                  "ballad",
+                  "coral",
+                  "echo",
+                  "fable",
+                  "nova",
+                  "onyx",
+                  "sage",
+                  "shimmer",
+                  "verse"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": ["voice_provider", "voice_id"],
+            "properties": {
+              "voice_provider": { "const": "qwen3" },
               "voice_id": { "enum": ["Ethan", "Dylan", "Kai"] }
             }
           },
@@ -152,45 +183,10 @@
         },
         {
           "if": {
-            "required": ["voice_model", "voice_id"],
+            "required": ["voice_provider", "voice_id"],
             "properties": {
-              "voice_model": { "pattern": "^qwen3-tts-" },
+              "voice_provider": { "const": "qwen3" },
               "voice_id": { "enum": ["Cherry", "Serena"] }
-            }
-          },
-          "then": {
-            "properties": {
-              "voice_gender": { "const": "female" }
-            }
-          }
-        },
-        {
-          "if": {
-            "required": ["voice_provider", "voice_id"],
-            "properties": {
-              "voice_provider": { "const": "cosyvoice" },
-              "voice_id": { "enum": ["longanyang", "longxiaobai", "longxiaocheng"] }
-            }
-          },
-          "then": {
-            "properties": {
-              "voice_gender": { "const": "male" }
-            }
-          }
-        },
-        {
-          "if": {
-            "required": ["voice_provider", "voice_id"],
-            "properties": {
-              "voice_provider": { "const": "cosyvoice" },
-              "voice_id": {
-                "enum": [
-                  "longxiaochun",
-                  "longxiaoxia",
-                  "longxiaoman",
-                  "longxiaoxuan"
-                ]
-              }
             }
           },
           "then": {
@@ -203,17 +199,17 @@
       "properties": {
         "voice_provider": {
           "type": "string",
-          "enum": ["cosyvoice", "elevenlabs", "openai", "qwen3"],
-          "description": "TTS provider the asset stage must use for ALL narration sections."
+          "enum": ["qwen3", "openai"],
+          "description": "Instruction-capable TTS provider the asset stage must use for ALL narration sections. qwen3 routes through cosyvoice_tts/DashScope; openai routes through openai_tts. CosyVoice-family and ElevenLabs models are excluded until their tools can consume locked delivery instructions."
         },
         "voice_id": {
           "type": "string",
-          "description": "Provider-specific voice id (e.g. 'Dylan' for qwen3, 'longanyang' for cosyvoice)."
+          "description": "Provider-specific voice id (e.g. 'Dylan' for qwen3, 'alloy' for openai)."
         },
         "voice_model": {
           "type": "string",
-          "minLength": 1,
-          "description": "Provider-specific TTS model or variant. For Qwen/DashScope narration with speaker_directions or voice_performance, use qwen3-tts-instruct-flash so delivery instructions reach the model."
+          "enum": ["qwen3-tts-instruct-flash", "gpt-4o-mini-tts"],
+          "description": "Provider-specific instruction-capable TTS model. qwen3 requires qwen3-tts-instruct-flash; openai requires gpt-4o-mini-tts. Do not use qwen3-tts-flash, qwen3-tts-instruct, or CosyVoice-family models when speaker_directions or voice_performance must reach the model."
         },
         "voice_gender": {
           "type": "string",

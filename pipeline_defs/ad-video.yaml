@@ -140,7 +140,7 @@ stages:
   - 'render_runtime selected and logged (HARD RULE: present both if both available)'
   - product_reference_strategy locked and logged as product_identity_reference_selection
   - audio_contract locks voice_model, voice_gender, voice_persona, voice_performance, and voice_sample_approved
-  - Qwen/DashScope voice instructions use qwen3-tts-instruct-flash, not qwen3-tts-flash
+  - Qwen/DashScope voice instructions use qwen3-tts-instruct-flash, not qwen3-tts-flash; OpenAI voice instructions use gpt-4o-mini-tts
   - Physical/product-visible ads use provided reference, generated concept reference, or explicit risk_accepted waiver
   - Derivatives explicitly opted in or out (9:16, 1:1, 15s short)
   - Subtitles and dubbing preferences explicitly confirmed
@@ -225,11 +225,13 @@ stages:
   - minimax_music
   - audio_mixer
   optional_tools:
+  - openai_tts
   - pexels_video
   - pixabay_video
   - frame_sampler
   tools_available:
   - cosyvoice_tts
+  - openai_tts
   - wanx_image
   - wan_video_api
   - minimax_music

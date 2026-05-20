@@ -33,6 +33,7 @@ When `result.cost_usd == 0.0` on a tool you expected to be paid: log a `cost_cap
 
 ```python
 from tools.audio.cosyvoice_tts import CosyVoiceTTS
+from tools.audio.openai_tts import OpenAITTS
 from tools.graphics.wanx_image import WanxImage
 from tools.video.wan_video_api import WanVideoAPI
 from tools.audio.minimax_music import MinimaxMusic
@@ -45,6 +46,7 @@ from tools.video.pexels_video import PexelsVideo
 # Legacy briefs without tts_directive use the historical 0.95 baseline.
 speed = section.get("tts_directive", {}).get("speed_mult", 0.95)
 audio_contract = production_proposal["audio_contract"]
+voice_provider = audio_contract["voice_provider"]
 model = audio_contract["voice_model"]
 section_performance = section.get("voice_performance", {})
 performance_parts = [
@@ -58,17 +60,31 @@ performance_parts = [
 ]
 instructions = " ".join(part for part in performance_parts if part)
 
-tts = CosyVoiceTTS()
-result = tts.execute({
-    "text": section["text"],
-    "voice": audio_contract["voice_id"],  # e.g. "Ethan"
-    "model": model,
-    "language_type": "English",
-    "speed": speed,
-    "instructions": instructions,
-    "format": "mp3",
-    "output_path": f"assets/audio/{section['id']}_narration.mp3",
-})
+if voice_provider == "qwen3":
+    tts = CosyVoiceTTS()
+    result = tts.execute({
+        "text": section["text"],
+        "voice": audio_contract["voice_id"],  # e.g. "Ethan"
+        "model": model,
+        "language_type": "English",
+        "speed": speed,
+        "instructions": instructions,
+        "format": "mp3",
+        "output_path": f"assets/audio/{section['id']}_narration.mp3",
+    })
+elif voice_provider == "openai":
+    tts = OpenAITTS()
+    result = tts.execute({
+        "text": section["text"],
+        "voice": audio_contract["voice_id"],  # e.g. "alloy"
+        "model": model,
+        "speed": speed,
+        "instructions": instructions,
+        "format": "mp3",
+        "output_path": f"assets/audio/{section['id']}_narration.mp3",
+    })
+else:
+    raise RuntimeError(f"Unsupported instruction-capable TTS provider: {voice_provider}")
 if result.error:
     # STOP — do not silently fall back to another provider.
     # Surface to user per the Provider Swap Emergency Rule in proposal-director.md.
