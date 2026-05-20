@@ -29,6 +29,17 @@ PRODUCT_VISIBLE_VALUES = {"background", "partial", "hero", "detail", "packshot"}
 VISUAL_ASSET_TYPES = {"image", "video", "animation"}
 NON_GENERATED_SCENE_TYPES = {"text_card", "transition", "diagram", "screen_recording"}
 WAIVER_DECISION_CATEGORY = "hallucination_review_waiver"
+WAIVER_SELECTED_VALUES = {"waive", "waiver", "human_waiver"}
+GENERATED_ASSET_SUBTYPES = {"generated", "ai_generated", "synthetic"}
+SOURCED_ASSET_SUBTYPES = {
+    "source",
+    "sourced",
+    "provided",
+    "user_provided",
+    "stock",
+    "recorded",
+    "library",
+}
 TRUTH_CONTRACT_SECTIONS = {
     "objective_facts",
     "physical_constraints",
@@ -87,7 +98,35 @@ def _required_assets_generate_visuals(scene: dict[str, Any]) -> bool:
     return False
 
 
-def _scene_is_high_risk(scene: dict[str, Any]) -> bool:
+def _normalized_token(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    return value.strip().lower().replace("-", "_").replace(" ", "_")
+
+
+def _scene_has_generated_visual_scope(
+    scene: dict[str, Any],
+    *,
+    has_generated_visual_asset: bool = False,
+) -> bool:
+    return (
+        has_generated_visual_asset
+        or scene.get("type") == "generated"
+        or _required_assets_generate_visuals(scene)
+    )
+
+
+def _scene_is_high_risk(
+    scene: dict[str, Any],
+    *,
+    has_generated_visual_asset: bool = False,
+) -> bool:
+    if not _scene_has_generated_visual_scope(
+        scene,
+        has_generated_visual_asset=has_generated_visual_asset,
+    ):
+        return False
+
     product_visibility = scene.get("product_visibility", "none")
     if product_visibility in PRODUCT_VISIBLE_VALUES:
         return True
@@ -111,12 +150,68 @@ def _scene_checks(scene: dict[str, Any]) -> list[dict[str, Any]]:
     return [check for check in checks if isinstance(check, dict)]
 
 
-def _visual_assets(asset_manifest: dict[str, Any]) -> list[dict[str, Any]]:
-    return [
-        asset
-        for asset in asset_manifest.get("assets", []) or []
-        if isinstance(asset, dict) and asset.get("type") in VISUAL_ASSET_TYPES
-    ]
+def _asset_has_sourced_provenance(asset: dict[str, Any]) -> bool:
+    subtype = _normalized_token(asset.get("subtype"))
+    return bool(
+        subtype in SOURCED_ASSET_SUBTYPES
+        or asset.get("original_url")
+        or asset.get("license")
+    )
+
+
+def _asset_has_generated_provenance(asset: dict[str, Any]) -> bool:
+    subtype = _normalized_token(asset.get("subtype"))
+    if subtype in GENERATED_ASSET_SUBTYPES:
+        return True
+    return bool(
+        isinstance(asset.get("product_identity_conditioning"), dict)
+        or asset.get("prompt")
+        or asset.get("seed") is not None
+        or asset.get("model")
+    )
+
+
+def _asset_is_generated_visual(asset: dict[str, Any], scene: dict[str, Any]) -> bool:
+    if asset.get("type") not in VISUAL_ASSET_TYPES:
+        return False
+    if _asset_has_sourced_provenance(asset):
+        return False
+    return _asset_has_generated_provenance(asset) or _required_assets_generate_visuals(scene)
+
+
+def _generated_visual_asset_scene_ids(asset_manifest: dict[str, Any]) -> set[str]:
+    scene_ids: set[str] = set()
+    for asset in asset_manifest.get("assets", []) or []:
+        if not isinstance(asset, dict):
+            continue
+        scene_id = asset.get("scene_id")
+        if (
+            isinstance(scene_id, str)
+            and asset.get("type") in VISUAL_ASSET_TYPES
+            and not _asset_has_sourced_provenance(asset)
+            and _asset_has_generated_provenance(asset)
+        ):
+            scene_ids.add(scene_id)
+    return scene_ids
+
+
+def _selected_option_is_waiver(decision: dict[str, Any]) -> bool:
+    selected = decision.get("selected")
+    selected_token = _normalized_token(selected)
+    if selected_token in WAIVER_SELECTED_VALUES:
+        return True
+
+    options = decision.get("options_considered")
+    if not isinstance(options, list):
+        return False
+    for option in options:
+        if not isinstance(option, dict) or option.get("option_id") != selected:
+            continue
+        return (
+            _normalized_token(option.get("option_id")) in WAIVER_SELECTED_VALUES
+            or _normalized_token(option.get("label")) in WAIVER_SELECTED_VALUES
+        )
+    return False
 
 
 def _decision_is_user_approved(decision: dict[str, Any] | None) -> bool:
@@ -125,6 +220,7 @@ def _decision_is_user_approved(decision: dict[str, Any] | None) -> bool:
         and decision.get("category") == WAIVER_DECISION_CATEGORY
         and decision.get("user_visible") is True
         and decision.get("user_approved") is True
+        and _selected_option_is_waiver(decision)
     )
 
 
@@ -187,12 +283,16 @@ def check_hallucination_contract(
 
     high_risk_scenes: dict[str, dict[str, Any]] = {}
     scene_check_map: dict[str, dict[str, dict[str, Any]]] = {}
+    generated_visual_asset_scene_ids = _generated_visual_asset_scene_ids(asset_manifest)
 
     for scene in scene_plan.get("scenes", []) or []:
         if not isinstance(scene, dict):
             continue
         scene_id = scene.get("id", "<unknown>")
-        if not _scene_is_high_risk(scene):
+        if not _scene_is_high_risk(
+            scene,
+            has_generated_visual_asset=scene_id in generated_visual_asset_scene_ids,
+        ):
             continue
 
         high_risk_scenes[scene_id] = scene
@@ -212,9 +312,13 @@ def check_hallucination_contract(
                 by_id[check_id] = check
         scene_check_map[scene_id] = by_id
 
-    for asset in _visual_assets(asset_manifest):
+    for asset in asset_manifest.get("assets", []) or []:
+        if not isinstance(asset, dict):
+            continue
         scene_id = asset.get("scene_id")
         if scene_id not in high_risk_scenes:
+            continue
+        if not _asset_is_generated_visual(asset, high_risk_scenes[scene_id]):
             continue
 
         asset_id = asset.get("id", "<unknown>")
@@ -299,6 +403,7 @@ def check_hallucination_contract(
                     f"Generated visual asset {asset_id} records a hallucination-review "
                     f"waiver, but decision_log has no user-approved waiver decision "
                     f"with category {WAIVER_DECISION_CATEGORY!r} "
+                    "and a selected waiver option "
                     f"for decision_id={decision_id!r}."
                 )
             else:

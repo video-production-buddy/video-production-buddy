@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+from lib.pipeline_loader import get_required_tools
 from schemas.artifacts import validate_artifact
 from tools.validation.hallucination_contract_check import check_hallucination_contract
 from tools.validation.product_identity_consistency_check import (
@@ -739,6 +740,25 @@ def test_hallucination_contract_rejects_visual_accuracy_decision_for_waiver() ->
     assert any("hallucination_review_waiver" in issue for issue in verdict["issues"])
 
 
+def test_hallucination_contract_rejects_non_waiver_selection_for_waiver() -> None:
+    decision_log = _approved_hallucination_waiver_log()
+    decision_log["decisions"][0]["selected"] = "regenerate"
+
+    verdict = check_hallucination_contract(
+        _bible_with_truth_contract(),
+        _scene_plan_for_hallucination(),
+        _asset_manifest_for_hallucination(
+            review_status="WAIVED",
+            check_status="WAIVED",
+            waiver_decision_id="d-waive-001",
+        ),
+        decision_log,
+    )
+
+    assert verdict["status"] == "FAIL"
+    assert any("selected" in issue and "waiver" in issue.lower() for issue in verdict["issues"])
+
+
 def test_hallucination_contract_rejects_waiver_without_user_approval() -> None:
     verdict = check_hallucination_contract(
         _bible_with_truth_contract(),
@@ -764,6 +784,78 @@ def test_hallucination_contract_accepts_non_product_text_card_without_checks() -
 
     assert verdict["status"] == "PASS"
     assert verdict["summary"]["high_risk_scenes"] == 0
+
+
+def test_hallucination_contract_skips_sourced_visual_assets() -> None:
+    scene_plan = {
+        "version": "1.0",
+        "style_mode": "cinematic",
+        "scenes": [
+            {
+                "id": "scene-1",
+                "type": "broll",
+                "description": "User-provided product footage.",
+                "start_seconds": 0,
+                "end_seconds": 5,
+                "core": True,
+                "motion_required": True,
+                "product_visibility": "hero",
+                "product_reference_required": True,
+                "required_assets": [
+                    {
+                        "type": "video",
+                        "description": "Provided footage from the user.",
+                        "source": "provided",
+                    }
+                ],
+            }
+        ],
+    }
+    asset_manifest = {
+        "version": "1.0",
+        "assets": [
+            {
+                "id": "scene-1-source-video",
+                "type": "video",
+                "path": "assets/video/scene-1-source.mp4",
+                "source_tool": "user_upload",
+                "scene_id": "scene-1",
+                "subtype": "provided",
+            }
+        ],
+    }
+
+    verdict = check_hallucination_contract(
+        _bible_with_truth_contract(),
+        scene_plan,
+        asset_manifest,
+    )
+
+    assert verdict["status"] == "PASS"
+    assert verdict["summary"]["high_risk_scenes"] == 0
+    assert verdict["summary"]["reviewed_assets"] == 0
+
+
+def test_hallucination_contract_uses_asset_generation_metadata_for_scope() -> None:
+    scene_plan = _scene_plan_for_hallucination()
+    scene_plan["scenes"][0]["type"] = "broll"
+    scene_plan["scenes"][0]["required_assets"] = [
+        {
+            "type": "video",
+            "description": "A visual asset whose actual manifest provenance decides scope.",
+            "source": "provided",
+        }
+    ]
+
+    verdict = check_hallucination_contract(
+        _bible_with_truth_contract(),
+        scene_plan,
+        _asset_manifest_for_hallucination(),
+    )
+
+    assert verdict["status"] == "PASS"
+    assert verdict["summary"]["high_risk_scenes"] == 1
+    assert verdict["summary"]["reviewed_assets"] == 1
 
 
 def test_ad_video_scene_plan_schema_requires_scene_governance_fields() -> None:
@@ -1639,3 +1731,15 @@ def test_ad_video_contract_mentions_hallucination_flow() -> None:
     assert "hallucination_review" in animated_asset
     assert "hallucination_contract_check" in ep
     assert "Ad-Video Hallucination Review" in reviewer
+
+
+def test_ad_video_asset_stage_exposes_frame_sampler_for_hallucination_keyframes() -> None:
+    manifest = _load_ad_video_manifest()
+    asset_stage = next(stage for stage in manifest["stages"] if stage["name"] == "assets")
+
+    asset_stage_tools = set(asset_stage.get("required_tools", []))
+    asset_stage_tools.update(asset_stage.get("optional_tools", []))
+    asset_stage_tools.update(asset_stage.get("tools_available", []))
+
+    assert "frame_sampler" in asset_stage_tools
+    assert "frame_sampler" in get_required_tools(manifest)

@@ -227,6 +227,7 @@ stages:
   optional_tools:
   - pexels_video
   - pixabay_video
+  - frame_sampler
   tools_available:
   - cosyvoice_tts
   - wanx_image
@@ -235,6 +236,7 @@ stages:
   - audio_mixer
   - pexels_video
   - pixabay_video
+  - frame_sampler
   sub_stages:
   - name: product_reference
     description: Resolve Product Identity Reference before sample generation. Use an existing
