@@ -63,23 +63,27 @@ def select_trends_for_alignment(
     return selected[:max(0, max_items)]
 
 
+def _alignment_block(production_bible: dict[str, Any]) -> dict[str, Any] | None:
+    intelligence = production_bible.get("intelligence") if isinstance(production_bible, dict) else None
+    if not isinstance(intelligence, dict):
+        return None
+    block = intelligence.get("trend_alignment")
+    return block if isinstance(block, dict) else None
+
+
 def _alignment_entries(production_bible: dict[str, Any]) -> list[dict[str, Any]]:
-    trend_alignment = (
-        production_bible.get("intelligence", {}).get("trend_alignment", {})
-        if isinstance(production_bible, dict)
-        else {}
-    )
-    entries = trend_alignment.get("alignments", [])
+    block = _alignment_block(production_bible)
+    if block is None:
+        return []
+    entries = block.get("alignments", [])
     return entries if isinstance(entries, list) else []
 
 
 def _selected_trend_ids(production_bible: dict[str, Any]) -> list[str]:
-    trend_alignment = (
-        production_bible.get("intelligence", {}).get("trend_alignment", {})
-        if isinstance(production_bible, dict)
-        else {}
-    )
-    selected = trend_alignment.get("selected_trend_ids", [])
+    block = _alignment_block(production_bible)
+    if block is None:
+        return []
+    selected = block.get("selected_trend_ids", [])
     if not isinstance(selected, list):
         return []
     return [str(trend_id).strip() for trend_id in selected if str(trend_id).strip()]
@@ -248,12 +252,32 @@ def check_ad_video_planning_trend_alignment(
     script: dict[str, Any],
     scene_plan: dict[str, Any],
 ) -> dict[str, Any]:
-    """Check selected trend guidance survives from bible to script and scenes."""
+    """Check selected trend guidance survives from bible to script and scenes.
+
+    Also guards against vacuous pass: when the trend_alignment block is
+    entirely missing from production_bible.intelligence, the pipeline
+    skipped the alignment step. An explicit empty block
+    (``selected_trend_ids: [], alignments: []``) is valid — it means
+    selection ran but nothing qualified. A missing block is not.
+    """
     script_report = check_script_trend_alignment(production_bible, script)
     scene_report = check_scene_plan_trend_alignment(production_bible, scene_plan)
     entries = _alignment_entries(production_bible)
     aligned_trend_ids = {_trend_id(entry) for entry in entries if _trend_id(entry)}
     issues: list[dict[str, Any]] = []
+
+    block = _alignment_block(production_bible)
+    if block is None:
+        issues.append({
+            "kind": "trend_alignment_block_missing",
+            "artifact": "production_bible",
+        })
+    elif "selected_trend_ids" not in block:
+        issues.append({
+            "kind": "trend_alignment_selection_skipped",
+            "artifact": "production_bible",
+        })
+
     issues.extend(
         {
             "kind": "missing_selected_trend_alignment",

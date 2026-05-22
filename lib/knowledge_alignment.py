@@ -13,23 +13,27 @@ def _lower(value: Any) -> str:
     return str(value or "").strip().lower()
 
 
+def _alignment_block(production_bible: dict[str, Any]) -> dict[str, Any] | None:
+    intelligence = production_bible.get("intelligence") if isinstance(production_bible, dict) else None
+    if not isinstance(intelligence, dict):
+        return None
+    block = intelligence.get("knowledge_alignment")
+    return block if isinstance(block, dict) else None
+
+
 def _alignment_entries(production_bible: dict[str, Any]) -> list[dict[str, Any]]:
-    knowledge_alignment = (
-        production_bible.get("intelligence", {}).get("knowledge_alignment", {})
-        if isinstance(production_bible, dict)
-        else {}
-    )
-    entries = knowledge_alignment.get("alignments", [])
+    block = _alignment_block(production_bible)
+    if block is None:
+        return []
+    entries = block.get("alignments", [])
     return entries if isinstance(entries, list) else []
 
 
 def _selected_card_ids(production_bible: dict[str, Any]) -> list[str]:
-    knowledge_alignment = (
-        production_bible.get("intelligence", {}).get("knowledge_alignment", {})
-        if isinstance(production_bible, dict)
-        else {}
-    )
-    selected = knowledge_alignment.get("selected_card_ids", [])
+    block = _alignment_block(production_bible)
+    if block is None:
+        return []
+    selected = block.get("selected_card_ids", [])
     if not isinstance(selected, list):
         return []
     return [str(card_id).strip() for card_id in selected if str(card_id).strip()]
@@ -239,7 +243,14 @@ def check_ad_video_planning_knowledge_alignment(
     script: dict[str, Any],
     scene_plan: dict[str, Any],
 ) -> dict[str, Any]:
-    """Check selected professional knowledge survives bible to script/scenes."""
+    """Check selected professional knowledge survives bible to script/scenes.
+
+    Also guards against vacuous pass: when the knowledge_alignment block
+    is entirely missing from production_bible.intelligence, the pipeline
+    skipped the alignment step. An explicit empty block
+    (``selected_card_ids: [], alignments: []``) is valid — it means
+    selection ran but no card qualified. A missing block is not.
+    """
     script_report = check_script_knowledge_alignment(production_bible, script)
     scene_report = check_scene_plan_knowledge_alignment(production_bible, scene_plan)
     entries = _alignment_entries(production_bible)
@@ -251,6 +262,19 @@ def check_ad_video_planning_knowledge_alignment(
     ]
 
     issues: list[dict[str, Any]] = []
+
+    block = _alignment_block(production_bible)
+    if block is None:
+        issues.append({
+            "kind": "knowledge_alignment_block_missing",
+            "artifact": "production_bible",
+        })
+    elif "selected_card_ids" not in block:
+        issues.append({
+            "kind": "knowledge_alignment_selection_skipped",
+            "artifact": "production_bible",
+        })
+
     issues.extend(
         {
             "kind": "missing_selected_knowledge_alignment",

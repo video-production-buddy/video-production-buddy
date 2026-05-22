@@ -1172,6 +1172,76 @@ def test_ad_video_contract_mentions_trend_alignment_flow() -> None:
     assert "check_scene_plan_trend_alignment" in scene
 
 
+def test_trend_alignment_guard_rejects_missing_block() -> None:
+    """A production_bible with no trend_alignment key fails the planning check."""
+    from lib.trend_alignment import check_ad_video_planning_trend_alignment
+
+    bible_no_block = {"intelligence": {}}
+    report = check_ad_video_planning_trend_alignment(
+        bible_no_block, {"sections": []}, {"scenes": []}
+    )
+    assert report["ok"] is False
+    assert any(i["kind"] == "trend_alignment_block_missing" for i in report["issues"])
+
+
+def test_trend_alignment_guard_rejects_block_without_selected_ids() -> None:
+    """A trend_alignment block missing selected_trend_ids also fails."""
+    from lib.trend_alignment import check_ad_video_planning_trend_alignment
+
+    bible = {"intelligence": {"trend_alignment": {"alignments": []}}}
+    report = check_ad_video_planning_trend_alignment(
+        bible, {"sections": []}, {"scenes": []}
+    )
+    assert report["ok"] is False
+    assert any(i["kind"] == "trend_alignment_selection_skipped" for i in report["issues"])
+
+
+def test_trend_alignment_guard_passes_explicit_empty_selection() -> None:
+    """An explicit selected_trend_ids: [] with empty alignments is valid."""
+    from lib.trend_alignment import check_ad_video_planning_trend_alignment
+
+    bible = {"intelligence": {"trend_alignment": {"selected_trend_ids": [], "alignments": []}}}
+    report = check_ad_video_planning_trend_alignment(
+        bible, {"sections": []}, {"scenes": []}
+    )
+    assert report["ok"] is True
+
+
+def test_knowledge_alignment_guard_rejects_missing_block() -> None:
+    """A production_bible with no knowledge_alignment key fails the planning check."""
+    from lib.knowledge_alignment import check_ad_video_planning_knowledge_alignment
+
+    bible_no_block = {"intelligence": {}}
+    report = check_ad_video_planning_knowledge_alignment(
+        bible_no_block, {"sections": []}, {"scenes": []}
+    )
+    assert report["ok"] is False
+    assert any(i["kind"] == "knowledge_alignment_block_missing" for i in report["issues"])
+
+
+def test_knowledge_alignment_guard_rejects_block_without_selected_ids() -> None:
+    """A knowledge_alignment block missing selected_card_ids also fails."""
+    from lib.knowledge_alignment import check_ad_video_planning_knowledge_alignment
+
+    bible = {"intelligence": {"knowledge_alignment": {"alignments": []}}}
+    report = check_ad_video_planning_knowledge_alignment(
+        bible, {"sections": []}, {"scenes": []}
+    )
+    assert report["ok"] is False
+    assert any(i["kind"] == "knowledge_alignment_selection_skipped" for i in report["issues"])
+
+
+def test_knowledge_alignment_guard_passes_explicit_empty_selection() -> None:
+    """An explicit selected_card_ids: [] with empty alignments is valid."""
+    from lib.knowledge_alignment import check_ad_video_planning_knowledge_alignment
+
+    bible = {"intelligence": {"knowledge_alignment": {"selected_card_ids": [], "alignments": []}}}
+    report = check_ad_video_planning_knowledge_alignment(
+        bible, {"sections": []}, {"scenes": []}
+    )
+    assert report["ok"] is True
+
+
 def _hallucination_check(check_id: str = "HC-PRODUCT-GEOMETRY") -> dict:
     return {
         "check_id": check_id,
