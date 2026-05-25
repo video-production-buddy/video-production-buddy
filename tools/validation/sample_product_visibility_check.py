@@ -7,7 +7,7 @@ if the creative concept hides the product until a late-stage reveal.
 
 This validator enforces that rule by substring-matching the bible's
 brand_constraints.mandatory_elements against the selected scenes'
-description / visual_constraint / scene_type fields.
+description / non-negated visual_constraint / scene_type fields.
 
 Used by:
   - asset-director.md sample sub-stage (call before assembling the sample
@@ -36,6 +36,26 @@ _STOPWORDS = {
     "appears", "visible", "include", "included", "element", "elements",
 }
 
+_NEGATED_VISUAL_CONSTRAINT_RE = re.compile(
+    r"\b(?:do not|don't|dont|never)\s+"
+    r"(?:show|reveal|display|feature|include|surface|frame)\b"
+    r"|\b(?:not|without)\s+"
+    r"(?:showing|revealing|displaying|featuring|including|framing)\b"
+    r"|\bnot\s+(?:yet\s+)?"
+    r"(?:visible|shown|revealed|displayed|featured|included)\b"
+    r"|\bno\s+(?:product|brand|logo|device|phone|wordmark|packshot)\b"
+    r"|\b(?:hide|conceal|withhold)\b"
+    r"|\b(?:keep|kept|remain|remains|stays?|still)\s+"
+    r"(?:it|the\s+)?(?:product|brand|logo|device|phone|wordmark|packshot)?\s*"
+    r"(?:hidden|concealed|obscured|masked)\b"
+    r"|\b(?:hidden|concealed|obscured|masked)\s+until\b"
+    r"|\b(?:obscure|obscured|mask|masked)\s+(?:the\s+)?"
+    r"(?:product|brand|logo|device|phone|wordmark|packshot)\b"
+    r"|\b(?:defer|delay|save)\s+(?:the\s+)?"
+    r"(?:product|brand|logo|device|phone|reveal|appearance|hero)\b",
+    re.IGNORECASE,
+)
+
 
 def _load_artifact(project_dir: Path, name: str) -> dict[str, Any]:
     path = project_dir / "artifacts" / name
@@ -61,10 +81,25 @@ def _extract_keywords(element: str) -> list[str]:
     return [t for t in tokens if len(t) >= 3 and t.lower() not in _STOPWORDS]
 
 
+def _visibility_evidence_from_visual_constraint(scene: dict[str, Any]) -> str:
+    visual_constraint = scene.get("visual_constraint", "") or ""
+    if not isinstance(visual_constraint, str):
+        return ""
+    if _NEGATED_VISUAL_CONSTRAINT_RE.search(visual_constraint):
+        return ""
+    return visual_constraint
+
+
+def _keyword_hit(keyword: str, text: str) -> bool:
+    pattern = rf"(?<![A-Za-z0-9-]){re.escape(keyword.lower())}(?![A-Za-z0-9-])"
+    return bool(re.search(pattern, text))
+
+
 def _scene_text(scene: dict[str, Any]) -> str:
     """Concatenate the prose fields where a mandatory element might appear."""
     parts = [
         scene.get("description", ""),
+        _visibility_evidence_from_visual_constraint(scene),
         scene.get("scene_type", ""),
         scene.get("type", ""),
     ]
@@ -126,7 +161,7 @@ def check_sample_visibility(
             keywords = _extract_keywords(element)
             if not keywords:
                 continue
-            keyword_hits = [k for k in keywords if k.lower() in text]
+            keyword_hits = [k for k in keywords if _keyword_hit(k, text)]
             # FULL match: at least 2 distinct content keywords from the element appear.
             # Single-keyword overlap is a partial signal, not a real visibility match.
             if len(keyword_hits) >= 2:

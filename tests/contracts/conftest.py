@@ -466,5 +466,3 @@ def _conditioned_asset_manifest(conditioning_mode: str = "reference_to_video") -
             }
         ],
     }
-
-

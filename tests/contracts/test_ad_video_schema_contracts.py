@@ -772,5 +772,3 @@ def test_production_bible_schema_requires_kvm_motion_primitives() -> None:
     bad["visual"]["key_visual_moments"][0]["required_motion_primitives"] = []
     with pytest.raises(Exception):
         validate_artifact("production_bible", bad)
-
-

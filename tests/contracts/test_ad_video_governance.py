@@ -669,5 +669,3 @@ def test_product_identity_consistency_accepts_non_product_visible_not_applicable
 
     assert verdict["status"] == "PASS"
     assert verdict["summary"]["product_visible_scenes"] == 0
-
-

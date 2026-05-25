@@ -321,6 +321,72 @@ def test_ad_video_planning_chain_check_rejects_unthreaded_selected_knowledge() -
     assert result.data["knowledge_alignment"]["ok"] is True
 
 
+def test_ad_video_planning_chain_check_rejects_missing_selected_knowledge_card() -> None:
+    """Conflict detection must not pass when selected card ids cannot be resolved."""
+    from tools.validation.ad_video_planning_chain_check import AdVideoPlanningChainCheck
+
+    bible = {
+        "intelligence": {
+            "trend_alignment": {
+                "alignments": [
+                    {
+                        "trend_id": "trend-overload",
+                        "scene_usage": {
+                            "visual_or_pacing_instruction": (
+                                "Overload the frame with rapid product claim text"
+                            )
+                        },
+                    }
+                ]
+            },
+            "knowledge_alignment": {
+                "selected_card_ids": ["knowledge.missing.001"],
+                "alignments": [
+                    {
+                        "card_id": "knowledge.missing.001",
+                        "do_not_overapply": [
+                            "Overload the frame with rapid product claim text"
+                        ],
+                    }
+                ],
+            },
+        }
+    }
+
+    report = AdVideoPlanningChainCheck()._check_conflicts(bible)
+
+    assert report["ok"] is False
+    assert report["conflicts"][0]["kind"] == "missing_selected_knowledge_card"
+    assert report["conflicts"][0]["card_id"] == "knowledge.missing.001"
+
+
+def test_ad_video_planning_chain_check_rejects_knowledge_card_load_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Knowledge-card integrity failures must fail the pre-asset conflict gate."""
+    import lib.ad_knowledge
+    from tools.validation.ad_video_planning_chain_check import AdVideoPlanningChainCheck
+
+    def broken_loader() -> list[dict]:
+        raise ValueError("content_hash mismatch")
+
+    monkeypatch.setattr(lib.ad_knowledge, "load_ad_knowledge_cards", broken_loader)
+
+    bible = {
+        "intelligence": {
+            "trend_alignment": {"alignments": []},
+            "knowledge_alignment": {
+                "selected_card_ids": ["hook.visual-contrast.001"],
+                "alignments": [{"card_id": "hook.visual-contrast.001"}],
+            },
+        }
+    }
+
+    report = AdVideoPlanningChainCheck()._check_conflicts(bible)
+
+    assert report["ok"] is False
+    assert report["conflicts"][0]["kind"] == "knowledge_card_load_failed"
+    assert "content_hash mismatch" in report["conflicts"][0]["detail"]
+
+
 def test_ad_video_planning_chain_check_accepts_fresh_threaded_chain() -> None:
     """A fresh planning chain with selected trends in bible, script, and scene plan passes."""
     from tests.qa.test_artifact_chain import PRODUCTION_BIBLE_VALID

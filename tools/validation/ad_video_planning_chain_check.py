@@ -180,11 +180,63 @@ class AdVideoPlanningChainCheck(BaseTool):
             from lib.ad_knowledge import load_ad_knowledge_cards
             all_cards = load_ad_knowledge_cards()
             selected_cards = [c for c in all_cards if c["card_id"] in selected_ids]
-        except Exception:
-            selected_cards = []
+        except Exception as exc:
+            return {
+                "ok": False,
+                "conflicts": [
+                    {
+                        "kind": "knowledge_card_load_failed",
+                        "conflict_type": "knowledge_card_load_failed",
+                        "selected_card_ids": selected_ids,
+                        "detail": str(exc),
+                        "recommendation": (
+                            "Repair the curated knowledge card deck before locking "
+                            "the production bible or generating assets."
+                        ),
+                    }
+                ],
+                "summary": {
+                    "trends_checked": len(trend_alignments) if isinstance(trend_alignments, list) else 0,
+                    "knowledge_cards_checked": len(knowledge_alignments) if isinstance(knowledge_alignments, list) else 0,
+                    "selected_cards_checked": len(selected_ids),
+                    "conflicts_found": 1,
+                },
+            }
 
-        return check_trend_knowledge_conflicts(
+        resolved_ids = {str(card.get("card_id") or "").strip() for card in selected_cards}
+        missing_ids = sorted(set(selected_ids) - resolved_ids)
+        missing_conflicts = [
+            {
+                "kind": "missing_selected_knowledge_card",
+                "conflict_type": "missing_selected_knowledge_card",
+                "card_id": card_id,
+                "detail": (
+                    f"production_bible.intelligence.knowledge_alignment.selected_card_ids "
+                    f"references {card_id!r}, but no loaded knowledge card has that id."
+                ),
+                "recommendation": (
+                    "Select an existing curated knowledge card or repair the card deck "
+                    "before proceeding to asset generation."
+                ),
+            }
+            for card_id in missing_ids
+        ]
+
+        conflict_report = check_trend_knowledge_conflicts(
             trend_alignments=trend_alignments if isinstance(trend_alignments, list) else [],
             knowledge_cards=selected_cards,
             knowledge_alignments=knowledge_alignments if isinstance(knowledge_alignments, list) else [],
         )
+        if missing_conflicts:
+            conflicts = missing_conflicts + list(conflict_report.get("conflicts", []))
+            summary = dict(conflict_report.get("summary", {}))
+            summary["missing_selected_cards"] = len(missing_conflicts)
+            summary["selected_cards_checked"] = len(selected_ids)
+            summary["conflicts_found"] = len(conflicts)
+            return {
+                "ok": False,
+                "conflicts": conflicts,
+                "summary": summary,
+            }
+
+        return conflict_report
