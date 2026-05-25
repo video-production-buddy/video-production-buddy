@@ -66,7 +66,11 @@ def check_trend_knowledge_conflicts(
     """
     conflicts: list[dict[str, Any]] = []
 
-    cards_by_id = {card["card_id"]: card for card in knowledge_cards}
+    cards_by_id = {
+        card["card_id"]: card
+        for card in knowledge_cards
+        if isinstance(card, dict) and "card_id" in card
+    }
 
     for trend_entry in trend_alignments:
         if not isinstance(trend_entry, dict):
