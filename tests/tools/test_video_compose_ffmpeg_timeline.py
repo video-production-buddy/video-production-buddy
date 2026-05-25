@@ -51,6 +51,52 @@ def test_ffmpeg_compose_uses_source_in_seconds_for_source_seek(monkeypatch, tmp_
     assert trim_cmd[trim_cmd.index("-t") + 1] == "2.5"
 
 
+def test_ffmpeg_compose_normalizes_segments_to_selected_profile(monkeypatch, tmp_path):
+    source = tmp_path / "source.mp4"
+    source.write_bytes(b"stub-video")
+    output = tmp_path / "out.mp4"
+    commands: list[list[str]] = []
+
+    composer = VideoCompose()
+    monkeypatch.setattr(composer, "_has_audio_stream", lambda _path: False)
+
+    def fake_run_command(cmd, *args, **kwargs):
+        commands.append(list(cmd))
+        out = Path(cmd[-1])
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(b"stub-output")
+        return SimpleNamespace(stdout="")
+
+    monkeypatch.setattr(composer, "run_command", fake_run_command)
+
+    result = composer.execute(
+        {
+            "operation": "compose",
+            "profile": "tiktok",
+            "edit_decisions": {
+                "version": "1.0",
+                "render_runtime": "ffmpeg",
+                "cuts": [
+                    {
+                        "id": "cut-1",
+                        "source": str(source),
+                        "in_seconds": 0.0,
+                        "out_seconds": 2.0,
+                    }
+                ],
+            },
+            "output_path": str(output),
+        }
+    )
+
+    assert result.success, result.error
+    trim_cmd = commands[0]
+    vf = trim_cmd[trim_cmd.index("-filter:v") + 1]
+    assert "scale=1080:1920:force_original_aspect_ratio=decrease" in vf
+    assert "pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black" in vf
+    assert "fps=30" in vf
+
+
 def test_scene_fidelity_accepts_plain_media_cut_without_component_type():
     registry = load_registry()
 

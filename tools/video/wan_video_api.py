@@ -177,6 +177,63 @@ class WanVideoAPI(BaseTool):
     input_schema = {
         "type": "object",
         "required": ["prompt"],
+        "allOf": [
+            {
+                "if": {
+                    "properties": {"operation": {"const": "image_to_video"}},
+                    "required": ["operation"],
+                },
+                "then": {
+                    "anyOf": [
+                        {"required": ["image_url"]},
+                        {"required": ["image_path"]},
+                    ]
+                },
+            },
+            {
+                "if": {
+                    "properties": {"operation": {"const": "reference_to_video"}},
+                    "required": ["operation"],
+                },
+                "then": {
+                    "anyOf": [
+                        {"required": ["ref_images"]},
+                        {"required": ["ref_video_url"]},
+                    ]
+                },
+            },
+            {
+                "if": {
+                    "properties": {"operation": {"const": "video_editing"}},
+                    "required": ["operation"],
+                },
+                "then": {
+                    "anyOf": [
+                        {"required": ["video_url"]},
+                        {"required": ["video_path"]},
+                    ]
+                },
+            },
+            *[
+                {
+                    "if": {
+                        "properties": {"model_variant": {"const": variant}},
+                        "required": ["model_variant"],
+                    },
+                    "then": {
+                        "properties": {
+                            "operation": {"const": model_meta["operation"]},
+                        },
+                        **(
+                            {"required": ["operation"]}
+                            if model_meta["operation"] != "text_to_video"
+                            else {}
+                        ),
+                    },
+                }
+                for variant, model_meta in _MODELS.items()
+            ],
+        ],
         "properties": {
             "prompt": {
                 "type": "string",
@@ -244,34 +301,41 @@ class WanVideoAPI(BaseTool):
             # ── image_to_video ───────────────────────────────────────────────
             "image_url": {
                 "type": "string",
+                "minLength": 1,
                 "description": "Source image URL (image_to_video)",
             },
             "image_path": {
                 "type": "string",
+                "minLength": 1,
                 "description": "Local source image path (image_to_video; auto base64-encoded)",
             },
             # ── audio sync (wan2.6/2.5) ──────────────────────────────────────
             "audio_url": {
                 "type": "string",
+                "minLength": 1,
                 "description": "Audio URL for audio-synced generation (wan2.6/2.5 only)",
             },
             # ── reference_to_video ───────────────────────────────────────────
             "ref_images": {
                 "type": "array",
                 "items": {"type": "string"},
+                "minItems": 1,
                 "description": "Reference image URLs or local paths (reference_to_video)",
             },
             "ref_video_url": {
                 "type": "string",
+                "minLength": 1,
                 "description": "Reference video URL (reference_to_video)",
             },
             # ── video_editing ────────────────────────────────────────────────
             "video_url": {
                 "type": "string",
+                "minLength": 1,
                 "description": "Source video URL to edit (video_editing)",
             },
             "video_path": {
                 "type": "string",
+                "minLength": 1,
                 "description": "Local source video path to edit (video_editing; auto base64-encoded)",
             },
             # ── common ───────────────────────────────────────────────────────
@@ -290,7 +354,23 @@ class WanVideoAPI(BaseTool):
     )
     retry_policy = RetryPolicy(max_retries=2, retryable_errors=["rate_limit", "timeout"])
     idempotency_key_fields = [
-        "prompt", "model_variant", "operation", "duration", "seed",
+        "prompt",
+        "negative_prompt",
+        "model_variant",
+        "operation",
+        "duration",
+        "aspect_ratio",
+        "resolution",
+        "size",
+        "image_url",
+        "image_path",
+        "audio_url",
+        "ref_images",
+        "ref_video_url",
+        "video_url",
+        "video_path",
+        "prompt_extend",
+        "seed",
     ]
     side_effects = ["writes video file to output_path", "calls Bailian/DashScope API"]
     user_visible_verification = ["Watch generated clip for motion coherence and visual quality"]
@@ -328,8 +408,34 @@ class WanVideoAPI(BaseTool):
 
         start = time.time()
         operation = inputs.get("operation", "text_to_video")
-        variant = inputs.get("model_variant") or _OP_DEFAULTS.get(operation, "wan2.6-t2v")
-        model_meta = _MODELS.get(variant, _MODELS["wan2.6-t2v"])
+        if operation not in _OP_DEFAULTS:
+            return ToolResult(
+                success=False,
+                error=(
+                    f"Unknown operation {operation!r}. Valid values: "
+                    f"{', '.join(sorted(_OP_DEFAULTS))}."
+                ),
+            )
+        variant = inputs.get("model_variant") or _OP_DEFAULTS[operation]
+        if variant not in _MODELS:
+            return ToolResult(
+                success=False,
+                error=(
+                    f"Unknown model_variant {variant!r}. Available: "
+                    f"{', '.join(sorted(_MODELS))}."
+                ),
+            )
+        model_meta = _MODELS[variant]
+        model_operation = model_meta["operation"]
+        if model_operation != operation:
+            return ToolResult(
+                success=False,
+                error=(
+                    f"model_variant {variant!r} supports {model_operation}, "
+                    f"but operation is {operation}. Choose a matching model_variant "
+                    "or omit model_variant to use the operation default."
+                ),
+            )
 
         headers = {
             "Authorization": f"Bearer {api_key}",

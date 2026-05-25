@@ -408,13 +408,19 @@ class VideoCompose(BaseTool):
         preset = inputs.get("preset", "medium")
         profile_name = inputs.get("profile")
 
-        # Resolve target resolution from profile or default
-        resolution = "1920x1080"
+        # Resolve target segment geometry from profile or default. Segments must
+        # be normalized to the final profile shape before concat; resizing only
+        # after concat can distort letterboxed vertical/square outputs.
+        target_width = 1920
+        target_height = 1080
+        target_fps = 30
         if profile_name:
             try:
                 from lib.media_profiles import get_profile
                 p = get_profile(profile_name)
-                resolution = f"{p.width}x{p.height}"
+                target_width = p.width
+                target_height = p.height
+                target_fps = p.fps
             except (ImportError, ValueError):
                 pass
 
@@ -495,14 +501,12 @@ class VideoCompose(BaseTool):
                     #
                     # Default target is 1920x1080 @ 30fps, yuv420p, sar=1. If the
                     # source is smaller it letterboxes; if larger it downscales.
-                    # Callers can override via edit_decisions.metadata.compose_target
-                    # (future extension) but the defaults match the most common
-                    # delivery profile (YouTube landscape).
+                    # Callers override via the selected media profile.
                     vf_parts: list[str] = [
-                        "scale=1920:1080:force_original_aspect_ratio=decrease",
-                        "pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=black",
+                        f"scale={target_width}:{target_height}:force_original_aspect_ratio=decrease",
+                        f"pad={target_width}:{target_height}:(ow-iw)/2:(oh-ih)/2:color=black",
                         "setsar=1",
-                        "fps=30",
+                        f"fps={target_fps}",
                     ]
                     af_parts: list[str] = []
                     if speed != 1.0:
@@ -518,7 +522,7 @@ class VideoCompose(BaseTool):
                         "-crf", str(crf),
                         "-preset", preset,
                         "-pix_fmt", "yuv420p",
-                        "-r", "30",
+                        "-r", str(target_fps),
                     ])
 
                     # Audio handling: some source clips have no audio stream
@@ -553,7 +557,7 @@ class VideoCompose(BaseTool):
                             "-crf", str(crf),
                             "-preset", preset,
                             "-pix_fmt", "yuv420p",
-                            "-r", "30",
+                            "-r", str(target_fps),
                             "-c:a", "aac",
                             "-b:a", "192k",
                             "-ar", "48000",
@@ -1015,15 +1019,6 @@ class VideoCompose(BaseTool):
                 resolved_cut["source"] = asset_lookup[source_id]["path"]
             resolved_cuts.append(resolved_cut)
 
-        # --- Pre-compose validation gate ---
-        scene_plan = inputs.get("scene_plan")
-        validation_block = self._pre_compose_validation(edit_decisions, resolved_cuts, scene_plan)
-        if validation_block is not None:
-            return validation_block
-
-        # Also accept profile as "output_profile" (skill convention) or "profile"
-        profile = inputs.get("profile") or inputs.get("output_profile")
-
         # --- Runtime routing: honor render_runtime locked at proposal ---
         # Silent swaps are forbidden by governance. If the chosen runtime
         # is unavailable, surface a structured blocker rather than quietly
@@ -1044,6 +1039,25 @@ class VideoCompose(BaseTool):
                 ),
             )
 
+        if render_runtime not in {"remotion", "hyperframes", "ffmpeg"}:
+            return ToolResult(
+                success=False,
+                error=(
+                    f"Unknown render_runtime {render_runtime!r}. "
+                    f"Valid values: remotion, hyperframes, ffmpeg. "
+                    f"render_runtime must be set at proposal stage."
+                ),
+            )
+
+        # --- Pre-compose validation gate ---
+        scene_plan = inputs.get("scene_plan")
+        validation_block = self._pre_compose_validation(edit_decisions, resolved_cuts, scene_plan)
+        if validation_block is not None:
+            return validation_block
+
+        # Also accept profile as "output_profile" (skill convention) or "profile"
+        profile = inputs.get("profile") or inputs.get("output_profile")
+
         if render_runtime == "hyperframes":
             return self._render_via_hyperframes(
                 inputs=inputs,
@@ -1061,15 +1075,6 @@ class VideoCompose(BaseTool):
                 resolved_cuts=resolved_cuts,
                 output_path=output_path,
                 profile=profile,
-            )
-        if render_runtime != "remotion":
-            return ToolResult(
-                success=False,
-                error=(
-                    f"Unknown render_runtime {render_runtime!r}. "
-                    f"Valid values: remotion, hyperframes, ffmpeg. "
-                    f"render_runtime must be set at proposal stage."
-                ),
             )
 
         # --- Explicit Remotion path (render_runtime == 'remotion') ---

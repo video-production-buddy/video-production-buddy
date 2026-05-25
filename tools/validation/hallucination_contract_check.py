@@ -321,6 +321,7 @@ def check_hallucination_contract(
         if not _asset_is_generated_visual(asset, high_risk_scenes[scene_id]):
             continue
 
+        generated_visual_asset_scene_ids.add(scene_id)
         asset_id = asset.get("id", "<unknown>")
         review = asset.get("hallucination_review")
         if not isinstance(review, dict):
@@ -411,6 +412,13 @@ def check_hallucination_contract(
                     f"Generated visual asset {asset_id} uses a user-approved "
                     f"hallucination-review waiver ({decision_id})."
                 )
+
+    for scene_id in sorted(high_risk_scenes):
+        if scene_id not in generated_visual_asset_scene_ids:
+            issues.append(
+                f"High-risk generated scene {scene_id} has no generated visual asset "
+                "in asset_manifest.assets[]."
+            )
 
     status_out = "FAIL" if issues else ("WARN" if warnings else "PASS")
     return {

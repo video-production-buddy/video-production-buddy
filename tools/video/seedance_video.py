@@ -75,6 +75,34 @@ class SeedanceVideo(BaseTool):
     input_schema = {
         "type": "object",
         "required": ["prompt"],
+        "allOf": [
+            {
+                "if": {
+                    "properties": {"operation": {"const": "image_to_video"}},
+                    "required": ["operation"],
+                },
+                "then": {
+                    "anyOf": [
+                        {"required": ["image_url"]},
+                        {"required": ["image_path"]},
+                    ]
+                },
+            },
+            {
+                "if": {
+                    "properties": {"operation": {"const": "reference_to_video"}},
+                    "required": ["operation"],
+                },
+                "then": {
+                    "anyOf": [
+                        {"required": ["reference_image_urls"]},
+                        {"required": ["reference_image_paths"]},
+                        {"required": ["reference_video_urls"]},
+                        {"required": ["reference_audio_urls"]},
+                    ]
+                },
+            },
+        ],
         "properties": {
             "prompt": {"type": "string"},
             "operation": {
@@ -111,34 +139,41 @@ class SeedanceVideo(BaseTool):
             },
             "image_url": {
                 "type": "string",
+                "minLength": 1,
                 "description": "Start frame image URL for image_to_video (jpg, png, webp)",
             },
             "image_path": {
                 "type": "string",
+                "minLength": 1,
                 "description": "Local start-frame path for image_to_video. Auto-uploaded to fal.ai storage.",
             },
             "end_image_url": {
                 "type": "string",
+                "minLength": 1,
                 "description": "Optional end frame URL for image_to_video",
             },
             "reference_image_urls": {
                 "type": "array",
                 "items": {"type": "string"},
+                "minItems": 1,
                 "description": "Up to 9 reference image URLs for reference_to_video (identity / wardrobe / setting / style anchors).",
             },
             "reference_image_paths": {
                 "type": "array",
                 "items": {"type": "string"},
+                "minItems": 1,
                 "description": "Local reference image paths for reference_to_video. Auto-uploaded to fal.ai storage.",
             },
             "reference_video_urls": {
                 "type": "array",
                 "items": {"type": "string"},
+                "minItems": 1,
                 "description": "Up to 3 reference video clip URLs for reference_to_video (motion / camera / pacing anchors).",
             },
             "reference_audio_urls": {
                 "type": "array",
                 "items": {"type": "string"},
+                "minItems": 1,
                 "description": "Up to 3 reference audio clip URLs for reference_to_video (voice / music / ambience anchors).",
             },
             "seed": {
@@ -153,7 +188,23 @@ class SeedanceVideo(BaseTool):
         cpu_cores=1, ram_mb=512, vram_mb=0, disk_mb=500, network_required=True
     )
     retry_policy = RetryPolicy(max_retries=2, retryable_errors=["rate_limit", "timeout"])
-    idempotency_key_fields = ["prompt", "model_variant", "operation", "duration", "seed"]
+    idempotency_key_fields = [
+        "prompt",
+        "model_variant",
+        "operation",
+        "duration",
+        "aspect_ratio",
+        "resolution",
+        "generate_audio",
+        "image_url",
+        "image_path",
+        "end_image_url",
+        "reference_image_urls",
+        "reference_image_paths",
+        "reference_video_urls",
+        "reference_audio_urls",
+        "seed",
+    ]
     side_effects = ["writes video file to output_path", "calls fal.ai API"]
     user_visible_verification = [
         "Watch generated clip for motion coherence, audio sync, and visual quality"
@@ -191,6 +242,42 @@ class SeedanceVideo(BaseTool):
         start = time.time()
         operation = inputs.get("operation", "text_to_video")
         variant = inputs.get("model_variant", "standard")
+        if operation not in {"text_to_video", "image_to_video", "reference_to_video"}:
+            return ToolResult(
+                success=False,
+                error=(
+                    f"Unknown operation {operation!r}. "
+                    "Valid values: text_to_video, image_to_video, reference_to_video."
+                ),
+            )
+        if variant not in {"standard", "fast"}:
+            return ToolResult(
+                success=False,
+                error="Unknown model_variant {!r}. Valid values: standard, fast.".format(variant),
+            )
+        if operation == "image_to_video" and not (
+            inputs.get("image_url") or inputs.get("image_path")
+        ):
+            return ToolResult(
+                success=False,
+                error="image_to_video requires image_url or image_path",
+            )
+        if operation == "reference_to_video" and not any(
+            inputs.get(key)
+            for key in (
+                "reference_image_urls",
+                "reference_image_paths",
+                "reference_video_urls",
+                "reference_audio_urls",
+            )
+        ):
+            return ToolResult(
+                success=False,
+                error=(
+                    "reference_to_video requires reference_image_urls, "
+                    "reference_image_paths, reference_video_urls, or reference_audio_urls"
+                ),
+            )
         operation_path = operation.replace("_", "-")
 
         if variant == "fast":

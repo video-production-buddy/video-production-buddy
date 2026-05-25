@@ -1459,6 +1459,17 @@ def test_hallucination_contract_rejects_missing_asset_review() -> None:
     assert any("hallucination_review" in issue for issue in verdict["issues"])
 
 
+def test_hallucination_contract_rejects_missing_generated_visual_asset() -> None:
+    verdict = check_hallucination_contract(
+        _bible_with_truth_contract(),
+        _scene_plan_for_hallucination(),
+        {"version": "1.0", "assets": []},
+    )
+
+    assert verdict["status"] == "FAIL"
+    assert any("no generated visual asset" in issue for issue in verdict["issues"])
+
+
 def test_hallucination_contract_rejects_blocker_flag() -> None:
     verdict = check_hallucination_contract(
         _bible_with_truth_contract(),

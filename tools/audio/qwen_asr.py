@@ -83,14 +83,19 @@ class QwenASR(BaseTool):
 
     input_schema = {
         "type": "object",
-        "required": ["audio_url"],
+        "anyOf": [
+            {"required": ["audio_url"]},
+            {"required": ["audio_path"]},
+        ],
         "properties": {
             "audio_url": {
                 "type": "string",
+                "minLength": 1,
                 "description": "URL of the audio file to transcribe (mp3, wav, m4a, etc.)",
             },
             "audio_path": {
                 "type": "string",
+                "minLength": 1,
                 "description": "Local audio file path (auto base64-encoded, used if audio_url not given)",
             },
             "model": {
@@ -109,7 +114,7 @@ class QwenASR(BaseTool):
         cpu_cores=1, ram_mb=128, vram_mb=0, disk_mb=10, network_required=True
     )
     retry_policy = RetryPolicy(max_retries=2, retryable_errors=["rate_limit", "timeout"])
-    idempotency_key_fields = ["audio_url", "model"]
+    idempotency_key_fields = ["audio_url", "audio_path", "model"]
     side_effects = ["calls Bailian/DashScope API", "optionally writes transcript to output_path"]
     user_visible_verification = ["Read transcript for accuracy and completeness"]
 

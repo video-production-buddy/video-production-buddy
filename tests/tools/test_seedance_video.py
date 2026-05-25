@@ -1,3 +1,4 @@
+import jsonschema
 import pytest
 
 from tools.video.seedance_video import SeedanceVideo
@@ -115,3 +116,104 @@ def test_seedance_fallback_queue_urls_match_submission_base(monkeypatch, tmp_pat
     assert status_url in get_urls
     assert response_url in get_urls
     assert not any("/fal-ai/bytedance/" in url for url in get_urls)
+
+
+def test_seedance_image_to_video_requires_start_frame(monkeypatch, seedance_env):
+    import requests
+
+    def fail_post(*_args, **_kwargs):
+        raise AssertionError("network called before local input validation")
+
+    monkeypatch.setattr(requests, "post", fail_post)
+
+    result = SeedanceVideo().execute(
+        {
+            "prompt": "A product starts moving",
+            "operation": "image_to_video",
+        }
+    )
+
+    assert not result.success
+    assert "image_to_video requires image_url or image_path" in result.error
+
+
+def test_seedance_reference_to_video_requires_reference_inputs(monkeypatch, seedance_env):
+    import requests
+
+    def fail_post(*_args, **_kwargs):
+        raise AssertionError("network called before local input validation")
+
+    monkeypatch.setattr(requests, "post", fail_post)
+
+    result = SeedanceVideo().execute(
+        {
+            "prompt": "Keep the same character identity",
+            "operation": "reference_to_video",
+        }
+    )
+
+    assert not result.success
+    assert "reference_to_video requires reference_image_urls, reference_image_paths, reference_video_urls, or reference_audio_urls" in result.error
+
+
+def test_seedance_schema_requires_image_to_video_start_frame():
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(
+            instance={
+                "prompt": "A product starts moving",
+                "operation": "image_to_video",
+            },
+            schema=SeedanceVideo.input_schema,
+        )
+
+    jsonschema.validate(
+        instance={
+            "prompt": "A product starts moving",
+            "operation": "image_to_video",
+            "image_url": "https://example.test/start.png",
+        },
+        schema=SeedanceVideo.input_schema,
+    )
+
+
+def test_seedance_schema_requires_reference_to_video_inputs():
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(
+            instance={
+                "prompt": "Keep the same character identity",
+                "operation": "reference_to_video",
+            },
+            schema=SeedanceVideo.input_schema,
+        )
+
+    jsonschema.validate(
+        instance={
+            "prompt": "Keep the same character identity",
+            "operation": "reference_to_video",
+            "reference_image_urls": ["https://example.test/ref.png"],
+        },
+        schema=SeedanceVideo.input_schema,
+    )
+
+
+def test_seedance_idempotency_includes_conditioning_inputs():
+    tool = SeedanceVideo()
+
+    first = tool.idempotency_key(
+        {
+            "prompt": "A product starts moving",
+            "operation": "image_to_video",
+            "image_url": "https://example.test/a.png",
+            "seed": 7,
+        }
+    )
+    second = tool.idempotency_key(
+        {
+            "prompt": "A product starts moving",
+            "operation": "image_to_video",
+            "image_url": "https://example.test/b.png",
+            "seed": 7,
+        }
+    )
+
+    assert first != second
