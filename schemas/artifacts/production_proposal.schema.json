@@ -13,6 +13,7 @@
     "dubbing",
     "derivatives_added",
     "budget_confirmed",
+    "music_strategy",
     "audio_contract",
     "visual_contract"
   ],
@@ -22,6 +23,10 @@
       "type": "string",
       "const": "1.0",
       "description": "Schema version pin."
+    },
+    "decision_log_ref": {
+      "type": "string",
+      "description": "Path to the cumulative project decision_log artifact."
     },
     "selected_idea_id": {
       "type": "string",
@@ -56,7 +61,7 @@
         "mode": {
           "type": "string",
           "enum": ["off", "burnt-in", "sidecar"],
-          "description": "off = no subtitles; burnt-in = ASS burned via ffmpeg subtitles filter; sidecar = separate .srt/.vtt file."
+          "description": "off = no subtitles; burnt-in = ASS burned via ffmpeg subtitles filter; sidecar = separate ASS file."
         },
         "language": {
           "type": "string",
@@ -89,7 +94,7 @@
     },
     "derivatives_added": {
       "type": "array",
-      "items": { "type": "string" },
+      "items": { "type": "string", "enum": ["9:16", "1:1", "15s", "15s_short"] },
       "description": "Variant ids the user opted into (e.g. '9:16', '1:1', '15s_short'). Empty when only the primary aspect ratio is rendered."
     },
     "budget_confirmed": {
@@ -302,7 +307,8 @@
         "typography_pairing",
         "color_rhythm",
         "atmosphere",
-        "anti_template_checklist"
+        "anti_template_checklist",
+        "visual_asset_provider_locks"
       ],
       "additionalProperties": false,
       "properties": {
@@ -364,6 +370,36 @@
           "minItems": 1,
           "items": { "type": "string" },
           "description": "Concrete anti-template assertions the scene/asset/compose stages must satisfy."
+        },
+        "visual_asset_provider_locks": {
+          "type": "array",
+          "minItems": 1,
+          "description": "User-visible image/video generation provider locks approved at proposal time. provider_consistency_check compares visual asset source_tool/model against these locks before compose.",
+          "items": {
+            "type": "object",
+            "required": ["asset_type", "source_tool"],
+            "additionalProperties": false,
+            "properties": {
+              "asset_type": {
+                "type": "string",
+                "enum": ["image", "video", "animation"],
+                "description": "Asset manifest type this provider lock covers."
+              },
+              "source_tool": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Locked tool name, e.g. wanx_image, wan_video_api, pexels_video."
+              },
+              "model": {
+                "type": "string",
+                "description": "Locked model/provider variant when applicable."
+              },
+              "usage": {
+                "type": "string",
+                "description": "Plain-language use case shown to the user when approving the lock."
+              }
+            }
+          }
         }
       }
     }

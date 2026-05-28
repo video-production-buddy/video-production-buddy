@@ -159,6 +159,11 @@
       },
       "minItems": 1
     },
+    "user_approved": {
+      "type": "boolean",
+      "default": false,
+      "description": "True only after user has explicitly approved the narration text. Ad-video manifest success_criteria requires this before TTS generation begins."
+    },
     "metadata": { "type": "object" }
   },
   "additionalProperties": false

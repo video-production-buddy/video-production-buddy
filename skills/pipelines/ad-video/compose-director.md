@@ -2,7 +2,12 @@
 
 ## When to Use
 
-You receive `edit_decisions`, `asset_manifest`, and `EP_STATE` and render the final video outputs. You render the primary 16:9 video first, then all opted-in derivative variants as separate output files.
+You receive `edit_decisions`, `asset_manifest`, `production_proposal`,
+`production_bible`, `script`, `scene_plan`, `decision_log`, and `EP_STATE` and
+render the final video outputs. You render the primary 16:9 video first, then
+all opted-in derivative variants as separate output files. After rendering,
+inspect the actual outputs and write `final_review` alongside `render_report`;
+do not checkpoint compose as complete unless `final_review.status` is `pass`.
 
 ## CRITICAL Pre-Render Checks
 
@@ -30,6 +35,41 @@ if not planning_gate.success:
     raise RuntimeError(f"Planning chain gate failed: {planning_gate.error}")
 ```
 
+### Check -0.5: Provider/model consistency
+
+Run `provider_consistency_check` before any render. Pass `script` with
+`production_proposal`, `asset_manifest`, and `decision_log`. This verifies that
+every script section has an auditable narration file and matching narration
+asset entry, that narration assets use
+`production_proposal.audio_contract.voice_model` and the expected TTS tool,
+that visual assets match
+`production_proposal.visual_contract.visual_asset_provider_locks`, that a
+no-music proposal did not produce a music bed, that `library_locked`,
+`search_align`, and `generative_loose` music strategies use the approved source
+path unless a visible approved `music_strategy_selection` decision selects a
+new strategy whose source path matches the asset, that
+`library_locked` / `search_align` music assets include `music_alignment`
+drop/beat evidence with drift within +/-0.5s, that
+`asset_manifest.total_cost_usd` does not exceed
+`production_proposal.approved_budget_usd` without a visible approved
+`budget_tradeoff` whose selected option explicitly approves the overage, such
+as `approve-overage`, and that any provider/model substitution has a visible
+user-approved `provider_selection` or `voice_selection` decision selecting the
+changed model or exact `source_tool:model` pair when a locked model changes.
+
+```python
+from tools.validation.provider_consistency_check import ProviderConsistencyCheck
+
+provider_gate = ProviderConsistencyCheck().execute({
+    "production_proposal": production_proposal,
+    "asset_manifest": asset_manifest,
+    "script": script,
+    "decision_log": decision_log,
+})
+if not provider_gate.success:
+    raise RuntimeError(f"Provider consistency gate failed: {provider_gate.error}")
+```
+
 ### Check 0: Remotion profile (aspect ratio)
 
 The `Explainer` composition in `Root.tsx` defaults to **1920×1080** regardless of any `width`/`height` fields in the props JSON. To get the correct output resolution you MUST pass `"profile"` to the `video_compose` call:
@@ -42,7 +82,7 @@ The `Explainer` composition in `Root.tsx` defaults to **1920×1080** regardless 
 
 If you omit `profile`, Remotion silently renders 1920×1080 regardless of what the scene plan says. Always set it.
 
-### Check 1: render_runtime verification
+### Check 1: render_runtime and music_strategy verification
 ```
 EP_STATE.style_mode == "animated" → render_runtime ∈ {remotion, hyperframes}
 EP_STATE.style_mode == "cinematic" → render_runtime == ffmpeg
@@ -51,6 +91,14 @@ EP_STATE.style_mode == "cinematic" → render_runtime == ffmpeg
 The user's choice (Remotion vs. HyperFrames for animated mode) was locked at the proposal stage via the `render_runtime_selection` decision in `decision_log`. Compose MUST route by `render_runtime` — do NOT fall back to the tool's legacy default, do NOT silently pick Remotion, do NOT treat HyperFrames as "basically Remotion." Each engine has a distinct renderer invocation (see Primary Render section).
 
 If `EP_STATE.render_runtime` is unset or does not match the `style_mode` constraint above, OR if `production_proposal.render_runtime` does not match `EP_STATE.render_runtime`: **ABORT. Alert EP. Do not render.** A runtime mismatch is a CRITICAL failure — this is the silent runtime swap prevention.
+
+Also run `runtime_consistency_check` with `production_proposal`,
+`edit_decisions`, and `decision_log`; it must confirm
+`edit_decisions.music_strategy` still matches
+`production_proposal.music_strategy` unless a visible approved
+`music_strategy_selection` decision selected the new strategy. A `music_source`
+decision may choose a track/source inside the already approved strategy, but it
+does not authorize switching strategy families.
 
 ### Check 2: Asset file existence
 For every asset reference in `edit_decisions.cuts[]` and `edit_decisions.audio.narration.segments[]`:
@@ -66,12 +114,12 @@ If any scene is missing crop_regions: **ABORT. Send back to scene_plan director.
 
 ### Check 4a: Scene fidelity (closed-enum + motion vocabulary)
 
-Before any render, validate that every cut in `edit_decisions.cuts[]` uses a `type` registered in `remotion-composer/scene_type_registry.json` and that any declared `motion_specs` are supported by the chosen component:
+Before any render, validate that every cut in `edit_decisions.cuts[]` uses a `type` registered in `remotion-composer/scene_type_registry.json` and that any declared `motion_specs` are supported by the chosen component. Pass `asset_manifest` so the validator can resolve `cuts[].source` asset IDs and detect repeated overlapping reuse of the same generated video asset:
 
 ```python
 from tools.validation.scene_fidelity_check import check_plan, load_registry
 registry = load_registry()
-report = check_plan(edit_decisions, registry)
+report = check_plan(edit_decisions, registry, asset_manifest)
 if not report["ok"]:
     raise RuntimeError(f"Scene fidelity failed: {report['issues']}")
 ```
@@ -217,7 +265,7 @@ result = composer.execute({
     "asset_manifest": asset_manifest,
     "audio_path": "assets/audio/mixed_audio.aac",
     # Include subtitle_path only if edit_decisions.subtitles.enabled == True:
-    "subtitle_path": "assets/subtitles.srt",
+    "subtitle_path": "assets/subtitles.ass",
     "options": {
         "subtitle_burn": EP_STATE.get("subtitle_burn", False),
         # ── IMPORTANT: Use ASS format subtitles, not SRT ────────────────────
@@ -251,6 +299,7 @@ if result.error:
 After `video_compose` returns, verify via `result.data`:
 - `duration_seconds` within ±5% of `edit_decisions.total_duration_seconds`
 - `resolution` matches `EP_STATE.aspect_ratio_primary` (1920×1080 for 16:9; 1080×1920 for 9:16)
+- the output `variant` label matches the actual resolution (`16:9` is landscape, `9:16` is vertical, `1:1` is square)
 - `audio_channels` == 2 (stereo)
 
 ### Check 5: Post-render loudness
@@ -298,9 +347,14 @@ Call `audio_mixer` once per variant to produce a variant-appropriate mix (15s va
 
 **1:1 variant:** pass `crop_filter: "crop=1080:1080:420:0"` in options, output to `renders/output_1x1.mp4`.
 
-**15s short cut:** filter `edit_decisions.cuts` to only `core: true` scenes. Verify `sum(core_scene_durations) ≤ 15.0s` before calling. Output to `renders/output_15s.mp4`.
+**15s short cut:** filter `edit_decisions.cuts` to only the scene ids in `edit_decisions.derivative_specs["15s_short"].include_scenes`. Verify `sum(selected_scene_durations) <= 15.0s` before calling. Output to `renders/output_15s.mp4`.
 
 **Cross-product derivatives** (15s × 9:16 or 15s × 1:1): apply both the 15s scene filter and the crop filter in the same `video_compose` call. Output to `renders/output_15s_9x16.mp4` / `renders/output_15s_1x1.mp4`.
+
+After every derivative render, probe the actual file before adding it to
+`render_report.outputs[]`. The `variant` label, `resolution`, and
+`duration_seconds` must agree: `9:16` outputs are vertical, `1:1` outputs are
+square, and any `15s` / `15s_short` output is `<=15s`.
 
 ## Render Report Format
 
@@ -335,10 +389,52 @@ Call `audio_mixer` once per variant to produce a variant-appropriate mix (15s va
 }
 ```
 
+## Final Review Requirement
+
+After `video_compose` completes, inspect the rendered files before presenting
+them or advancing to publish. Write `artifacts/final_review.json` using
+`schemas/artifacts/final_review.schema.json`.
+
+The `final_review` must include:
+- `technical_probe` with container, duration, resolution, fps, audio, codec, and
+  file-size evidence from the rendered file
+- `visual_spotcheck` with at least 4 sampled frame paths covering opening,
+  middle, climax, and ending
+- `audio_spotcheck` confirming narration, silence, clipping, mix
+  intelligibility, and whether music presence matches
+  `production_proposal.music_strategy`
+- `promise_preservation` confirming no silent runtime swap, no motion downgrade,
+  and that the delivery promise still holds
+- `subtitle_check` confirming expected subtitles are present and aligned, and
+  confirming subtitles are absent when `production_proposal.subtitles.mode` is
+  `"off"`
+- `reviewed_outputs[]` when derivative outputs exist, with one entry for every
+  `render_report.outputs[]` file and matching path, variant, duration, and
+  resolution evidence
+
+For a passing review, `final_review.output_path` must be one of
+`render_report.outputs[].path`, and the `technical_probe` duration/resolution
+plus `promise_preservation.render_runtime_used` must match that render report.
+When `render_report.outputs` contains more than one file, a passing review must
+also include `final_review.reviewed_outputs[]` covering every rendered primary
+and derivative file.
+
+If any check fails, set `final_review.status` to `revise` or `fail` and do not
+write a completed compose checkpoint. Fix the render, rerun the check, then
+checkpoint only the passing `final_review`. A passing final review must have
+empty `issues_found` and empty `checks.*.issues`; any recorded issue means the
+status is `revise` or `fail`.
+
 ## Validation Before Submitting
 
 - [ ] All 4 pre-render checks passed
 - [ ] `outputs` contains `16:9` entry
 - [ ] `outputs` contains one entry per opted-in derivative (and cross-products)
+- [ ] Every `render_report.outputs[]` variant has matching resolution and short variants are `<=15s`
 - [ ] All probe results PASS
 - [ ] `render_report.renderer` matches `EP_STATE.render_runtime`
+- [ ] `final_review.status == "pass"` and every required self-review check has evidence
+- [ ] `final_review.output_path` and probe/runtime evidence match `render_report`
+- [ ] `final_review` subtitle and music evidence matches `production_proposal`
+- [ ] `final_review.reviewed_outputs` covers every render output when derivatives exist
+- [ ] Completed compose checkpoint includes `production_proposal` and `production_bible`

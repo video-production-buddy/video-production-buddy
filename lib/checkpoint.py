@@ -86,7 +86,26 @@ SUPPLEMENTARY_ARTIFACTS = {
 }
 
 REQUIRED_SUPPLEMENTARY_STAGE_ARTIFACTS = {
-    ("ad-video", "assets"): ("product_identity_reference",),
+    ("ad-video", "proposal"): ("decision_log",),
+    ("ad-video", "assets"): (
+        "product_identity_reference",
+        "production_proposal",
+        "production_bible",
+        "script",
+        "scene_plan",
+        "decision_log",
+    ),
+    ("ad-video", "edit"): ("production_proposal", "asset_manifest", "scene_plan"),
+    ("ad-video", "compose"): (
+        "final_review",
+        "production_proposal",
+        "production_bible",
+    ),
+    ("ad-video", "publish"): (
+        "final_review",
+        "production_proposal",
+        "production_bible",
+    ),
 }
 
 
@@ -154,6 +173,56 @@ def _validate_artifacts_for_stage(
             f"required artifact(s) {missing_artifacts!r}"
         )
 
+    if (
+        pipeline_type == "ad-video"
+        and stage == "proposal"
+        and status in {"completed", "awaiting_human"}
+    ):
+        decision_log = artifacts.get("decision_log")
+        decisions = decision_log.get("decisions") if isinstance(decision_log, dict) else None
+        if not isinstance(decisions, list):
+            raise CheckpointValidationError(
+                "Ad-video proposal checkpoint must include decision_log.decisions"
+            )
+        required_categories = {
+            "music_strategy_selection",
+            "render_runtime_selection",
+            "product_identity_reference_selection",
+        }
+        approved_categories = {
+            decision.get("category")
+            for decision in decisions
+            if isinstance(decision, dict) and decision.get("user_approved") is True
+        }
+        missing_categories = sorted(required_categories - approved_categories)
+        if missing_categories:
+            raise CheckpointValidationError(
+                "Ad-video proposal checkpoint decision_log must include "
+                f"user-approved decisions for: {missing_categories}"
+            )
+
+        production_proposal = artifacts.get("production_proposal")
+        if isinstance(production_proposal, dict):
+            latest_approved_decisions = {
+                decision.get("category"): decision
+                for decision in decisions
+                if isinstance(decision, dict) and decision.get("user_approved") is True
+            }
+            for category, proposal_field in (
+                ("music_strategy_selection", "music_strategy"),
+                ("render_runtime_selection", "render_runtime"),
+                ("product_identity_reference_selection", "product_reference_strategy"),
+            ):
+                decision = latest_approved_decisions.get(category)
+                selected = decision.get("selected") if isinstance(decision, dict) else None
+                expected = production_proposal.get(proposal_field)
+                if selected != expected:
+                    raise CheckpointValidationError(
+                        "Ad-video proposal checkpoint decision_log "
+                        f"{category!r} selected {selected!r}, but "
+                        f"production_proposal.{proposal_field} is {expected!r}"
+                    )
+
     for artifact_name, artifact_data in artifacts.items():
         if artifact_name not in ARTIFACT_NAMES:
             continue
@@ -166,11 +235,186 @@ def _validate_artifacts_for_stage(
                 artifact_name,
                 artifact_data,
                 pipeline_type=pipeline_type,
+                related_artifacts=artifacts,
             )
         except Exception as exc:
             raise CheckpointValidationError(
                 f"Artifact {artifact_name!r} failed schema validation: {exc}"
             ) from exc
+
+
+def _checkpoint_ep_state(checkpoint: dict[str, Any]) -> dict[str, Any]:
+    metadata = checkpoint.get("metadata")
+    if not isinstance(metadata, dict):
+        return {}
+    ep_state = metadata.get("ep_state")
+    if isinstance(ep_state, dict):
+        return ep_state
+    ep_state = metadata.get("EP_STATE")
+    if isinstance(ep_state, dict):
+        return ep_state
+    return metadata
+
+
+def _verdict_details(verdict: dict[str, Any]) -> str:
+    issues = verdict.get("issues")
+    if not isinstance(issues, list):
+        return ""
+    return "; ".join(str(issue) for issue in issues[:3])
+
+
+def _raise_on_failed_assets_validator(
+    validator_name: str,
+    verdict: dict[str, Any],
+    *,
+    allow_warn: bool = False,
+) -> None:
+    allowed = {"PASS"}
+    if allow_warn:
+        allowed.add("WARN")
+    if verdict.get("status") in allowed:
+        return
+
+    details = _verdict_details(verdict)
+    suffix = f": {details}" if details else ""
+    raise CheckpointValidationError(
+        f"Completed ad-video assets checkpoint {validator_name} failed{suffix}"
+    )
+
+
+def _validate_ad_video_assets_cross_stage_contract(artifacts: dict[str, Any]) -> None:
+    """Run asset-stage validators that require upstream context artifacts."""
+    from tools.validation.hallucination_contract_check import (
+        check_hallucination_contract,
+    )
+    from tools.validation.product_identity_consistency_check import (
+        check_product_identity_consistency,
+    )
+    from tools.validation.provider_consistency_check import check_provider_consistency
+
+    production_proposal = artifacts["production_proposal"]
+    production_bible = artifacts["production_bible"]
+    script = artifacts["script"]
+    scene_plan = artifacts["scene_plan"]
+    asset_manifest = artifacts["asset_manifest"]
+    product_identity_reference = artifacts["product_identity_reference"]
+    decision_log = artifacts["decision_log"]
+
+    provider_verdict = check_provider_consistency(
+        production_proposal,
+        asset_manifest,
+        decision_log,
+        script=script,
+    )
+    _raise_on_failed_assets_validator(
+        "provider_consistency_check",
+        provider_verdict,
+    )
+
+    product_identity_verdict = check_product_identity_consistency(
+        product_identity_reference,
+        scene_plan,
+        asset_manifest,
+        decision_log,
+    )
+    _raise_on_failed_assets_validator(
+        "product_identity_consistency_check",
+        product_identity_verdict,
+        allow_warn=True,
+    )
+
+    hallucination_verdict = check_hallucination_contract(
+        production_bible,
+        scene_plan,
+        asset_manifest,
+        decision_log,
+    )
+    _raise_on_failed_assets_validator(
+        "hallucination_contract_check",
+        hallucination_verdict,
+        allow_warn=True,
+    )
+
+
+def _validate_ad_video_checkpoint_gate_state(checkpoint: dict[str, Any]) -> None:
+    """Validate ad-video gate state that belongs to the checkpoint snapshot."""
+    if (
+        checkpoint.get("pipeline_type") == "ad-video"
+        and checkpoint.get("stage") in {"compose", "publish"}
+        and checkpoint.get("status") in {"completed", "awaiting_human"}
+    ):
+        artifacts = checkpoint.get("artifacts")
+        final_review = (
+            artifacts.get("final_review") if isinstance(artifacts, dict) else None
+        )
+        if not isinstance(final_review, dict) or final_review.get("status") != "pass":
+            raise CheckpointValidationError(
+                "Completed ad-video compose/publish checkpoint requires "
+                "final_review.status == 'pass'"
+            )
+
+        if checkpoint.get("stage") == "publish":
+            render_report = (
+                artifacts.get("render_report") if isinstance(artifacts, dict) else None
+            )
+            if not isinstance(render_report, dict):
+                raise CheckpointValidationError(
+                    "Completed ad-video publish checkpoint requires render_report "
+                    "so publish_log can be validated against rendered outputs"
+                )
+
+    if (
+        checkpoint.get("pipeline_type") != "ad-video"
+        or checkpoint.get("stage") != "assets"
+        or checkpoint.get("status") != "completed"
+    ):
+        return
+
+    ep_state = _checkpoint_ep_state(checkpoint)
+    required_true_flags = (
+        "sample_approved",
+        "asset_review_approved",
+        "music_review_approved",
+    )
+    missing_or_false = [
+        flag
+        for flag in required_true_flags
+        if ep_state.get(flag) is not True
+    ]
+    if missing_or_false:
+        raise CheckpointValidationError(
+            "Completed ad-video assets checkpoint must include "
+            "metadata.ep_state approval flags set to true: "
+            f"{missing_or_false}"
+        )
+
+    artifacts = checkpoint.get("artifacts")
+    reference = artifacts.get("product_identity_reference") if isinstance(artifacts, dict) else None
+    if not isinstance(reference, dict):
+        return
+
+    source_type = reference.get("source_type")
+    approval_status = reference.get("approval_status")
+    if source_type in {"user_provided", "generated", "external_url"}:
+        if approval_status != "approved":
+            raise CheckpointValidationError(
+                "Completed ad-video assets checkpoint product_identity_reference "
+                f"must be approved; got approval_status={approval_status!r}"
+            )
+    elif source_type == "risk_accepted":
+        if approval_status != "approved":
+            raise CheckpointValidationError(
+                "Completed ad-video assets checkpoint risk_accepted "
+                "product_identity_reference must be approved"
+            )
+    elif source_type == "not_applicable":
+        if approval_status != "not_required":
+            raise CheckpointValidationError(
+                "Completed ad-video assets checkpoint not_applicable "
+                "product_identity_reference must have approval_status='not_required'"
+            )
+
+    _validate_ad_video_assets_cross_stage_contract(artifacts)
 
 
 def validate_checkpoint(checkpoint: dict[str, Any]) -> None:
@@ -200,6 +444,7 @@ def validate_checkpoint(checkpoint: dict[str, Any]) -> None:
         raise CheckpointValidationError("Checkpoint artifacts must be a dictionary")
 
     _validate_artifacts_for_stage(stage, status, artifacts, pipeline_type)
+    _validate_ad_video_checkpoint_gate_state(checkpoint)
 
     try:
         jsonschema.validate(instance=checkpoint, schema=_load_checkpoint_schema())
@@ -296,6 +541,10 @@ def write_checkpoint(
     if metadata is not None:
         checkpoint["metadata"] = metadata
 
+    # Validate before any side effect such as merging decision_log.json. This
+    # prevents rejected checkpoints from leaving a corrupted cumulative log.
+    validate_checkpoint(checkpoint)
+
     # Merge decision_log: if this checkpoint carries new decisions,
     # append them to the project-level decision log file, then write the
     # reference back into relevant artifacts so downstream consumers can find it.
@@ -303,9 +552,8 @@ def write_checkpoint(
         _merge_decision_log(pipeline_dir, project_id, artifacts["decision_log"])
         log_ref = str(_decision_log_path(pipeline_dir, project_id))
 
-        # Write decision_log_ref into proposal_packet and render_report
-        # artifacts if they are present in this checkpoint.
-        for artifact_key in ("proposal_packet", "render_report"):
+        # Write decision_log_ref into proposal/render artifacts when present.
+        for artifact_key in ("proposal_packet", "production_proposal", "render_report"):
             if artifact_key in artifacts and isinstance(artifacts[artifact_key], dict):
                 plan_or_top = artifacts[artifact_key]
                 # proposal_packet stores it under production_plan

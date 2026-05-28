@@ -44,7 +44,7 @@ downstream `edit_decisions.cuts[]` entry carries the required prop. A text-only
 
 ## KVM coverage (MANDATORY)
 
-Every `production_bible.visual.key_visual_moments[]` entry with `mandatory: true` MUST be referenced by at least one scene's `fulfills_kvm` array. Produce a `kvm_coverage.json` artifact alongside `scene_plan.json`:
+Every `production_bible.visual.key_visual_moments[]` entry with `mandatory: true` MUST be referenced by at least one scene's `fulfills_kvm` array. Before accepting the plan, run `scene_fidelity_check` (or its `check_kvm_coverage(production_bible, scene_plan)` helper) and include the returned KVM coverage report in the review notes:
 
 ```json
 {

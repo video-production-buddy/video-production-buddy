@@ -209,7 +209,7 @@
             "uniqueItems": true,
             "items": {
               "type": "string",
-              "pattern": "^(trend_alignment:[A-Za-z0-9._:-]+|[A-Za-z0-9._:-]+)$"
+              "pattern": "^trend_alignment:[A-Za-z0-9._:-]+$"
             },
             "description": "Selected production_bible.intelligence.trend_alignment refs applied by this scene."
           },

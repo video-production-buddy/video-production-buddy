@@ -104,6 +104,40 @@ def test_hallucination_contract_accepts_product_visible_scene_with_review() -> N
     assert verdict["summary"]["reviewed_assets"] == 1
 
 
+def test_hallucination_contract_sample_scope_ignores_unselected_future_scenes() -> None:
+    """Sample approval must not require assets for high-risk scenes outside the sample."""
+    scene_plan = _scene_plan_for_hallucination()
+    future_scene = deepcopy(scene_plan["scenes"][0])
+    future_scene["id"] = "scene-2"
+    future_scene["description"] = "Future full-generation product hero shot."
+    scene_plan["scenes"].append(future_scene)
+
+    verdict = check_hallucination_contract(
+        _bible_with_truth_contract(),
+        scene_plan,
+        _asset_manifest_for_hallucination(),
+        generated_scene_ids=["scene-1"],
+    )
+
+    assert verdict["status"] == "PASS"
+    assert verdict["summary"]["asset_scope"] == "generated_scene_ids"
+    assert verdict["summary"]["high_risk_scenes"] == 1
+    assert not any("scene-2" in issue for issue in verdict["issues"])
+
+
+def test_hallucination_contract_empty_sample_scope_cannot_bypass_high_risk_scenes() -> None:
+    """Scoped sample review must include at least one high-risk generated scene."""
+    verdict = check_hallucination_contract(
+        _bible_with_truth_contract(),
+        _scene_plan_for_hallucination(),
+        {"version": "1.0", "assets": []},
+        generated_scene_ids=[],
+    )
+
+    assert verdict["status"] == "FAIL"
+    assert any("generated_scene_ids" in issue for issue in verdict["issues"])
+
+
 def test_hallucination_contract_accepts_approved_waiver() -> None:
     verdict = check_hallucination_contract(
         _bible_with_truth_contract(),
@@ -364,6 +398,42 @@ def test_runtime_consistency_accepts_user_approved_decision_log_swap() -> None:
     assert verdict["decision_matches_actual"] is True
 
 
+def test_runtime_consistency_rejects_selected_runtime_not_considered() -> None:
+    proposal = {"render_runtime": "remotion"}
+    edit_decisions = {"render_runtime": "hyperframes"}
+    decision_log = {
+        "version": "1.0",
+        "project_id": "runtime-swap-regression",
+        "decisions": [
+            {
+                "decision_id": "d-001",
+                "stage": "edit",
+                "category": "render_runtime_selection",
+                "subject": "Composition runtime",
+                "options_considered": [
+                    {
+                        "option_id": "remotion",
+                        "label": "Remotion",
+                        "score": 0.8,
+                        "reason": "Original approved runtime",
+                    }
+                ],
+                "selected": "hyperframes",
+                "reason": "Claims the user approved HyperFrames, but it was not shown as an option.",
+                "user_visible": True,
+                "user_approved": True,
+            }
+        ],
+    }
+
+    verdict = check_runtime_consistency(proposal, edit_decisions, decision_log)
+
+    assert verdict["status"] == "FAIL"
+    assert verdict["decision_selected_runtime"] == "hyperframes"
+    assert verdict["decision_selected_option_considered"] is False
+    assert any("options_considered" in issue for issue in verdict["issues"])
+
+
 def test_runtime_consistency_rejects_approved_old_selection_for_new_actual() -> None:
     proposal = {"render_runtime": "remotion"}
     edit_decisions = {"render_runtime": "hyperframes"}
@@ -436,6 +506,41 @@ def test_runtime_consistency_rejects_approved_swap_without_selected_runtime() ->
     assert any("does not select actual runtime 'hyperframes'" in issue for issue in verdict["issues"])
 
 
+def test_runtime_consistency_rejects_invisible_user_approved_swap() -> None:
+    proposal = {"render_runtime": "remotion"}
+    edit_decisions = {"render_runtime": "hyperframes"}
+    decision_log = {
+        "version": "1.0",
+        "project_id": "runtime-swap-regression",
+        "decisions": [
+            {
+                "decision_id": "d-001",
+                "stage": "edit",
+                "category": "render_runtime_selection",
+                "subject": "Composition runtime",
+                "options_considered": [
+                    {
+                        "option_id": "hyperframes",
+                        "label": "HyperFrames",
+                        "score": 0.8,
+                        "reason": "Fallback for the approved runtime blocker.",
+                    }
+                ],
+                "selected": "hyperframes",
+                "reason": "Recorded as approved but not surfaced to the user.",
+                "user_visible": False,
+                "user_approved": True,
+            }
+        ],
+    }
+
+    verdict = check_runtime_consistency(proposal, edit_decisions, decision_log)
+
+    assert verdict["status"] == "FAIL"
+    assert verdict["decision_user_approved"] is True
+    assert any("user_visible" in issue for issue in verdict["issues"])
+
+
 def test_decision_log_accepts_product_identity_reference_selection_category() -> None:
     decision_log = {
         "version": "1.0",
@@ -463,6 +568,44 @@ def test_decision_log_accepts_product_identity_reference_selection_category() ->
     }
 
     validate_artifact("decision_log", decision_log)
+
+
+def test_decision_log_selected_option_must_be_considered_and_visible_when_approved() -> None:
+    decision_log = {
+        "version": "1.0",
+        "project_id": "ad-runtime-decision",
+        "decisions": [
+            {
+                "decision_id": "d-runtime",
+                "stage": "proposal",
+                "category": "render_runtime_selection",
+                "subject": "Composition runtime",
+                "options_considered": [
+                    {
+                        "option_id": "remotion",
+                        "label": "Remotion",
+                        "score": 0.9,
+                        "reason": "Best fit for React scene stack.",
+                    }
+                ],
+                "selected": "remotion",
+                "reason": "Approved runtime for this ad.",
+                "user_visible": True,
+                "user_approved": True,
+            }
+        ],
+    }
+    validate_artifact("decision_log", decision_log)
+
+    missing_option = deepcopy(decision_log)
+    missing_option["decisions"][0]["selected"] = "hyperframes"
+    with pytest.raises(Exception, match="selected"):
+        validate_artifact("decision_log", missing_option)
+
+    invisible_approval = deepcopy(decision_log)
+    invisible_approval["decisions"][0]["user_visible"] = False
+    with pytest.raises(Exception, match="user_visible"):
+        validate_artifact("decision_log", invisible_approval)
 
 
 def _approved_product_identity_reference(source_type: str = "generated") -> dict:
@@ -631,6 +774,40 @@ def test_product_identity_consistency_rejects_risk_waiver_without_user_approval(
 
     assert verdict["status"] == "FAIL"
     assert any("risk waiver" in issue for issue in verdict["issues"])
+
+
+def test_product_identity_consistency_requires_logged_risk_accepted_decision() -> None:
+    reference = {
+        "version": "1.0",
+        "reference_id": "pir-risk",
+        "product_name": "OPPO Find X9 Pro",
+        "source_type": "risk_accepted",
+        "approval_status": "approved",
+        "required_visual_features": [],
+        "prohibited_variations": ["generic phone silhouette"],
+        "risk_waiver": {
+            "reason": "User has no usable product photos.",
+            "user_approved": True,
+            "approved_by": "user",
+            "approved_at": "2026-05-19T09:00:00Z",
+            "decision_id": "d-risk-001",
+        },
+    }
+    manifest = _conditioned_asset_manifest(conditioning_mode="text_only_waived")
+    manifest["assets"][0]["product_identity_conditioning"] = {
+        "conditioning_mode": "text_only_waived",
+        "waiver_decision_id": "d-risk-001",
+        "fidelity_verdict": "PASS",
+    }
+
+    verdict = check_product_identity_consistency(
+        reference,
+        _product_visible_scene_plan(),
+        manifest,
+    )
+
+    assert verdict["status"] == "FAIL"
+    assert any("product_identity_reference_selection" in issue for issue in verdict["issues"])
 
 
 def test_product_identity_consistency_accepts_non_product_visible_not_applicable() -> None:

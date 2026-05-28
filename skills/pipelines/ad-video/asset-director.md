@@ -35,6 +35,27 @@ if not gate.success:
     raise RuntimeError(f"Planning chain gate failed: {gate.error}")
 ```
 
+Before handing assets to edit/compose, also run
+`provider_consistency_check` with `production_proposal`, `asset_manifest`,
+`script`, and `decision_log`. This blocks missing or unauditable narration
+coverage, silent narration provider/model swaps, silent
+image/video provider or model swaps against
+`production_proposal.visual_contract.visual_asset_provider_locks`, no-music
+proposal drift, music source drift for `library_locked` / `search_align` /
+`generative_loose`, missing `music_alignment` evidence for strict
+library/search music paths, and asset spend above
+`production_proposal.approved_budget_usd` without an approved
+`budget_tradeoff` whose selected option explicitly approves the overage, such
+as `approve-overage`. If it fails, either regenerate with the locked
+provider/model or surface the substitution/overage to the user and log a
+visible approved `provider_selection`, `voice_selection`,
+`music_strategy_selection`, or overage-approving `budget_tradeoff` decision
+before continuing. If both provider and model change, the provider decision's
+selected option must name the exact `source_tool:model` pair; a provider-only
+selection does not authorize a model downgrade. A `music_source` decision alone
+does not authorize switching from `library_locked` / `search_align` to a
+different strategy family.
+
 **Cost capture (use `result.cost_usd`, NOT hand-authored estimates):**
 
 Every paid tool's `execute()` returns a `ToolResult` with a top-level `cost_usd: float` field (see `tools/base_tool.py` line 135 — this is part of the BaseTool contract, not inside `result.data`). Most paid tools populate it from `self.estimate_cost(inputs)` automatically; some can use real billing info from the API response when available.
@@ -224,7 +245,7 @@ These are REQUIRED for ALL style modes and ALL ads:
    - Hero moment variation: apply `playbook.audio.hero_moment_voice_shift` on `cta_brand` section
 
 2. **Subtitle file** — one file covering all narration
-   - Format: SRT (preferred) or VTT
+   - Format: ASS with explicit PlayResX/PlayResY matching the output resolution
    - Timecodes must align to TTS audio files (use actual TTS durations)
    - Must be legible at 720p on mobile (minimum 24px equivalent)
 
@@ -285,11 +306,12 @@ Before sample approval and again before asset review, run:
   `asset_manifest`, and `decision_log`
 
 For the sample approval gate, pass the selected sample scene ids as
-`generated_scene_ids` to `product_identity_consistency_check`. The sample
-`asset_manifest` intentionally contains only selected/generated scene assets, so
-missing visual assets for later product-visible scenes are deferred to the full
-asset review. For full asset review, omit `generated_scene_ids` so every
-product-visible scene must have a generated visual asset.
+`generated_scene_ids` to both `product_identity_consistency_check` and `hallucination_contract_check`.
+The sample `asset_manifest` intentionally contains only selected/generated
+scene assets, so missing visual assets for later product-visible or high-risk
+generated scenes are deferred to the full asset review. For full asset review,
+omit `generated_scene_ids` so every product-visible and high-risk generated
+scene must have its visual asset and review metadata.
 
 A FAIL blocks progress. A WARN must be shown during asset review.
 
@@ -303,6 +325,7 @@ The sample sub-stage generates a preview clip from the **first 2–3 scenes** be
 2. Generate TTS for the hook section only
 3. Assemble the sample clip using compose tools (10–15 second target)
 **Sample scene selection rule:** The sample MUST include at least one scene where the advertised product is visible — even if the creative concept hides the product until a late-stage reveal. If the first 2 chronological scenes contain no product, build the sample as a teaser cut instead: pick one early life-moment scene + one product-visible scene + the tagline/end card. This gives the user enough context to evaluate the concept and the product fit.
+Before assembling the sample, run `sample_product_visibility_check` with the selected sample scene ids. A FAIL blocks assembly; a WARN must be shown with the sample review context. Product keywords inside negated wording such as "do not reveal the product yet" or "keep the phone hidden" are not visibility evidence; select a scene that visibly shows the product or a brand-mandatory element.
 
 4. **Message 1 — announce the file path ONLY:**
 
@@ -392,7 +415,7 @@ Read `production_proposal.music_strategy` (default `generative_loose` if unset f
 |---|---|---|
 | `generative_loose` | MiniMax / Suno text-to-music with arc-shaped prompt (current default behavior — see snippet below) | Atmospheric ads where ±2-5s drift on bass-drop timing is acceptable |
 | `library_locked` | Pick a track from `music_library/` whose `<track>.timing.json` sidecar declares `drop_seconds` close to `production_bible.narrative.tension_peak_at_seconds`. Validate the sidecar against `schemas/music_library/track_timing.schema.json`. Trim/pad the track so the chosen drop lands at the target time. | Bar-precise sync required (cinematic trailers, hero product reveals where the bass drop must hit a visual peak within ±0.5s) |
-| `search_align` | Search `pixabay_music` for a track matching `bible.audio.music_direction`, run beat detection (future: `lib.audio.beat_detector`), align the detected drop to `tension_peak_at_seconds`. | Bar-precise sync needed but no curated library track fits |
+| `search_align` | Search `pixabay_music` for a track matching `bible.audio.music_direction`, run beat detection with `lib.beat_detector`, align the detected drop to `tension_peak_at_seconds`. | Bar-precise sync needed but no curated library track fits |
 | `none` | Skip music entirely. Final mix = narration + ambient SFX only. | Brief explicitly calls for silent or SFX-only audio bed |
 
 **library_locked workflow:**
@@ -443,6 +466,28 @@ chosen = min(candidates, key=lambda c: c["distance"])
 # Trim/pad so chosen.nearest_drop lands at target_drop in the final mix.
 # (See compose-director for the audio-mixer call that does the alignment.)
 ```
+
+After trimming/padding a `library_locked` track, the `music` asset in
+`asset_manifest.assets[]` MUST include `music_alignment`:
+
+```json
+{
+  "strategy": "library_locked",
+  "target_peak_seconds": 18.0,
+  "selected_peak_seconds": 30.0,
+  "aligned_peak_seconds": 18.2,
+  "drift_seconds": 0.2,
+  "timing_sidecar_path": "music_library/background.timing.json",
+  "evidence": "Validated timing sidecar and trimmed track to target."
+}
+```
+
+For `search_align`, call `lib.beat_detector.analyze(track_path)`, choose the
+detected `drop_seconds[]` entry nearest `target_drop`, trim/pad the track, and
+record the same timing fields plus either `beat_detection_report` (inline) or
+`beat_detection_report_path`. `provider_consistency_check` blocks compose when
+`library_locked` / `search_align` music lacks this evidence or has
+`abs(drift_seconds) > 0.5`.
 
 **generative_loose workflow** (default — the existing MiniMax path):
 
@@ -585,6 +630,7 @@ sing?"), not about catching known blocker hallucinations the agent should have f
        scene_plan,
        asset_manifest,
        decision_log,
+       generated_scene_ids=selected_sample_scene_ids,  # sample gate only; omit for full asset review
    )
    ```
 
@@ -592,13 +638,15 @@ sing?"), not about catching known blocker hallucinations the agent should have f
    - `FLAG` on any blocker check requires regeneration or rerouting, not silent acceptance.
    - `WARN` can pass through to human asset review with the keyframe paths and notes.
    - `WAIVED` requires an explicit user-approved `decision_log` entry with category
-     `hallucination_review_waiver`; otherwise it fails validation.
+     `hallucination_review_waiver` whose selected waiver option was present in
+     `options_considered`; otherwise it fails validation.
 
 5. **Skip rule:** if frame_sampler is unavailable (ffmpeg missing) OR the agent's runtime
    cannot read PNGs (no multimodal capability), stop and surface the limitation. Do not
    mark generated high-risk assets as PASS. Either reroute to stock/programmatic assets,
    ask the user for a waiver, or record `hallucination_review.status="WAIVED"` with a
-   user-approved `hallucination_review_waiver` decision.
+   user-approved `hallucination_review_waiver` decision that includes the selected
+   waiver option in `options_considered`.
 
 **Why this matters:** Wan 2.6 t2v has no reliable mechanism to render specific brand
 product geometry from prose alone — it generates plausible-looking generic objects.
@@ -655,27 +703,49 @@ If rejected: regenerate with adjusted prompt or try a different music provider. 
 ```json
 {
   "version": "1.0",
-  "assets": [],
+  "assets": [
+    {
+      "id": "narr-hook",
+      "type": "narration",
+      "path": "assets/audio/hook_narration.mp3",
+      "source_tool": "cosyvoice_tts",
+      "scene_id": "global",
+      "model": "qwen3-tts-instruct-flash"
+    },
+    {
+      "id": "narr-build-1",
+      "type": "narration",
+      "path": "assets/audio/build_1_narration.mp3",
+      "source_tool": "cosyvoice_tts",
+      "scene_id": "global",
+      "model": "qwen3-tts-instruct-flash"
+    },
+    {
+      "id": "music-track-1",
+      "type": "music",
+      "path": "assets/music/background_music.mp3",
+      "source_tool": "minimax_music",
+      "scene_id": "global",
+      "model": "music-2.6"
+    }
+  ],
   "style_mode": "animated",
   "narration_files": [
-    {"section_id": "hook", "file": "assets/hook_narration.mp3", "duration_seconds": 5.2},
-    {"section_id": "build_1", "file": "assets/build_1_narration.mp3", "duration_seconds": 6.1}
+    {"section_id": "hook", "file": "assets/audio/hook_narration.mp3", "duration_seconds": 5.2},
+    {"section_id": "build_1", "file": "assets/audio/build_1_narration.mp3", "duration_seconds": 6.1}
   ],
   "subtitle_file": "assets/subtitles.ass",
-  "music_file": "assets/background_music.mp3",
+  "music_file": "assets/music/background_music.mp3",
   "narration_durations": {
     "hook": 5.2,
-    "build_1": 6.1,
-    "build_2": 7.3,
-    "reveal": 7.8,
-    "cta_brand": 4.1
+    "build_1": 6.1
   },
   "visual_assets": [],
   "sample_clip": "assets/sample_preview.mp4",
-  "total_narration_seconds": 30.5,
+  "total_narration_seconds": 11.3,
   "costs": [
-    {"tool": "elevenlabs_tts", "cost_usd": 0.30},
-    {"tool": "flux_image_gen", "cost_usd": 0.12}
+    {"tool": "cosyvoice_tts", "cost_usd": 0.30},
+    {"tool": "minimax_music", "cost_usd": 0.12}
   ],
   "total_cost_usd": 0.42
 }
@@ -695,7 +765,24 @@ The EP will read `asset_manifest.total_cost_usd` and update `EP_STATE.budget_spe
 
 - [ ] `sample_approved == true` in EP_STATE
 - [ ] TTS file present for every `script.sections[]` item
-- [ ] `subtitle_file` present in asset_manifest
+- [ ] Every narration file also has an `assets[]` entry with `type="narration"`,
+      `source_tool`, and `model` so `provider_consistency_check` can verify the
+      proposal lock
+- [ ] `provider_consistency_check` passes, or any substitution has a visible
+      user-approved decision; missing narration coverage blocks compose,
+      image/video substitutions must match
+      `visual_asset_provider_locks` or a visible approved `provider_selection`
+      decision selecting the changed model or exact `source_tool:model` pair,
+      music strategy substitutions must have a visible approved
+      `music_strategy_selection` decision, `library_locked` / `search_align`
+      music must include `asset_manifest.assets[].music_alignment`, and budget
+      overages must have a visible approved `budget_tradeoff` selecting an
+      overage approval such as `approve-overage`
+- [ ] The completed assets checkpoint carries `production_proposal`,
+      `production_bible`, `script`, `scene_plan`, and `decision_log` alongside
+      `asset_manifest` and `product_identity_reference`; checkpoint validation
+      re-runs provider, product-identity, and hallucination gates before compose
+- [ ] ASS `subtitle_file` present in asset_manifest
 - [ ] All visual assets listed in asset_manifest exist on disk
 - [ ] `narration_durations` populated for all sections
 - [ ] Budget not exceeded

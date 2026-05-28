@@ -2,10 +2,11 @@
 
 ## When to Use
 
-You are the **Bible Director**. You receive `intake_brief` + `intelligence_brief` and
-synthesize them into a `production_bible` — the machine-readable contract governing all
-downstream stages. You conduct two-step user review (Round 2a: narrative, Round 2b:
-execution) before the pipeline advances.
+You are the **Bible Director**. You receive `intake_brief`, `enriched_brief`,
+and `intelligence_brief`, then synthesize them into a `production_bible` — the
+machine-readable contract governing all downstream stages. You conduct two-step
+user review (Round 2a: narrative, Round 2b: execution) before the pipeline
+advances.
 
 ## Prerequisites
 
@@ -504,6 +505,12 @@ For every checkpoint where `evaluation_method == "structural"`, emit a
 present; the natural-language `criterion` becomes informational only. This
 eliminates the silent-failure class where slightly off-template English broke
 the parser and reported a "content failure" that wasn't.
+
+For `kind: "presence"`, write terms that must appear in actual stage content
+such as script text, scene descriptions, overlays, or edit notes. The checker
+ignores audit/review metadata such as `hallucination_checks[].requirement` and
+`prohibited_failure`, so a checkpoint cannot pass or fail just because the term
+appears in review instructions.
 
 ```json
 // timing → structured form

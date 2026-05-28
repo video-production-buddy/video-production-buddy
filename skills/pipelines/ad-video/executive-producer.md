@@ -196,13 +196,21 @@ CHECK: Sample gate — two-message protocol enforced
 - If product_identity_consistency_check FAILs: REVISE assets before sample/full generation continues
 - hallucination_contract_check must PASS or WARN before sample approval, asset_review, compose, and publish
 - If hallucination_contract_check FAILs: REVISE assets; blocker FLAG verdicts require regeneration or rerouting
-- Any hallucination-review waiver must have a user-approved decision_log entry with category hallucination_review_waiver
+- Any hallucination-review waiver must have a user-approved decision_log entry with category hallucination_review_waiver and a selected waiver option present in options_considered
 - Was the sample path announced in message 1 WITHOUT a content description?
 - Was the approval request sent in a SEPARATE message 2?
 - sample_approved must be true before full generation proceeds
 - If sample rejected: SEND_BACK to scene_plan or script depending on feedback
 CHECK: Provider swap approval
-- If any pre-approved provider was substituted during generation: was user explicitly notified and did user approve?
+- Run `provider_consistency_check` with `production_proposal`, `asset_manifest`, `script`, and `decision_log`
+- If provider_consistency_check FAILs: REVISE assets before compose
+- If any script section lacks a matching narration file and auditable narration asset entry: REVISE assets before compose
+- If any pre-approved narration, image, or video provider/model was substituted during generation: was user explicitly notified and did user approve?
+- If any visual asset does not match `production_proposal.visual_contract.visual_asset_provider_locks`: require a visible approved `provider_selection` decision or regenerate with the locked provider/model
+- If `asset_manifest.total_cost_usd` exceeds `production_proposal.approved_budget_usd`: require a visible approved `budget_tradeoff` decision selecting an explicit overage-approval option such as `approve-overage` before compose
+CHECK: Assets checkpoint context
+- Completed assets checkpoints must include `asset_manifest`, `product_identity_reference`, `production_proposal`, `production_bible`, `script`, `scene_plan`, and `decision_log`
+- Checkpoint validation re-runs `provider_consistency_check`, `product_identity_consistency_check`, and `hallucination_contract_check`; any FAIL sends assets back before compose
 - If a swap happened silently (not logged as user_approved:true in decision_log): REVISE assets — "Provider swap was not user-approved. Regenerate with approved provider or surface to user."
 CHECK: Narration instruction handoff
 - Every narration asset used production_proposal.audio_contract.voice_model

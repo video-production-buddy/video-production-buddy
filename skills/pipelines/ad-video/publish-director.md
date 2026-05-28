@@ -2,7 +2,20 @@
 
 ## When to Use
 
-You receive `render_report`, `production_proposal`, `script`, and `EP_STATE` and produce the final `publish_log`: output file matrix, platform metadata, and thumbnail concept.
+You receive `render_report`, `final_review`, `production_proposal`, `script`, `production_bible`, `scene_plan`, `asset_manifest`, `decision_log`, and `EP_STATE` and produce the final `publish_log`: output file matrix, platform metadata, and thumbnail concept.
+
+Before writing `publish_log`, run `hallucination_contract_check` with `production_bible`, `scene_plan`, `asset_manifest`, and `decision_log`. A FAIL blocks publish. A WARN can proceed only if the warning is surfaced in the final publish review notes.
+
+Also verify `final_review.status == "pass"` before writing `publish_log`. If
+the compose self-review is missing, `revise`, or `fail`, return to compose; do
+not publish a render that has not passed actual-output inspection.
+
+When writing the completed publish checkpoint, include `render_report`,
+`final_review`, `production_proposal`, and `production_bible` alongside
+`publish_log`. The checkpoint validator uses `render_report.outputs` to prove
+that `publish_log.output_file_matrix` and any `entries[].export_path` refer
+only to files that were actually rendered, and uses the proposal/bible context
+to prove the primary output and opted-in derivatives were rendered.
 
 ## Output File Matrix
 
@@ -106,7 +119,11 @@ Thumbnail concept for 16:9:
 ## Validation Before Submitting
 
 - [ ] `output_file_matrix` is non-empty
+- [ ] `final_review.status == "pass"`
 - [ ] Every file in `render_report.outputs` has an entry in the matrix
+- [ ] Completed publish checkpoint includes `render_report`, `final_review`, `production_proposal`, and `production_bible`
+- [ ] `hallucination_contract_check` returned PASS or WARN; FAIL blocks publishing
+- [ ] No blocker `hallucination_review` FLAG or unapproved waiver remains in `asset_manifest`
 - [ ] All metadata fields populated (title, description, tags, cta_url, brand_name)
 - [ ] Thumbnail concept written for each entry
 - [ ] Budget summary accurate (matches EP_STATE)

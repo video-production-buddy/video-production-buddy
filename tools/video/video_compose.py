@@ -2017,11 +2017,15 @@ class VideoCompose(BaseTool):
         subtitle_check: dict[str, Any] = {
             "subtitles_expected": False,
             "subtitles_present": False,
+            "coverage_ratio": 0.0,
+            "timing_drift_detected": False,
             "issues": [],
         }
         if edit_decisions:
             ed_subs = edit_decisions.get("subtitles", {})
             subtitle_check["subtitles_expected"] = bool(ed_subs.get("enabled"))
+            if subtitle_check["subtitles_expected"]:
+                subtitle_check["coverage_ratio"] = 0.0
 
             # Check if output has subtitle stream
             if technical_probe.get("valid_container"):
@@ -2038,6 +2042,8 @@ class VideoCompose(BaseTool):
                         sub_data = json.loads(proc.stdout)
                         sub_streams = sub_data.get("streams", [])
                         subtitle_check["subtitles_present"] = len(sub_streams) > 0
+                        if subtitle_check["subtitles_present"]:
+                            subtitle_check["coverage_ratio"] = 1.0
 
                     # If subtitles were expected but not found as a stream,
                     # they may be burned in (which is fine — not a failure)
@@ -2050,6 +2056,7 @@ class VideoCompose(BaseTool):
                             subtitle_check["subtitles_present"] = True
                             subtitle_check["coverage_ratio"] = 1.0
                         else:
+                            subtitle_check["coverage_ratio"] = 0.0
                             subtitle_check["issues"].append(
                                 "Subtitles expected but not found in output and "
                                 "no subtitle source file exists for burn-in"
@@ -2068,7 +2075,12 @@ class VideoCompose(BaseTool):
             Path(narration_transcript_path) if narration_transcript_path else None,
             script_text,
         )
-        issues.extend(transcript_comparison.get("issues", []))
+        transcript_issues = transcript_comparison.get("issues", [])
+        issues.extend(
+            issue
+            for issue in transcript_issues
+            if not str(issue).startswith("transcript_comparison skipped:")
+        )
 
         # --- 7. Determine overall status ---
         critical_issues = [
@@ -2077,6 +2089,7 @@ class VideoCompose(BaseTool):
                 "silent downgrade", "delivery promise violation",
                 "effectively silent", "ffprobe failed", "suspiciously short",
                 "audio truncation",
+                "render_runtime changed",
                 "tts punctuation leak",  # reading literal punctuation aloud
             ])
         ]

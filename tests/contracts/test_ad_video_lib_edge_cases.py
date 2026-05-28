@@ -118,6 +118,19 @@ class TestTrendAlignmentEdgeCases:
         assert not result["ok"]
         assert any(i["kind"] == "missing_selected_trend_alignment" for i in result["issues"])
 
+    def test_trend_alignment_rejects_inconsistent_source_ref(self) -> None:
+        bible = _minimal_bible_with_trends([
+            _trend_entry("t1", "hook", source_ref="trend_alignment:wrong")
+        ])
+        script = {"sections": [
+            _script_section("hook", "hook", "trend_alignment:wrong")
+        ]}
+
+        result = check_ad_video_planning_trend_alignment(bible, script, {"scenes": []})
+
+        assert not result["ok"]
+        assert any(i["kind"] == "inconsistent_trend_source_ref" for i in result["issues"])
+
     def test_trend_with_hook_beat_requires_hook_section(self) -> None:
         bible = _minimal_bible_with_trends([_trend_entry("t1", "hook")])
         script = {"sections": []}
@@ -177,6 +190,21 @@ class TestTrendAlignmentEdgeCases:
         scene_plan = {"scenes": [_scene_with_trend("s1", ["trend_alignment:t1"])]}
         result = check_scene_plan_trend_alignment(bible, scene_plan)
         assert result["ok"]
+
+    def test_visual_trend_requires_canonical_scene_ref(self) -> None:
+        bible = _minimal_bible_with_trends([{
+            "trend_id": "t1",
+            "target_beat": "reveal",
+            "script_usage": {},
+            "scene_usage": {"required": True},
+            "application_targets": ["visual"],
+        }])
+        scene_plan = {"scenes": [_scene_with_trend("s1", ["t1"])]}
+
+        result = check_scene_plan_trend_alignment(bible, scene_plan)
+
+        assert not result["ok"]
+        assert any(i["kind"] == "missing_scene_trend_alignment" for i in result["issues"])
 
     def test_select_trends_for_alignment_filters_unsafe(self) -> None:
         trends = [

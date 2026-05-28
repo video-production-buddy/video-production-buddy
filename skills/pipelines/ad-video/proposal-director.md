@@ -23,28 +23,32 @@ blocker to EP.
 
 ## Responsibilities
 
-1. **Derivative variants** — present opt-in options (9:16, 1:1, 15s short) relative to
-   bible's declared primary. Write selected variant ids to
+1. **Derivative variants** — present opt-in options (`9:16`, `1:1`,
+   `15s_short`; `15s` is accepted as a legacy alias) relative to
+   bible's declared primary. Write only those exact selected variant ids to
    `production_proposal.derivatives_added`; do not mutate the bible's optional
    derivatives audit copy.
-2. **Subtitle configuration** — burnt-in / SRT-only / none + language.
+2. **Subtitle configuration** — burnt-in ASS / ASS sidecar / none + language.
 3. **Dubbing preferences** — additional language tracks.
-4. **Style_mode confirmation** — bible provides the recommended style mode; get
+4. **Music strategy** — confirm the approved music path:
+   `generative_loose`, `library_locked`, `search_align`, or `none`. Record the
+   user's choice in `decision_log` under category `music_strategy_selection`.
+5. **Style_mode confirmation** — bible provides the recommended style mode; get
    user sign-off. Lock `production_proposal.style_mode`.
-5. **Runtime selection** — present the runtime shortlist before locking anything.
+6. **Runtime selection** — present the runtime shortlist before locking anything.
    Animated mode can use `"remotion"` or `"hyperframes"` when available; cinematic
    mode must include `"ffmpeg"` and should normally lock `"ffmpeg"`. HARD RULE
    from AGENT_GUIDE: present both Remotion and HyperFrames when both are available,
    include any applicable FFmpeg option, and never silently default. Record the
    user's choice in `decision_log` under category `render_runtime_selection`.
-6. **Product reference strategy** — lock `product_reference_strategy` before assets:
+7. **Product reference strategy** — lock `product_reference_strategy` before assets:
    `not_applicable`, `use_provided_reference`, `generate_concept_reference`, or
    `risk_accepted`. For physical/product-visible ads, default to
    `generate_concept_reference` when no user asset exists. `risk_accepted` is allowed
    only after explicit user approval of the fidelity risk. Record the decision in
    `decision_log` under category `product_identity_reference_selection`.
-7. **Budget confirmation** — itemized cost estimate by stage.
-8. **CTA verification** — confirm `production_bible.identity.cta` is non-null. If null,
+8. **Budget confirmation** — itemized cost estimate by stage.
+9. **CTA verification** — confirm `production_bible.identity.cta` is non-null. If null,
    this is a pipeline error (should have been set at Round 2b). Surface as blocker to EP.
 
 ## What This Director No Longer Owns
@@ -72,8 +76,8 @@ Present each responsibility item to the user in a single structured message:
 Use GenUI by default for this proposal gate when `genui_form` is available and
 the user can open a local browser. Generate a project-specific `ui_form_config`
 covering derivative variants, subtitles, dubbing, style mode, render runtime,
-product identity reference strategy, budget, voice/audio contract, and visual
-contract. The form should preselect recommended defaults but still show the
+music strategy, product identity reference strategy, budget, voice/audio
+contract, and visual contract. The form should preselect recommended defaults but still show the
 alternatives required by AGENT_GUIDE, especially the full render-runtime
 shortlist.
 
@@ -99,11 +103,17 @@ DERIVATIVES (optional — primary is [aspect_ratio] [duration]s)
   • [other relevant options based on platform]
 
 SUBTITLES
-  • Burnt-in / SRT file / None
+  • Burnt-in ASS / ASS sidecar file / None
   • Language: [default from platform locale]
 
 DUBBING
   • Additional language tracks? (default: none)
+
+MUSIC STRATEGY
+  • generative_loose — generated music with mood/arc fit, not bar-precise
+  • library_locked — user library track with timing sidecar; precise drop alignment
+  • search_align — stock search plus beat detection; precise drop alignment
+  • none — no background music
 
 STYLE CONFIRMATION
   Bible recommends: [style_mode_candidate]
@@ -133,10 +143,13 @@ ESTIMATED COST
 Parse response. Populate:
 - `production_proposal.derivatives_added[]` with user-selected variants
 - Lock `production_proposal.style_mode`
+- Lock `production_proposal.music_strategy`
 - Lock `production_proposal.render_runtime`
 - Lock `production_proposal.product_reference_strategy`
 
 If the strategy changes cost or reliability, explain the tradeoff before approval.
+Create a `music_strategy_selection` decision containing all options considered,
+the selected strategy, and `user_approved: true` after the user approves it.
 Create a `product_identity_reference_selection` decision containing all options considered,
 the selected strategy, and `user_approved: true` after the user approves it.
 
@@ -202,11 +215,35 @@ Anti-template policy: every ad-video must declare a deliberate visual direction,
     "non-uniform spacing across scenes",
     "scale contrast >= 4x between display and body",
     "at least 1 grid-break per scene"
+  ],
+  "visual_asset_provider_locks": [
+    {
+      "asset_type": "image",
+      "source_tool": "wanx_image",
+      "model": "wan2.7-image-pro",
+      "usage": "packshots and still product cards"
+    },
+    {
+      "asset_type": "video",
+      "source_tool": "wan_video_api",
+      "model": "wan2.6-t2v",
+      "usage": "generated product/lifestyle motion scenes"
+    },
+    {
+      "asset_type": "video",
+      "source_tool": "pexels_video",
+      "usage": "free stock establishing shots"
+    }
   ]
 }
 ```
 
 `atmosphere.default_layers` and `per_beat_overrides` are consumed verbatim by scene-director (which copies them into each scene's `style_layers` prop). Available `type` values: `grain`, `vignette`, `ambient_glow`, `particle_field`, `light_rays` — see `remotion-composer/scene_type_registry.json#style_layers` for prop schemas.
+
+`visual_asset_provider_locks` is the user-approved image/video provider plan.
+If any visual asset later uses a different `source_tool` or locked `model`,
+the asset/compose gate must stop and require a visible approved
+`provider_selection` decision before continuing.
 
 ### Step 4: Submit
 
@@ -221,8 +258,9 @@ Write `production_proposal` artifact to
   "product_reference_strategy": "generate_concept_reference",
   "subtitles": { "mode": "burnt-in", "language": "en" },
   "dubbing": [],
-  "derivatives_added": ["variant_id_1"],
+  "derivatives_added": ["9:16", "15s_short"],
   "budget_confirmed": true,
+  "music_strategy": "generative_loose",
   "audio_contract": { /* see Step 3b */ },
   "visual_contract": { /* see Step 3c */ }
 }
@@ -234,4 +272,6 @@ Write `production_proposal` artifact to
 - **Silently defaulting runtime**: AGENT_GUIDE hard rule — always present both options.
 - **Skipping product identity strategy**: product-visible ads must lock
   `product_reference_strategy` and log `product_identity_reference_selection` before assets.
+- **Skipping music strategy**: proposal must lock `music_strategy` and log
+  `music_strategy_selection` before assets.
 - **Skipping CTA verification**: If `identity.cta` is null here, something went wrong upstream.

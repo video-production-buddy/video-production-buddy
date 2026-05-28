@@ -5,7 +5,6 @@ Rejects semantic checkpoints — those require LLM judgment.
 """
 from __future__ import annotations
 
-import json
 import re
 from typing import Any
 
@@ -22,6 +21,35 @@ from lib.hit_ad_pacing import cuts_density_from_shot_duration
 # both to the same source.
 _WORDS_PER_MINUTE = WORDS_PER_MINUTE_VO
 _TIMING_TOLERANCE = 0.10  # ±10%
+_PRESENCE_METADATA_SUBTREE_KEYS = {
+    "hallucination_checks",
+    "compliance_failures",
+    "review",
+    "metadata",
+}
+_PRESENCE_METADATA_TEXT_KEYS = {
+    "id",
+    "asset_id",
+    "beat_id",
+    "category",
+    "check_id",
+    "check_type",
+    "criterion",
+    "decision_id",
+    "evaluation_method",
+    "evidence_source",
+    "failure_action",
+    "prohibited_failure",
+    "reason",
+    "requirement",
+    "rule_id",
+    "severity",
+    "source_confidence",
+    "source_ref",
+    "stage",
+    "status",
+    "type",
+}
 
 
 class _StructuredCriterionError(Exception):
@@ -181,7 +209,7 @@ class ComplianceCheck(BaseTool):
         min_count = int(structured.get("min_count", 1))
         negated = bool(structured.get("negated", False))
 
-        haystack = json.dumps(stage_output).lower()
+        haystack = _presence_haystack(stage_output)
         found = {t: haystack.count(str(t).lower()) for t in terms}
 
         if negated:
@@ -370,7 +398,7 @@ class ComplianceCheck(BaseTool):
     def _check_presence(self, stage_output: dict, checkpoint: dict) -> dict:
         """String/keyword search. Supports positive and negated ('must not appear') checks."""
         criterion = checkpoint.get("criterion", "")
-        output_str = json.dumps(stage_output).lower()
+        output_str = _presence_haystack(stage_output)
         quoted_terms = re.findall(r"'([^']+)'", criterion)
         if not quoted_terms:
             return {"pass": False, "actual_value": None,
@@ -445,6 +473,35 @@ def _stage_cuts(stage_output: dict[str, Any]) -> list[dict[str, Any]]:
         return [cut for cut in edit_decisions["cuts"] if isinstance(cut, dict)]
 
     return []
+
+
+def _presence_haystack(stage_output: Any) -> str:
+    values: list[str] = []
+    _collect_presence_text(stage_output, values)
+    return "\n".join(values).lower()
+
+
+def _collect_presence_text(value: Any, values: list[str], key: str | None = None) -> None:
+    if key in _PRESENCE_METADATA_SUBTREE_KEYS:
+        return
+
+    if isinstance(value, dict):
+        for child_key, child_value in value.items():
+            normalized_key = str(child_key)
+            if normalized_key in _PRESENCE_METADATA_SUBTREE_KEYS:
+                continue
+            _collect_presence_text(child_value, values, normalized_key)
+        return
+
+    if isinstance(value, list):
+        for item in value:
+            _collect_presence_text(item, values, key)
+        return
+
+    if isinstance(value, str) and key not in _PRESENCE_METADATA_TEXT_KEYS:
+        stripped = value.strip()
+        if stripped:
+            values.append(stripped)
 
 
 def _stage_entries(stage_output: dict[str, Any]) -> list[dict[str, Any]]:

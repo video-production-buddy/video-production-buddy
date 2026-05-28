@@ -1,7 +1,8 @@
 """Scene fidelity validator.
 
 Reads scene_type_registry.json and validates that every scene/cut:
-  - uses a scene_type that exists in the registry (closed enum check)
+  - uses a scene_type/type that exists in the registry (closed enum check)
+  - uses scene_type explicitly for scene_plan.scenes[] and type for edit_decisions.cuts[]
   - uses a Remotion component the registry knows about
   - lists only motion_specs that the chosen component actually supports
   - includes any registry-required props, including cut-only props that are
@@ -22,8 +23,20 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 from pathlib import Path
 from typing import Any
+
+from tools.base_tool import (
+    BaseTool,
+    Determinism,
+    ExecutionMode,
+    ResourceProfile,
+    ToolResult,
+    ToolRuntime,
+    ToolStability,
+    ToolTier,
+)
 
 REGISTRY_PATH_DEFAULT = (
     Path(__file__).resolve().parent.parent.parent
@@ -64,16 +77,69 @@ def _has_prop_value(scene: dict[str, Any], prop: str) -> bool:
     return value != ""
 
 
-def _is_plain_media_cut(scene: dict[str, Any], kind: str) -> bool:
+def _is_asset_manifest_media_cut(
+    source: str,
+    asset_by_id: dict[str, dict[str, Any]],
+) -> bool:
+    asset = asset_by_id.get(source)
+    if not isinstance(asset, dict):
+        return False
+    if asset.get("type") in {"video", "animation", "image"}:
+        return True
+    path = asset.get("path")
+    return isinstance(path, str) and Path(path).suffix.lower() in MEDIA_CUT_EXTENSIONS
+
+
+def _is_plain_media_cut(
+    scene: dict[str, Any],
+    kind: str,
+    asset_by_id: dict[str, dict[str, Any]] | None = None,
+) -> bool:
     if kind != "cut" or _scene_type(scene):
         return False
     source = scene.get("source")
     if not isinstance(source, str) or not source:
         return False
-    return Path(source).suffix.lower() in MEDIA_CUT_EXTENSIONS
+    if Path(source).suffix.lower() in MEDIA_CUT_EXTENSIONS:
+        return True
+    return _is_asset_manifest_media_cut(source, asset_by_id or {})
 
 
-def _check_overlapping_source_reuse(plan: dict[str, Any]) -> list[dict[str, Any]]:
+def _asset_sources_by_id(asset_manifest: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
+    if not isinstance(asset_manifest, dict):
+        return {}
+    assets = asset_manifest.get("assets")
+    if not isinstance(assets, list):
+        return {}
+    return {
+        asset["id"]: asset
+        for asset in assets
+        if isinstance(asset, dict) and isinstance(asset.get("id"), str)
+    }
+
+
+def _video_source_key(source: str, asset_by_id: dict[str, dict[str, Any]]) -> str | None:
+    if source.startswith("remotion:"):
+        return None
+    if Path(source).suffix.lower() in VIDEO_CUT_EXTENSIONS:
+        return source
+
+    asset = asset_by_id.get(source)
+    if not isinstance(asset, dict):
+        return None
+    if asset.get("type") not in {"video", "animation"}:
+        return None
+
+    path = asset.get("path")
+    if isinstance(path, str) and path.strip():
+        return path
+    return source
+
+
+def _check_overlapping_source_reuse(
+    plan: dict[str, Any],
+    asset_manifest: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     """Flag repeated use of the same source-video time range.
 
     Reusing one generated video as multiple non-overlapping trims is valid.
@@ -89,6 +155,7 @@ def _check_overlapping_source_reuse(plan: dict[str, Any]) -> list[dict[str, Any]
     ranges_by_source: dict[str, list[tuple[float, float, str]]] = {}
     issues: list[dict[str, Any]] = []
     tolerance = 0.05
+    asset_by_id = _asset_sources_by_id(asset_manifest)
 
     for idx, cut in enumerate(cuts):
         if not isinstance(cut, dict):
@@ -96,9 +163,8 @@ def _check_overlapping_source_reuse(plan: dict[str, Any]) -> list[dict[str, Any]
         source = cut.get("source")
         if not isinstance(source, str) or not source:
             continue
-        if source.startswith("remotion:"):
-            continue
-        if Path(source).suffix.lower() not in VIDEO_CUT_EXTENSIONS:
+        source_key = _video_source_key(source, asset_by_id)
+        if not source_key:
             continue
 
         try:
@@ -121,7 +187,7 @@ def _check_overlapping_source_reuse(plan: dict[str, Any]) -> list[dict[str, Any]
         source_end = source_start + duration
         cut_id = str(cut.get("id", f"cut-{idx}"))
 
-        for prev_start, prev_end, prev_id in ranges_by_source.get(source, []):
+        for prev_start, prev_end, prev_id in ranges_by_source.get(source_key, []):
             overlap_start = max(source_start, prev_start)
             overlap_end = min(source_end, prev_end)
             if overlap_end - overlap_start > tolerance:
@@ -130,7 +196,7 @@ def _check_overlapping_source_reuse(plan: dict[str, Any]) -> list[dict[str, Any]
                         "severity": "critical",
                         "scene_id": cut_id,
                         "kind": "overlapping_source_reuse",
-                        "source": source,
+                        "source": source_key,
                         "overlaps_with": prev_id,
                         "source_range_seconds": [
                             round(source_start, 3),
@@ -151,25 +217,46 @@ def _check_overlapping_source_reuse(plan: dict[str, Any]) -> list[dict[str, Any]
                 )
                 break
 
-        ranges_by_source.setdefault(source, []).append((source_start, source_end, cut_id))
+        ranges_by_source.setdefault(source_key, []).append((source_start, source_end, cut_id))
 
     return issues
 
 
-def check_plan(plan: dict[str, Any], registry: dict[str, Any]) -> dict[str, Any]:
+def check_plan(
+    plan: dict[str, Any],
+    registry: dict[str, Any],
+    asset_manifest: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Validate a scene_plan or edit_decisions dict against the registry."""
     types = registry.get("scene_types", {})
     issues: list[dict[str, Any]] = []
     failing_ids: set[str] = set()
     checked = 0
+    asset_by_id = _asset_sources_by_id(asset_manifest)
 
     for idx, scene, kind in _scene_iter(plan):
         checked += 1
         scene_id = scene.get("id", f"{kind}-{idx}")
         st = _scene_type(scene)
 
+        if kind == "scene" and not scene.get("scene_type"):
+            issues.append(
+                {
+                    "severity": "critical",
+                    "scene_id": scene_id,
+                    "kind": "missing_scene_type",
+                    "detail": (
+                        "scene_plan.scenes[] must use explicit `scene_type` from "
+                        "remotion-composer/scene_type_registry.json; `type` is "
+                        "reserved for broad artifact category or edit cuts."
+                    ),
+                }
+            )
+            failing_ids.add(scene_id)
+            continue
+
         if not st:
-            if _is_plain_media_cut(scene, kind):
+            if _is_plain_media_cut(scene, kind, asset_by_id):
                 continue
             issues.append(
                 {
@@ -269,7 +356,7 @@ def check_plan(plan: dict[str, Any], registry: dict[str, Any]) -> dict[str, Any]
             )
             failing_ids.add(scene_id)
 
-    for issue in _check_overlapping_source_reuse(plan):
+    for issue in _check_overlapping_source_reuse(plan, asset_manifest):
         issues.append(issue)
         failing_ids.add(str(issue.get("scene_id", "unknown")))
 
@@ -312,6 +399,19 @@ def check_kvm_coverage(
             coverage.setdefault(kvm_id, []).append(scene_id)
             kvm = kvm_by_id.get(kvm_id)
             if not kvm:
+                issues.append(
+                    {
+                        "severity": "critical",
+                        "scene_id": scene_id,
+                        "kvm_id": kvm_id,
+                        "kind": "unknown_kvm_reference",
+                        "detail": (
+                            f"Scene {scene_id!r} claims fulfills_kvm {kvm_id!r}, "
+                            "but production_bible.visual.key_visual_moments has no "
+                            "matching moment_id/kvm_id/id."
+                        ),
+                    }
+                )
                 continue
 
             required_motion_primitives = [
@@ -371,6 +471,97 @@ def check_kvm_coverage(
             "coverage": coverage,
         },
     }
+
+
+class SceneFidelityCheck(BaseTool):
+    name = "scene_fidelity_check"
+    version = "0.1.0"
+    tier = ToolTier.CORE
+    capability = "validation"
+    provider = "openmontage"
+    stability = ToolStability.PRODUCTION
+    execution_mode = ExecutionMode.SYNC
+    determinism = Determinism.DETERMINISTIC
+    runtime = ToolRuntime.LOCAL
+    resource_profile = ResourceProfile(cpu_cores=1, ram_mb=64, disk_mb=1, network_required=False)
+    capabilities = [
+        "validate_scene_type_registry_contract",
+        "validate_required_scene_props",
+        "validate_motion_required_props",
+        "validate_kvm_motion_coverage",
+        "detect_overlapping_source_reuse",
+    ]
+    best_for = [
+        "checking scene_plan and edit_decisions against the Remotion scene registry",
+        "blocking product motion primitives that lack required render props",
+    ]
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "plan": {"type": "object"},
+            "scene_plan": {"type": "object"},
+            "edit_decisions": {"type": "object"},
+            "asset_manifest": {"type": "object"},
+            "production_bible": {"type": "object"},
+            "registry_path": {"type": "string"},
+        },
+        "anyOf": [
+            {"required": ["plan"]},
+            {"required": ["scene_plan"]},
+            {"required": ["edit_decisions"]},
+        ],
+    }
+    output_schema = {
+        "type": "object",
+        "required": ["scene_fidelity"],
+        "properties": {
+            "scene_fidelity": {"type": "object"},
+            "kvm_coverage": {"type": "object"},
+        },
+    }
+    user_visible_verification = [
+        "Confirm scenes use registered scene types and provide required render props",
+        "Confirm fulfilled key visual moments include required motion primitives",
+    ]
+
+    def execute(self, inputs: dict[str, Any]) -> ToolResult:
+        started = time.time()
+        try:
+            plan = inputs.get("plan") or inputs.get("edit_decisions") or inputs.get("scene_plan")
+            if not isinstance(plan, dict):
+                raise ValueError("Missing plan, scene_plan, or edit_decisions")
+            registry_path = inputs.get("registry_path")
+            registry = load_registry(Path(registry_path) if isinstance(registry_path, str) else None)
+            asset_manifest = inputs.get("asset_manifest")
+            scene_report = check_plan(
+                plan,
+                registry,
+                asset_manifest if isinstance(asset_manifest, dict) else None,
+            )
+            data: dict[str, Any] = {"scene_fidelity": scene_report}
+
+            bible = inputs.get("production_bible")
+            if isinstance(bible, dict) and "scenes" in plan:
+                data["kvm_coverage"] = check_kvm_coverage(bible, plan)
+
+            ok = scene_report.get("ok") is True and all(
+                report.get("ok") is True
+                for key, report in data.items()
+                if key != "scene_fidelity" and isinstance(report, dict)
+            )
+        except Exception as exc:
+            return ToolResult(success=False, error=str(exc), duration_seconds=round(time.time() - started, 2))
+
+        issues: list[Any] = []
+        for report in data.values():
+            if isinstance(report, dict):
+                issues.extend(report.get("issues", []) or [])
+        return ToolResult(
+            success=ok,
+            data=data,
+            error=json.dumps(issues, sort_keys=True) if not ok else None,
+            duration_seconds=round(time.time() - started, 2),
+        )
 
 
 def main(argv: list[str]) -> int:

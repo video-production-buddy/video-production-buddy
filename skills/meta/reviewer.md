@@ -263,7 +263,7 @@ Run at **scene_plan** and **edit** stages. Prevents the "every video looks the s
    - If changed without documented reason in decision log → **CRITICAL**
 
 5. **Render runtime match** (edit and compose stages):
-   - `render_runtime` in edit_decisions must match proposal_packet.production_plan.render_runtime
+   - `render_runtime` in edit_decisions must match `production_proposal.render_runtime` for `ad-video` and the proposal-packet runtime lock for legacy pipelines
    - If changed without a `render_runtime_selection` decision logged in decision_log → **CRITICAL**
    - At compose stage, `final_review.checks.promise_preservation.runtime_swap_detected` must be `false`. If `true` without an approved `render_runtime_selection` decision → **CRITICAL**
    - Runtime unavailable at compose time is not an excuse for silent swap — the correct behavior is to escalate, get approval, log a decision, then run.

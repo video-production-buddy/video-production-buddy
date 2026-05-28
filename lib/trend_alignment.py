@@ -90,10 +90,42 @@ def _selected_trend_ids(production_bible: dict[str, Any]) -> list[str]:
 
 
 def _entry_ref(entry: dict[str, Any]) -> str:
+    trend_id = _trend_id(entry)
+    return f"trend_alignment:{trend_id}" if trend_id else ""
+
+
+def _script_usage_ref(entry: dict[str, Any]) -> str:
     script_usage = entry.get("script_usage") or {}
     if isinstance(script_usage, dict) and script_usage.get("source_ref"):
         return str(script_usage["source_ref"])
-    return f"trend_alignment:{entry.get('trend_id')}"
+    return ""
+
+
+def _trend_ref_consistency_issues(entry: dict[str, Any]) -> list[dict[str, Any]]:
+    trend_id = _trend_id(entry)
+    expected_ref = _entry_ref(entry)
+    if not trend_id:
+        return [
+            {
+                "kind": "missing_trend_id",
+                "trend_id": entry.get("trend_id"),
+                "field": "trend_id",
+                "expected_ref": expected_ref,
+            }
+        ]
+
+    actual_ref = _script_usage_ref(entry)
+    if actual_ref and actual_ref != expected_ref:
+        return [
+            {
+                "kind": "inconsistent_trend_source_ref",
+                "trend_id": trend_id,
+                "field": "script_usage.source_ref",
+                "expected_ref": expected_ref,
+                "actual_ref": actual_ref,
+            }
+        ]
+    return []
 
 
 def _section_keys(section: dict[str, Any]) -> set[str]:
@@ -210,7 +242,6 @@ def check_scene_plan_trend_alignment(
             continue
 
         expected_ref = _entry_ref(entry)
-        fallback_ref = _trend_id(entry)
         scene_usage = entry.get("scene_usage") or {}
         required_count = 1
         if isinstance(scene_usage, dict):
@@ -221,10 +252,7 @@ def check_scene_plan_trend_alignment(
             scene
             for scene in scenes
             if isinstance(scene, dict)
-            and (
-                expected_ref in _scene_refs(scene)
-                or (fallback_ref and fallback_ref in _scene_refs(scene))
-            )
+            and expected_ref in _scene_refs(scene)
         ]
         instructed = [scene for scene in matching if _scene_has_instruction(scene)]
 
@@ -264,6 +292,11 @@ def check_ad_video_planning_trend_alignment(
     scene_report = check_scene_plan_trend_alignment(production_bible, scene_plan)
     entries = _alignment_entries(production_bible)
     aligned_trend_ids = {_trend_id(entry) for entry in entries if _trend_id(entry)}
+    consistency_issues = [
+        issue
+        for entry in entries
+        for issue in _trend_ref_consistency_issues(entry)
+    ]
     issues: list[dict[str, Any]] = []
 
     block = _alignment_block(production_bible)
@@ -287,6 +320,7 @@ def check_ad_video_planning_trend_alignment(
         for trend_id in _selected_trend_ids(production_bible)
         if trend_id not in aligned_trend_ids
     )
+    issues.extend({**issue, "artifact": "production_bible"} for issue in consistency_issues)
     issues.extend(
         {**issue, "artifact": "script"}
         for issue in script_report.get("issues", [])

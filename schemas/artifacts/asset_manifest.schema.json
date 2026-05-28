@@ -34,6 +34,91 @@
           "provider": { "type": "string", "description": "Provider name (e.g. pixabay, google_imagen)" },
           "license": { "type": "string", "description": "License type (e.g. Pixabay License, CC0)" },
           "original_url": { "type": "string", "description": "Source URL if downloaded from a stock service" },
+          "music_alignment": {
+            "type": "object",
+            "description": "Required by provider_consistency_check for ad-video music assets when production_proposal.music_strategy is library_locked or search_align. Records the chosen source-track peak/drop and how it was aligned to the planned tension peak.",
+            "required": [
+              "strategy",
+              "target_peak_seconds",
+              "selected_peak_seconds",
+              "aligned_peak_seconds",
+              "drift_seconds",
+              "evidence"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "strategy": {
+                "type": "string",
+                "enum": ["library_locked", "search_align"]
+              },
+              "target_peak_seconds": {
+                "type": "number",
+                "minimum": 0,
+                "description": "Target peak/drop timestamp in the ad timeline, usually production_bible.narrative.tension_peak_at_seconds."
+              },
+              "selected_peak_seconds": {
+                "type": "number",
+                "minimum": 0,
+                "description": "Source-track peak/drop timestamp selected before trimming or padding."
+              },
+              "aligned_peak_seconds": {
+                "type": "number",
+                "minimum": 0,
+                "description": "Timestamp where the selected source peak/drop lands in the final music bed after trim/pad alignment."
+              },
+              "drift_seconds": {
+                "type": "number",
+                "description": "aligned_peak_seconds - target_peak_seconds. Strict music strategies must stay within +/-0.5 seconds."
+              },
+              "timing_sidecar_path": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Validated music_library/<track>.timing.json sidecar used for library_locked selection."
+              },
+              "beat_detection_report": {
+                "type": "object",
+                "description": "Inline report from lib.beat_detector.analyze() or equivalent stock-track beat/drop analysis.",
+                "additionalProperties": true
+              },
+              "beat_detection_report_path": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Path to the saved beat/drop analysis report for search_align."
+              },
+              "evidence": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Short human-readable summary of how alignment was verified."
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "strategy": { "const": "library_locked" }
+                  },
+                  "required": ["strategy"]
+                },
+                "then": {
+                  "required": ["timing_sidecar_path"]
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "strategy": { "const": "search_align" }
+                  },
+                  "required": ["strategy"]
+                },
+                "then": {
+                  "anyOf": [
+                    { "required": ["beat_detection_report"] },
+                    { "required": ["beat_detection_report_path"] }
+                  ]
+                }
+              }
+            ]
+          },
           "product_identity_conditioning": {
             "type": "object",
             "description": "Required for generated image/video assets linked to product-visible scenes. Records how the product identity reference conditioned generation and what the visual sanity check found.",

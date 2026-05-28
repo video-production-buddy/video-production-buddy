@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from copy import deepcopy
 from pathlib import Path
 
@@ -73,7 +74,8 @@ def test_script_schema_accepts_multiple_source_refs_per_section() -> None:
     script = {
         "version": "1.0",
         "title": "Multi Trend Script",
-        "total_duration_seconds": 6,
+        "total_duration_seconds": 3,
+        "user_approved": True,
         "sections": [
             {
                 "id": "hook",
@@ -178,6 +180,7 @@ def _trend_threaded_script(source_ref: str = "trend_alignment:trend-tiktok-lofi-
         "version": "1.0",
         "title": "Trend Threaded Script",
         "total_duration_seconds": 8,
+        "user_approved": True,
         "sections": [
             {
                 "id": "hook",
@@ -217,7 +220,8 @@ def _trend_threaded_scene_plan(source_ref: str = "trend_alignment:trend-tiktok-l
         "scenes": [
             {
                 "id": "scene-hook",
-                "type": "generated",
+                "type": "animation",
+                "scene_type": "text_card",
                 "description": "Native overlay text lands on the first visual beat.",
                 "start_seconds": 0,
                 "end_seconds": 4,
@@ -226,6 +230,8 @@ def _trend_threaded_scene_plan(source_ref: str = "trend_alignment:trend-tiktok-l
                 "product_reference_required": False,
                 "core": True,
                 "motion_required": True,
+                "fulfills_kvm": [],
+                "motion_specs": ["text_entrance_fade"],
                 "trend_alignment_refs": [source_ref],
                 "trend_alignment_notes": "Warm native pacing is adapted without copying source captions, audio, or shot order.",
                 "knowledge_alignment_refs": ["knowledge_alignment:hook.visual-contrast.001"],
@@ -467,6 +473,25 @@ def test_ad_video_manifest_declares_genui_form_for_form_first_gates() -> None:
         assert "genui_form" in asset_substages[substage_name].get("tools_available", []), substage_name
 
     assert "genui_form" in get_required_tools(manifest)
+
+
+def test_ad_video_director_intros_name_manifest_required_inputs() -> None:
+    """A fresh agent should see every required stage input in the director intro."""
+    manifest = load_pipeline("ad-video")
+
+    for stage in manifest["stages"]:
+        required_inputs = set(stage.get("required_artifacts_in", []))
+        if not required_inputs:
+            continue
+
+        skill_ref = stage["skill"].removeprefix("pipelines/ad-video/")
+        skill_text = _read_skill(f"{skill_ref}.md")
+        intro = skill_text.split("## When to Use", 1)[1].split("\n## ", 1)[0]
+        missing = sorted(name for name in required_inputs if name not in intro)
+
+        assert missing == [], (
+            f"{skill_ref}.md intro omits manifest-required input(s): {missing}"
+        )
 
 
 def test_video_analysis_detects_chinese_short_video_platforms() -> None:
@@ -1140,6 +1165,7 @@ def test_ad_video_contract_mentions_hallucination_flow() -> None:
     assert "hallucination_checks" in contract_text
     assert "hallucination_review" in contract_text
     assert "hallucination_contract_check" in contract_text
+    assert "generated_scene_ids" in contract_text
     assert "FLAG" in contract_text
     assert "hallucination_review_waiver" in contract_text
 
@@ -1151,6 +1177,10 @@ def test_ad_video_contract_mentions_hallucination_flow() -> None:
     assert "`scene_plan.scenes[].hallucination_checks[]`" in bible
     assert "`hallucination_checks[]`" in scene
     assert "hallucination_contract_check" in asset
+    assert (
+        "generated_scene_ids` to both `product_identity_consistency_check` "
+        "and `hallucination_contract_check`"
+    ) in asset
     assert "hallucination_review" in cinematic_asset
     assert "hallucination_review" in animated_asset
     assert "hallucination_contract_check" in ep
@@ -1167,6 +1197,583 @@ def test_ad_video_asset_stage_exposes_frame_sampler_for_hallucination_keyframes(
 
     assert "frame_sampler" in asset_stage_tools
     assert "frame_sampler" in get_required_tools(manifest)
+
+
+def test_ad_video_validation_gates_are_registry_tools_and_manifest_visible() -> None:
+    """Hard ad-video gates must be discoverable through the registry and manifest."""
+    from tools.tool_registry import registry
+
+    expected_tools = {
+        "hallucination_contract_check",
+        "product_identity_consistency_check",
+        "runtime_consistency_check",
+        "sample_product_visibility_check",
+        "scene_fidelity_check",
+    }
+    manifest = load_pipeline("ad-video")
+    registry.clear()
+    registry.discover()
+
+    missing_registry_tools = expected_tools - set(registry.list_all())
+    assert missing_registry_tools == set()
+    assert expected_tools <= get_required_tools(manifest)
+
+    asset_stage = next(stage for stage in manifest["stages"] if stage["name"] == "assets")
+    asset_tools = _stage_tool_names(asset_stage)
+    for sub_stage in asset_stage.get("sub_stages", []):
+        asset_tools.update(sub_stage.get("tools_available", []))
+    assert {
+        "hallucination_contract_check",
+        "product_identity_consistency_check",
+        "sample_product_visibility_check",
+    } <= asset_tools
+
+    compose_stage = next(stage for stage in manifest["stages"] if stage["name"] == "compose")
+    assert {
+        "hallucination_contract_check",
+        "runtime_consistency_check",
+        "scene_fidelity_check",
+    } <= _stage_tool_names(compose_stage)
+
+
+def test_ad_video_proposal_produces_decision_log_for_locked_choices() -> None:
+    manifest = load_pipeline("ad-video")
+    proposal_stage = next(stage for stage in manifest["stages"] if stage["name"] == "proposal")
+    proposal = _read_skill("proposal-director.md")
+
+    assert "decision_log" in proposal_stage.get("produces", [])
+    assert "render_runtime_selection" in proposal
+    assert "product_identity_reference_selection" in proposal
+    assert "music_strategy_selection" in proposal
+
+
+def test_ad_video_edit_stage_declares_proposal_input_for_locked_choices() -> None:
+    manifest = load_pipeline("ad-video")
+    edit_stage = next(stage for stage in manifest["stages"] if stage["name"] == "edit")
+    edit = _read_skill("edit-director.md")
+
+    required = set(edit_stage.get("required_artifacts_in", []))
+    assert "production_proposal" in required
+    assert "production_proposal.render_runtime" in edit
+    assert "production_proposal.music_strategy" in edit
+    assert "production_proposal.derivatives_added" in edit
+
+
+def _music_strategy_decision(selected: str = "generative_loose") -> dict:
+    return {
+        "decision_id": "d-music-strategy",
+        "stage": "proposal",
+        "category": "music_strategy_selection",
+        "subject": "Music strategy",
+        "options_considered": [
+            {
+                "option_id": selected,
+                "label": selected,
+                "score": 0.8,
+                "reason": "Matches the approved music plan.",
+            }
+        ],
+        "selected": selected,
+        "reason": "Approved music strategy for this ad.",
+        "user_visible": True,
+        "user_approved": True,
+    }
+
+
+def test_ad_video_proposal_checkpoint_requires_decision_log_lock_entries(tmp_path: Path) -> None:
+    from lib.checkpoint import CheckpointValidationError, write_checkpoint
+
+    proposal = _minimal_production_proposal()
+    with pytest.raises(CheckpointValidationError, match="decision_log"):
+        write_checkpoint(
+            tmp_path,
+            "ad-proposal-audit",
+            "proposal",
+            "completed",
+            {"production_proposal": proposal},
+            pipeline_type="ad-video",
+        )
+
+    empty_log = {"version": "1.0", "project_id": "ad-proposal-audit", "decisions": []}
+    with pytest.raises(CheckpointValidationError, match="render_runtime_selection"):
+        write_checkpoint(
+            tmp_path,
+            "ad-proposal-audit",
+            "proposal",
+            "completed",
+            {"production_proposal": proposal, "decision_log": empty_log},
+            pipeline_type="ad-video",
+        )
+
+    decision_log = {
+        "version": "1.0",
+        "project_id": "ad-proposal-audit",
+        "decisions": [
+            {
+                "decision_id": "d-runtime",
+                "stage": "proposal",
+                "category": "render_runtime_selection",
+                "subject": "Composition runtime",
+                "options_considered": [
+                    {
+                        "option_id": "ffmpeg",
+                        "label": "FFmpeg",
+                        "score": 0.9,
+                        "reason": "Best fit for cinematic clip assembly.",
+                    }
+                ],
+                "selected": "ffmpeg",
+                "reason": "Approved runtime for this ad.",
+                "user_visible": True,
+                "user_approved": True,
+            },
+            {
+                "decision_id": "d-product-reference",
+                "stage": "proposal",
+                "category": "product_identity_reference_selection",
+                "subject": "Product reference strategy",
+                "options_considered": [
+                    {
+                        "option_id": "generate_concept_reference",
+                        "label": "Generate concept reference",
+                        "score": 0.8,
+                        "reason": "No user product image was provided.",
+                    }
+                ],
+                "selected": "generate_concept_reference",
+                "reason": "Matches the approved product reference strategy.",
+                "user_visible": True,
+                "user_approved": True,
+            },
+            _music_strategy_decision(),
+        ],
+    }
+    write_checkpoint(
+        tmp_path,
+        "ad-proposal-audit",
+        "proposal",
+        "completed",
+        {"production_proposal": proposal, "decision_log": decision_log},
+        pipeline_type="ad-video",
+    )
+
+
+def test_ad_video_proposal_checkpoint_requires_music_strategy_decision(tmp_path: Path) -> None:
+    from lib.checkpoint import CheckpointValidationError, write_checkpoint
+
+    proposal = _minimal_production_proposal()
+    decision_log = {
+        "version": "1.0",
+        "project_id": "ad-proposal-music-missing",
+        "decisions": [
+            {
+                "decision_id": "d-runtime",
+                "stage": "proposal",
+                "category": "render_runtime_selection",
+                "subject": "Composition runtime",
+                "options_considered": [
+                    {
+                        "option_id": "ffmpeg",
+                        "label": "FFmpeg",
+                        "score": 0.9,
+                        "reason": "Best fit for cinematic clip assembly.",
+                    }
+                ],
+                "selected": "ffmpeg",
+                "reason": "Approved runtime for this ad.",
+                "user_visible": True,
+                "user_approved": True,
+            },
+            {
+                "decision_id": "d-product-reference",
+                "stage": "proposal",
+                "category": "product_identity_reference_selection",
+                "subject": "Product reference strategy",
+                "options_considered": [
+                    {
+                        "option_id": "generate_concept_reference",
+                        "label": "Generate concept reference",
+                        "score": 0.8,
+                        "reason": "No user product image was provided.",
+                    }
+                ],
+                "selected": "generate_concept_reference",
+                "reason": "Matches the approved product reference strategy.",
+                "user_visible": True,
+                "user_approved": True,
+            },
+        ],
+    }
+
+    with pytest.raises(CheckpointValidationError, match="music_strategy_selection"):
+        write_checkpoint(
+            tmp_path,
+            "ad-proposal-music-missing",
+            "proposal",
+            "completed",
+            {"production_proposal": proposal, "decision_log": decision_log},
+            pipeline_type="ad-video",
+        )
+
+
+def test_ad_video_proposal_checkpoint_decisions_must_match_locked_proposal(tmp_path: Path) -> None:
+    from lib.checkpoint import CheckpointValidationError, write_checkpoint
+
+    proposal = _minimal_production_proposal()
+    proposal["render_runtime"] = "hyperframes"
+    decision_log = {
+        "version": "1.0",
+        "project_id": "ad-proposal-mismatch",
+        "decisions": [
+            {
+                "decision_id": "d-runtime",
+                "stage": "proposal",
+                "category": "render_runtime_selection",
+                "subject": "Composition runtime",
+                "options_considered": [
+                    {
+                        "option_id": "remotion",
+                        "label": "Remotion",
+                        "score": 0.9,
+                        "reason": "Best fit for React scene stack.",
+                    },
+                    {
+                        "option_id": "hyperframes",
+                        "label": "HyperFrames",
+                        "score": 0.8,
+                        "reason": "Good fit for GSAP typography.",
+                    },
+                ],
+                "selected": "remotion",
+                "reason": "Approved runtime for this ad.",
+                "user_visible": True,
+                "user_approved": True,
+            },
+            {
+                "decision_id": "d-product-reference",
+                "stage": "proposal",
+                "category": "product_identity_reference_selection",
+                "subject": "Product reference strategy",
+                "options_considered": [
+                    {
+                        "option_id": "not_applicable",
+                        "label": "Not applicable",
+                        "score": 1.0,
+                        "reason": "No product-visible scenes.",
+                    }
+                ],
+                "selected": "not_applicable",
+                "reason": "No product identity reference is required.",
+                "user_visible": True,
+                "user_approved": True,
+            },
+            _music_strategy_decision(),
+        ],
+    }
+
+    with pytest.raises(CheckpointValidationError, match="render_runtime_selection"):
+        write_checkpoint(
+            tmp_path,
+            "ad-proposal-mismatch",
+            "proposal",
+            "completed",
+            {"production_proposal": proposal, "decision_log": decision_log},
+            pipeline_type="ad-video",
+        )
+
+
+def test_ad_video_proposal_checkpoint_music_decision_must_match_locked_strategy(tmp_path: Path) -> None:
+    from lib.checkpoint import CheckpointValidationError, write_checkpoint
+
+    proposal = _minimal_production_proposal()
+    proposal["music_strategy"] = "search_align"
+    decision_log = {
+        "version": "1.0",
+        "project_id": "ad-proposal-music-mismatch",
+        "decisions": [
+            {
+                "decision_id": "d-runtime",
+                "stage": "proposal",
+                "category": "render_runtime_selection",
+                "subject": "Composition runtime",
+                "options_considered": [
+                    {
+                        "option_id": "ffmpeg",
+                        "label": "FFmpeg",
+                        "score": 0.9,
+                        "reason": "Best fit for cinematic clip assembly.",
+                    }
+                ],
+                "selected": "ffmpeg",
+                "reason": "Approved runtime for this ad.",
+                "user_visible": True,
+                "user_approved": True,
+            },
+            {
+                "decision_id": "d-product-reference",
+                "stage": "proposal",
+                "category": "product_identity_reference_selection",
+                "subject": "Product reference strategy",
+                "options_considered": [
+                    {
+                        "option_id": "generate_concept_reference",
+                        "label": "Generate concept reference",
+                        "score": 0.8,
+                        "reason": "No user product image was provided.",
+                    }
+                ],
+                "selected": "generate_concept_reference",
+                "reason": "Matches the approved product reference strategy.",
+                "user_visible": True,
+                "user_approved": True,
+            },
+            _music_strategy_decision("generative_loose"),
+        ],
+    }
+
+    with pytest.raises(CheckpointValidationError, match="music_strategy_selection"):
+        write_checkpoint(
+            tmp_path,
+            "ad-proposal-music-mismatch",
+            "proposal",
+            "completed",
+            {"production_proposal": proposal, "decision_log": decision_log},
+            pipeline_type="ad-video",
+        )
+
+
+def test_ad_video_production_proposal_checkpoint_records_decision_log_ref(tmp_path: Path) -> None:
+    from lib.checkpoint import write_checkpoint
+
+    decision_log = {
+        "version": "1.0",
+        "project_id": "ad-proposal-ref",
+        "decisions": [
+            {
+                "decision_id": "d-runtime",
+                "stage": "proposal",
+                "category": "render_runtime_selection",
+                "subject": "Composition runtime",
+                "options_considered": [
+                    {
+                        "option_id": "ffmpeg",
+                        "label": "FFmpeg",
+                        "score": 0.9,
+                        "reason": "Best fit for cinematic clip assembly.",
+                    }
+                ],
+                "selected": "ffmpeg",
+                "reason": "Approved runtime for this ad.",
+                "user_visible": True,
+                "user_approved": True,
+            },
+            {
+                "decision_id": "d-product-reference",
+                "stage": "proposal",
+                "category": "product_identity_reference_selection",
+                "subject": "Product reference strategy",
+                "options_considered": [
+                    {
+                        "option_id": "generate_concept_reference",
+                        "label": "Generate concept reference",
+                        "score": 0.8,
+                        "reason": "No user product image was provided.",
+                    }
+                ],
+                "selected": "generate_concept_reference",
+                "reason": "Matches the approved product reference strategy.",
+                "user_visible": True,
+                "user_approved": True,
+            },
+            _music_strategy_decision(),
+        ],
+    }
+
+    checkpoint_path = write_checkpoint(
+        tmp_path,
+        "ad-proposal-ref",
+        "proposal",
+        "completed",
+        {
+            "production_proposal": _minimal_production_proposal(),
+            "decision_log": decision_log,
+        },
+        pipeline_type="ad-video",
+    )
+    checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+
+    proposal = checkpoint["artifacts"]["production_proposal"]
+    assert proposal["decision_log_ref"].endswith("ad-proposal-ref/decision_log.json")
+
+
+def test_ad_video_publish_declares_artifacts_needed_for_final_safety_review() -> None:
+    manifest = load_pipeline("ad-video")
+    publish_stage = next(stage for stage in manifest["stages"] if stage["name"] == "publish")
+    publish = _read_skill("publish-director.md")
+
+    required = set(publish_stage.get("required_artifacts_in", []))
+    assert {
+        "render_report",
+        "production_proposal",
+        "script",
+        "production_bible",
+        "scene_plan",
+        "asset_manifest",
+        "decision_log",
+    } <= required
+    assert "hallucination_contract_check" in _stage_tool_names(publish_stage)
+    assert "hallucination_contract_check" in publish
+    assert "asset_manifest" in publish
+    assert "decision_log" in publish
+
+
+def test_ad_video_subtitle_contract_uses_ass_not_srt_examples() -> None:
+    """Ad-video subtitles must use ASS because FFmpeg SRT styling is unsafe here."""
+    manifest = _load_ad_video_manifest()
+    asset_stage = next(stage for stage in manifest["stages"] if stage["name"] == "assets")
+    asset_contract_lines = asset_stage.get("review_focus", []) + asset_stage.get("success_criteria", [])
+    for sub_stage in asset_stage.get("sub_stages", []):
+        asset_contract_lines.extend(sub_stage.get("review_focus", []))
+        asset_contract_lines.extend(sub_stage.get("success_criteria", []))
+    asset_contract = "\n".join(
+        asset_contract_lines
+    )
+    asset = _read_skill("asset-director.md")
+    compose = _read_skill("compose-director.md")
+    proposal = _read_skill("proposal-director.md")
+    production_proposal_schema = (
+        ROOT / "schemas" / "artifacts" / "production_proposal.schema.json"
+    ).read_text(encoding="utf-8")
+
+    assert "ASS subtitle file" in asset_contract
+    assert "SRT/VTT" not in asset_contract
+    assert "ASS" in proposal
+    assert "SRT" not in proposal
+    assert ".srt" not in production_proposal_schema.lower()
+    assert ".vtt" not in production_proposal_schema.lower()
+    assert "Format: ASS" in asset
+    assert "SRT (preferred)" not in asset
+    assert '"subtitle_path": "assets/subtitles.ass"' in compose
+    assert '"subtitle_path": "assets/subtitles.srt"' not in compose
+
+
+def test_ad_video_manifest_uses_render_report_outputs_contract_name() -> None:
+    manifest = _load_ad_video_manifest()
+    compose_stage = next(stage for stage in manifest["stages"] if stage["name"] == "compose")
+    publish_stage = next(stage for stage in manifest["stages"] if stage["name"] == "publish")
+    contract_text = "\n".join(
+        compose_stage.get("success_criteria", [])
+        + publish_stage.get("review_focus", [])
+        + publish_stage.get("success_criteria", [])
+    )
+
+    assert "render_report.outputs" in contract_text
+    assert "output_files" not in contract_text
+
+
+def test_ad_video_manifest_threads_final_review_from_compose_to_publish() -> None:
+    manifest = _load_ad_video_manifest()
+    compose_stage = next(stage for stage in manifest["stages"] if stage["name"] == "compose")
+    publish_stage = next(stage for stage in manifest["stages"] if stage["name"] == "publish")
+    compose_director = _read_skill("compose-director.md")
+    publish_director = _read_skill("publish-director.md")
+
+    assert "final_review" in compose_stage.get("produces", [])
+    assert "final_review" in publish_stage.get("required_artifacts_in", [])
+    assert any("final_review" in item for item in compose_stage.get("success_criteria", []))
+    assert any("final_review" in item for item in publish_stage.get("review_focus", []))
+    assert "final_review" in compose_director
+    assert "final_review" in publish_director
+
+
+def test_ad_video_manifest_exposes_provider_consistency_gate_before_compose() -> None:
+    manifest = _load_ad_video_manifest()
+    asset_stage = next(stage for stage in manifest["stages"] if stage["name"] == "assets")
+    compose_stage = next(stage for stage in manifest["stages"] if stage["name"] == "compose")
+    asset_director = _read_skill("asset-director.md")
+    compose_director = _read_skill("compose-director.md")
+    executive_producer = _read_skill("executive-producer.md")
+
+    asset_tools = _stage_tool_names(asset_stage)
+    compose_tools = _stage_tool_names(compose_stage)
+
+    assert "provider_consistency_check" in asset_tools
+    assert "provider_consistency_check" in compose_tools
+    assert "provider_consistency_check" in get_required_tools(manifest)
+    assert "provider_consistency_check" in asset_director
+    assert "visual_asset_provider_locks" in asset_director
+    assert "music_source" in asset_director
+    assert "music_alignment" in asset_director
+    assert "visual_asset_provider_locks" in compose_director
+    assert "approved_budget_usd" in compose_director
+    assert "music_source" in compose_director
+    assert "music_alignment" in compose_director
+    assert any("visual provider" in item for item in compose_stage.get("success_criteria", []))
+    assert any("music_alignment" in item for item in compose_stage.get("success_criteria", []))
+    assert any("approved budget" in item for item in compose_stage.get("success_criteria", []))
+    assert "provider_consistency_check" in executive_producer
+
+
+def test_asset_director_manifest_example_satisfies_provider_gates() -> None:
+    from tools.validation.provider_consistency_check import check_provider_consistency
+
+    asset_director = _read_skill("asset-director.md")
+    manifest_section = asset_director.split("## Asset Manifest Format", maxsplit=1)[1]
+    manifest_match = re.search(
+        r"```json\s*\n(.*?)\n```",
+        manifest_section,
+        flags=re.DOTALL,
+    )
+    assert manifest_match is not None
+    manifest = json.loads(manifest_match.group(1))
+    script = {
+        "version": "1.0",
+        "sections": [
+            {"id": entry["section_id"], "narration": f"Line for {entry['section_id']}."}
+            for entry in manifest["narration_files"]
+        ],
+    }
+
+    validate_artifact("asset_manifest", manifest, pipeline_type="ad-video")
+    verdict = check_provider_consistency(
+        _minimal_production_proposal(),
+        manifest,
+        script=script,
+    )
+
+    assert verdict["status"] == "PASS", verdict["issues"]
+
+
+def test_ad_video_runtime_docs_use_production_proposal_not_legacy_proposal_packet() -> None:
+    guide = (ROOT / "AGENT_GUIDE.md").read_text(encoding="utf-8")
+    reviewer = (ROOT / "skills" / "meta" / "reviewer.md").read_text(encoding="utf-8")
+    animation_runtime_selector = (
+        ROOT / "skills" / "meta" / "animation-runtime-selector.md"
+    ).read_text(encoding="utf-8")
+    edit_schema = (ROOT / "schemas" / "artifacts" / "edit_decisions.schema.json").read_text(
+        encoding="utf-8"
+    )
+    final_review_schema = (
+        ROOT / "schemas" / "artifacts" / "final_review.schema.json"
+    ).read_text(encoding="utf-8")
+
+    for source_name, text in {
+        "AGENT_GUIDE.md": guide,
+        "skills/meta/reviewer.md": reviewer,
+        "skills/meta/animation-runtime-selector.md": animation_runtime_selector,
+        "edit_decisions.schema.json": edit_schema,
+        "final_review.schema.json": final_review_schema,
+    }.items():
+        assert "production_proposal.render_runtime" in text, source_name
+        assert "proposal_packet.production_plan.render_runtime" not in text, source_name
+        assert "runtime locked in proposal_packet" not in text, source_name
+
+
+def test_animated_scene_director_uses_kvm_gate_not_unregistered_artifact() -> None:
+    animated_scene = _read_skill("scene-director-animated.md")
+
+    assert "check_kvm_coverage" in animated_scene or "scene_fidelity_check" in animated_scene
+    assert "kvm_coverage.json" not in animated_scene
 
 
 def test_edit_director_enforces_duck_schedule_when_intensity_curve_present() -> None:

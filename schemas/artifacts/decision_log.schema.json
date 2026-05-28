@@ -34,6 +34,7 @@
               "budget_tradeoff",
               "downgrade_approval",
               "music_source",
+              "music_strategy_selection",
               "motion_commitment",
               "product_identity_reference_selection",
               "concept_selection",

@@ -150,6 +150,7 @@ stages:
   - production_bible
   produces:
   - production_proposal
+  - decision_log
   tools_available:
   - genui_form
   checkpoint_required: true
@@ -250,6 +251,10 @@ stages:
   checkpoint_required: false
   required_tools:
   - ad_video_planning_chain_check
+  - provider_consistency_check
+  - product_identity_consistency_check
+  - hallucination_contract_check
+  - sample_product_visibility_check
   - cosyvoice_tts
   - wanx_image
   - wan_video_api
@@ -262,6 +267,10 @@ stages:
   - frame_sampler
   tools_available:
   - ad_video_planning_chain_check
+  - provider_consistency_check
+  - product_identity_consistency_check
+  - hallucination_contract_check
+  - sample_product_visibility_check
   - cosyvoice_tts
   - openai_tts
   - wanx_image
@@ -292,6 +301,8 @@ stages:
       open and watch the file before asking for approval.
     human_approval_default: true
     review_focus:
+    - sample_product_visibility_check passes or warns for selected sample scene ids before assembly
+    - hallucination_contract_check passes or warns with generated_scene_ids for selected sample scene ids before sample approval
     - File path communicated — NOT a content description
     - Approval requested in a SEPARATE message after user has had time to view the
       file
@@ -303,14 +314,14 @@ stages:
     review_focus:
     - TTS audio file generated for every script section
     - Narration uses the locked production_proposal.audio_contract.voice_model and passes section delivery instructions to TTS
-    - Subtitle file (SRT/VTT) generated
+    - ASS subtitle file generated with explicit PlayResX/PlayResY
     - All scene assets match scene_plan required_assets
     - Style consistency across all generated images
     - asset_manifest complete with all required files
     - Generated high-risk visual assets record hallucination_review with start/mid/end keyframe paths and per-check verdicts
     - hallucination_contract_check returns PASS or documented WARN before asset review
     - narration_durations populated in EP_STATE
-    - subtitle_file present in asset_manifest
+    - ASS subtitle_file present in asset_manifest
   - name: asset_review
     description: Present all generated stills and video clips to user before compose.
       List every asset file path. User must explicitly approve visual quality before
@@ -334,10 +345,11 @@ stages:
     - music_review_approved == true
   review_focus:
   - product_reference sub-stage completed before sample generation
+  - provider_consistency_check passes before compose to catch missing or unauditable narration, silent TTS/image/video/music provider substitutions, missing music_alignment evidence for library_locked/search_align, and approved-budget overages
   - Sample sub-stage includes at least one product-visible scene (not chronological-only
     if product appears late)
   - product_identity_consistency_check returns PASS or documented WARN before asset review
-  - hallucination_contract_check returns PASS or documented WARN before sample approval and before asset review
+  - hallucination_contract_check returns PASS or documented WARN with generated_scene_ids before sample approval and without generated_scene_ids before asset review
   - blocker FLAG hallucination verdicts regenerate or reroute before compose
   - hallucination-review waivers have user-approved decision_log entries with category hallucination_review_waiver
   - no text-only generation for product-visible scenes unless risk_accepted is user-approved
@@ -347,6 +359,7 @@ stages:
   - TTS files present for all sections
   - Narration model/instructions match production_proposal.audio_contract
   - Budget not exceeded
+  - Completed assets checkpoint includes production_proposal, production_bible, script, scene_plan, and decision_log so checkpoint validation can rerun provider_consistency_check, product_identity_consistency_check, and hallucination_contract_check before compose
   success_criteria:
   - product_identity_reference artifact produced
   - asset_manifest artifact produced
@@ -356,13 +369,14 @@ stages:
   - sample_approved == true
   - asset_review_approved == true
   - music_review_approved == true
-  - subtitle_file present
+  - ASS subtitle file present in asset_manifest
 - name: edit
   skill: pipelines/ad-video/edit-director
   required_artifacts_in:
   - scene_plan
   - asset_manifest
   - production_bible
+  - production_proposal
   produces:
   - edit_decisions
   optional_tools:
@@ -370,59 +384,104 @@ stages:
   checkpoint_required: false
   review_focus:
   - Timeline covers 0 to total_duration with no gaps
+  - Every cut source, narration/music/SFX/overlay asset_id, and enabled subtitle source resolves through asset_manifest
+  - render_runtime and music_strategy match production_proposal exactly
   - Music ducking set to -18 dB during all narration segments
   - Subtitle burn configured
-  - Derivative edit specs present when derivative_variants non-empty
+  - Derivative edit specs present and renderable when production_proposal.derivatives_added is non-empty (aspect variants need crop_regions; duration variants need a <=15s scene selection)
   success_criteria:
   - edit_decisions artifact produced
+  - edit_decisions.render_runtime == production_proposal.render_runtime
+  - edit_decisions.music_strategy == production_proposal.music_strategy
+  - cut sources, audio/overlay asset IDs, and enabled subtitle sources resolve to asset_manifest entries
   - audio.target_db == -18 for all narration windows
   - edit_decisions.subtitles.enabled captured (user opt-in, not forced)
+  - opted-in derivative variants have executable edit specs, not placeholder keys
 - name: compose
   skill: pipelines/ad-video/compose-director
   required_artifacts_in:
   - edit_decisions
   - asset_manifest
+  - production_proposal
   - production_bible
   - script
   - scene_plan
+  - decision_log
   produces:
   - render_report
+  - final_review
   checkpoint_required: false
   required_tools:
   - ad_video_planning_chain_check
+  - provider_consistency_check
+  - runtime_consistency_check
+  - scene_fidelity_check
+  - hallucination_contract_check
   - video_compose
   - audio_mixer
   tools_available:
   - ad_video_planning_chain_check
+  - provider_consistency_check
+  - runtime_consistency_check
+  - scene_fidelity_check
+  - hallucination_contract_check
   - video_compose
   - audio_mixer
   review_focus:
   - ad_video_planning_chain_check passes with production_bible, script, and scene_plan before render
+  - provider_consistency_check passes with production_proposal, asset_manifest, script, and decision_log before render, including narration coverage, visual provider locks, strict music_alignment evidence, and approved budget
+  - runtime_consistency_check passes before video_compose, confirming render_runtime and music_strategy still match production_proposal unless user-approved changes are logged
+  - scene_fidelity_check passes before video_compose
   - Primary render complete at declared aspect_ratio_primary (16:9 or 9:16)
   - asset_manifest has no blocker hallucination_review FLAG before render
   - hallucination_contract_check previously passed or warned with documented user-approved waiver
   - crop_regions verified present before each derivative render
   - Each derivative is a separate output file
+  - render_report output resolution matches each aspect-ratio variant label; 15s/15s_short outputs are <=15s
   - Duration within ±5% of target
   - 'Audio channels: stereo'
+  - final_review.status == pass after inspecting actual rendered outputs
+  - final_review.output_path and probe/runtime evidence match render_report.outputs
+  - final_review subtitle and music presence evidence matches production_proposal
+  - final_review.reviewed_outputs covers every render_report.outputs file when derivative outputs exist
   success_criteria:
   - render_report artifact produced
+  - final_review artifact produced with status pass
+  - final_review music/subtitle evidence matches production_proposal
   - ad_video_planning_chain_check passed before video_compose
-  - output_files contains primary file at declared aspect_ratio_primary
-  - output_files contains one entry per opted-in derivative
+  - provider_consistency_check confirmed narration coverage and visual provider locks before video_compose
+  - provider_consistency_check confirmed library_locked/search_align music_alignment evidence before video_compose when strict music sync is selected
+  - provider_consistency_check confirmed total asset spend is within approved budget or backed by a user-approved budget_tradeoff
+  - render_report.outputs contains primary file at declared aspect_ratio_primary
+  - render_report.outputs contains one entry per opted-in derivative
+  - render_report.outputs variant, resolution, and duration fields are semantically consistent
+  - completed compose checkpoint includes production_proposal and production_bible for output coverage validation
 - name: publish
   skill: pipelines/ad-video/publish-director
   required_artifacts_in:
   - render_report
   - production_proposal
+  - script
+  - production_bible
+  - scene_plan
+  - asset_manifest
+  - decision_log
+  - final_review
   produces:
   - publish_log
+  required_tools:
+  - hallucination_contract_check
+  tools_available:
+  - hallucination_contract_check
   checkpoint_required: false
   review_focus:
   - output_file_matrix present with all rendered files
+  - final_review.status == pass before publish_log is produced
+  - hallucination_contract_check passes or warns before publish_log is produced
   - no blocker hallucination_review FLAG or unapproved waiver is present in the published asset_manifest
   - 'Metadata complete: title, description, tags, platform targets'
   - Thumbnail concept written
   success_criteria:
   - publish_log artifact produced
   - output_file_matrix non-empty
+  - completed publish checkpoint includes render_report, production_proposal, and production_bible for output_file_matrix and render coverage validation

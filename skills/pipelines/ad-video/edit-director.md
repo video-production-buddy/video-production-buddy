@@ -2,7 +2,19 @@
 
 ## When to Use
 
-You receive `scene_plan`, `asset_manifest`, and `EP_STATE` and produce `edit_decisions`: a complete timeline specifying cut points, audio layering, subtitle burn configuration, and music ducking.
+You receive `scene_plan`, `asset_manifest`, `production_bible`,
+`production_proposal`, and `EP_STATE` and produce `edit_decisions`: a complete
+timeline specifying cut points, audio layering, subtitle burn configuration,
+and music ducking.
+
+Carry `production_proposal.render_runtime` into
+`edit_decisions.render_runtime` unchanged.
+Carry `production_proposal.music_strategy` into `edit_decisions.music_strategy`
+unchanged. If the music path changes after proposal, stop, surface the change to
+the user, and log a visible approved `music_strategy_selection` decision before
+editing against the new strategy. A `music_source` decision may choose a
+track/source inside the already approved strategy, but it does not authorize
+switching strategy families.
 
 ## Music Ducking Requirement
 
@@ -211,15 +223,17 @@ For each scene in `scene_plan.scenes[]`:
 }
 ```
 
-If `production_proposal.music_strategy == "none"`, set
+Set `edit_decisions.music_strategy` to the exact
+`production_proposal.music_strategy` value. If
+`production_proposal.music_strategy == "none"`, set
 `edit_decisions.music_strategy = "none"` and omit `audio.music` entirely. Do not
 fabricate `audio.music.volume_schedule` for a no-background-music edit; there is
 no music bed to duck.
 
 ## Derivative Edit Specifications
 
-When `derivative_variants` is non-empty, include `edit_decisions.derivative_specs`
-with one entry per opted-in variant:
+When `production_proposal.derivatives_added` is non-empty, include
+`edit_decisions.derivative_specs` with one entry per opted-in variant:
 
 ```json
 "derivative_specs": {
@@ -238,17 +252,32 @@ with one entry per opted-in variant:
       "margin_bottom_px": 70
     }
   },
-  "15s": {
+  "15s_short": {
     "include_scenes": ["scene IDs where core:true"],
-    "total_duration_check": "≤15s"
+    "total_duration_check": "<=15s"
   }
 }
 ```
 
+Aspect-ratio derivatives (`9:16`, `1:1`) are not renderable without crop
+instructions. Set `crop_regions` to the literal string `"from_scene_plan"` when
+the scene plan already carries per-scene crop rectangles, or provide a non-empty
+crop-region map copied from the scene plan. Do not use loose labels such as
+`"center_crop"`.
+
+Duration derivatives (`15s`, `15s_short`) are not crop jobs. Set
+`include_scenes` to the exact scene ids kept in the short cut, and verify their
+combined scene-plan duration is `<=15s`.
+
 ## Validation Before Submitting
 
 - [ ] Timeline covers 0.0 to `total_duration_seconds` with no gaps
-- [ ] All `cuts[].source` and `audio.narration.segments[].asset_id` references resolve through `asset_manifest`
+- [ ] All media references resolve through `asset_manifest`: `cuts[].source`,
+      `audio.narration.segments[].asset_id`, `audio.music.asset_id`,
+      `audio.sfx[].asset_id`, `overlays[].asset_id`, and enabled
+      `subtitles.source`
+- [ ] `edit_decisions.render_runtime == production_proposal.render_runtime`
+- [ ] `edit_decisions.music_strategy == production_proposal.music_strategy`
 - [ ] Every cut carries `maps_to_beat`, `beat_id`, or `beat` copied from the scene plan
 - [ ] `cuts[]` average durations, cut density, and transitions satisfy `production_bible.visual.editing_rhythm`
       (run `check_cuts_against_editing_rhythm` to verify — any warnings must be resolved before submitting):
@@ -266,7 +295,7 @@ with one entry per opted-in variant:
       `audio.music.volume_schedule` is populated by `derive_duck_schedule` and
       covers every narration window — do NOT also emit a flat `audio_ducking` block
 - [ ] If subtitles were approved: `subtitles.enabled == true` and `subtitles.source` points to the generated ASS file
-- [ ] If derivative_variants non-empty: `derivative_specs` present with entries for each variant
+- [ ] If `production_proposal.derivatives_added` is non-empty: `derivative_specs` present with entries for each variant, aspect-ratio variants carry renderable crop instructions, and duration variants list a `<=15s` scene selection
 - [ ] Every narration segment duration ≤ matching scene duration
 
 

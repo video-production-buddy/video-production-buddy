@@ -82,6 +82,25 @@ def _minimal_production_proposal() -> dict:
             "color_rhythm": "held-accent",
             "atmosphere": {"default_layers": [{"type": "grain", "intensity": 0.04}]},
             "anti_template_checklist": ["hero product visible before the CTA"],
+            "visual_asset_provider_locks": [
+                {
+                    "asset_type": "image",
+                    "source_tool": "wanx_image",
+                    "model": "wan2.7-image-pro",
+                    "usage": "packshots and still cards",
+                },
+                {
+                    "asset_type": "video",
+                    "source_tool": "wan_video_api",
+                    "model": "wan2.6-t2v",
+                    "usage": "generated product and lifestyle motion scenes",
+                },
+                {
+                    "asset_type": "video",
+                    "source_tool": "pexels_video",
+                    "usage": "stock establishing shots",
+                },
+            ],
         },
     }
 
@@ -168,6 +187,7 @@ def _trend_threaded_script(source_ref: str = "trend_alignment:trend-tiktok-lofi-
         "version": "1.0",
         "title": "Trend Threaded Script",
         "total_duration_seconds": 8,
+        "user_approved": True,
         "sections": [
             {
                 "id": "hook",
@@ -208,6 +228,7 @@ def _trend_threaded_scene_plan(source_ref: str = "trend_alignment:trend-tiktok-l
             {
                 "id": "scene-hook",
                 "type": "generated",
+                "scene_type": "text_card",
                 "description": "Native overlay text lands on the first visual beat.",
                 "start_seconds": 0,
                 "end_seconds": 4,

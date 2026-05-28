@@ -142,6 +142,65 @@ def test_intelligence_brief_schema_requires_professional_knowledge_block() -> No
         validate_artifact("intelligence_brief", bad)
 
 
+def test_intelligence_brief_rejects_duplicate_professional_knowledge_card_ids() -> None:
+    from tests.qa.test_artifact_chain import INTELLIGENCE_BRIEF_VALID
+
+    brief = deepcopy(INTELLIGENCE_BRIEF_VALID)
+    duplicate = deepcopy(brief["professional_knowledge"]["cards_used"][0])
+    duplicate["summary"] = "A duplicate id with different prose would be ambiguous."
+    brief["professional_knowledge"]["cards_used"].append(duplicate)
+
+    with pytest.raises(Exception, match="duplicate card_id"):
+        validate_artifact("intelligence_brief", brief)
+
+
+def test_intelligence_brief_rejects_professional_knowledge_source_ref_mismatch() -> None:
+    from tests.qa.test_artifact_chain import INTELLIGENCE_BRIEF_VALID
+
+    brief = deepcopy(INTELLIGENCE_BRIEF_VALID)
+    brief["professional_knowledge"]["cards_used"][0][
+        "source_ref"
+    ] = "knowledge_alignment:wrong.card"
+
+    with pytest.raises(Exception, match="source_ref"):
+        validate_artifact("intelligence_brief", brief)
+
+
+def test_intelligence_brief_rejects_recommendations_for_unknown_cards() -> None:
+    from tests.qa.test_artifact_chain import INTELLIGENCE_BRIEF_VALID
+
+    brief = deepcopy(INTELLIGENCE_BRIEF_VALID)
+    brief["professional_knowledge"]["application_recommendations"][0][
+        "card_id"
+    ] = "unknown.card"
+
+    with pytest.raises(Exception, match="application_recommendations"):
+        validate_artifact("intelligence_brief", brief)
+
+
+def test_intelligence_brief_rejects_contraindications_for_unknown_cards() -> None:
+    from tests.qa.test_artifact_chain import INTELLIGENCE_BRIEF_VALID
+
+    brief = deepcopy(INTELLIGENCE_BRIEF_VALID)
+    brief["professional_knowledge"]["contraindications"][0][
+        "card_id"
+    ] = "unknown.card"
+
+    with pytest.raises(Exception, match="contraindications"):
+        validate_artifact("intelligence_brief", brief)
+
+
+def test_intelligence_brief_rejects_duplicate_trend_ids_when_present() -> None:
+    from tests.qa.test_artifact_chain import INTELLIGENCE_BRIEF_VALID
+
+    brief = deepcopy(INTELLIGENCE_BRIEF_VALID)
+    brief["platform_trends"][0]["trend_id"] = "trend-fast-hook"
+    brief["platform_trends"][1]["trend_id"] = "trend-fast-hook"
+
+    with pytest.raises(Exception, match="duplicate trend_id"):
+        validate_artifact("intelligence_brief", brief)
+
+
 def test_production_bible_schema_requires_knowledge_alignment_block() -> None:
     from tests.qa.test_artifact_chain import PRODUCTION_BIBLE_VALID
 
@@ -249,7 +308,8 @@ def test_scene_plan_rejects_bare_knowledge_alignment_refs() -> None:
         "scenes": [
             {
                 "id": "scene-hook",
-                "type": "generated",
+                "type": "animation",
+                "scene_type": "text_card",
                 "description": "Native overlay text lands on the first visual beat.",
                 "start_seconds": 0,
                 "end_seconds": 4,
@@ -258,6 +318,8 @@ def test_scene_plan_rejects_bare_knowledge_alignment_refs() -> None:
                 "product_reference_required": False,
                 "core": True,
                 "motion_required": True,
+                "fulfills_kvm": [],
+                "motion_specs": ["text_entrance_fade"],
                 "knowledge_alignment_refs": ["knowledge_alignment:hook.visual-contrast.001"],
                 "knowledge_alignment_notes": "Opening scene uses a visible before/after contrast without turning into clickbait.",
             }

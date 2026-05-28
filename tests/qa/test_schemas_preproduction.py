@@ -923,6 +923,7 @@ MINIMAL_PRODUCTION_PROPOSAL = {
     "derivatives_added": [],
     "budget_confirmed": True,
     "approved_budget_usd": 5.0,
+    "music_strategy": "generative_loose",
     "audio_contract": {
         "voice_provider": "qwen3",
         "voice_id": "Dylan",
@@ -955,6 +956,25 @@ MINIMAL_PRODUCTION_PROPOSAL = {
         },
         "anti_template_checklist": [
             "non-uniform spacing across scenes",
+        ],
+        "visual_asset_provider_locks": [
+            {
+                "asset_type": "image",
+                "source_tool": "wanx_image",
+                "model": "wan2.7-image-pro",
+                "usage": "packshots and still product cards",
+            },
+            {
+                "asset_type": "video",
+                "source_tool": "wan_video_api",
+                "model": "wan2.6-t2v",
+                "usage": "generated product/lifestyle motion scenes",
+            },
+            {
+                "asset_type": "video",
+                "source_tool": "pexels_video",
+                "usage": "free stock establishing shots",
+            },
         ],
     },
 }

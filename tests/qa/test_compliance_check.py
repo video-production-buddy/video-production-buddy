@@ -287,6 +287,72 @@ def test_structured_presence_negated_finds_violation():
     assert r.success and r.data["pass"] is False
 
 
+def test_structured_presence_ignores_hallucination_check_metadata():
+    """Presence must prove the term appears in stage content, not review metadata."""
+    tool = make_tool()
+    stage = {
+        "scenes": [
+            {
+                "id": "scene-1",
+                "description": "Clean abstract productivity interface.",
+                "hallucination_checks": [
+                    {
+                        "check_id": "HC-LOGO",
+                        "requirement": "Acme logo appears clearly.",
+                        "prohibited_failure": "Missing Acme logo.",
+                    }
+                ],
+            }
+        ]
+    }
+    cp = {
+        "id": "CP-V1",
+        "check_type": "presence",
+        "evaluation_method": "structural",
+        "criterion": "anything",
+        "failure_action": "revise",
+        "structured": {"kind": "presence", "terms": ["Acme logo"], "min_count": 1},
+    }
+
+    r = tool.execute({"stage_output": stage, "checkpoint": cp})
+    assert r.success and r.data["pass"] is False
+
+
+def test_structured_negated_presence_ignores_prohibited_failure_metadata():
+    """A prohibited term in audit instructions is not itself a content violation."""
+    tool = make_tool()
+    stage = {
+        "scenes": [
+            {
+                "id": "scene-1",
+                "description": "Clean product shot with no competing marks.",
+                "hallucination_checks": [
+                    {
+                        "check_id": "HC-COMPETITOR",
+                        "requirement": "Avoid competitor logos.",
+                        "prohibited_failure": "Competitor logo appears.",
+                    }
+                ],
+            }
+        ]
+    }
+    cp = {
+        "id": "CP-B3",
+        "check_type": "presence",
+        "evaluation_method": "structural",
+        "criterion": "anything",
+        "failure_action": "revise",
+        "structured": {
+            "kind": "presence",
+            "terms": ["Competitor logo"],
+            "negated": True,
+        },
+    }
+
+    r = tool.execute({"stage_output": stage, "checkpoint": cp})
+    assert r.success and r.data["pass"] is True
+
+
 def test_structured_beat_mapping_passes_when_scene_maps_to_beat():
     tool = make_tool()
     stage = {"scenes": [{"id": "scene-1", "maps_to_beat": "cta_brand"}]}

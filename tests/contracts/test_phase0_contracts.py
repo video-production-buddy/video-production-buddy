@@ -8,7 +8,9 @@ pipeline manifests + stage director skills + meta skills.
 
 import importlib
 import json
+import re
 import sys
+from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -41,6 +43,18 @@ from tools.base_tool import BaseTool, ToolResult, ToolTier, ToolStatus
 from tools.tool_registry import ToolRegistry
 from tools.cost_tracker import CostTracker, BudgetMode, BudgetExceededError, ApprovalRequiredError
 from schemas.artifacts import load_schema, validate_artifact, list_schemas
+from tests.contracts.conftest import _minimal_production_proposal
+
+
+def test_makefile_lint_py_compile_targets_exist():
+    """Every Python file referenced by `make lint` must exist in the repo."""
+    makefile = PROJECT_ROOT / "Makefile"
+    body = makefile.read_text(encoding="utf-8")
+    compile_targets = re.findall(r"python -m py_compile ([^\s]+\.py)", body)
+    assert compile_targets, "Makefile lint target should py_compile at least one file"
+
+    missing = [path for path in compile_targets if not (PROJECT_ROOT / path).is_file()]
+    assert missing == []
 
 
 def sample_artifact(name: str) -> dict:
@@ -168,6 +182,8 @@ def sample_artifact(name: str) -> dict:
                     "scene_id": "scene-1",
                 }
             ],
+            "costs": [{"tool": "ffmpeg", "cost_usd": 0.0}],
+            "total_cost_usd": 0.0,
         }
     if name == "edit_decisions":
         return {
@@ -248,6 +264,423 @@ def sample_artifact(name: str) -> dict:
             },
         }
     raise KeyError(f"Unknown artifact sample: {name}")
+
+
+def ad_video_asset_manifest_with_narration() -> dict:
+    artifact = sample_artifact("asset_manifest")
+    artifact["assets"].append(
+        {
+            "id": "narr-1",
+            "type": "narration",
+            "path": "assets/audio/narr-1.mp3",
+            "source_tool": "tts_selector",
+            "scene_id": "scene-1",
+        }
+    )
+    artifact["costs"].append({"tool": "tts_selector", "cost_usd": 0.0})
+    return artifact
+
+
+def ad_video_assets_checkpoint_context() -> dict:
+    proposal = deepcopy(_minimal_production_proposal())
+    proposal["product_reference_strategy"] = "not_applicable"
+
+    voice_performance = {
+        "emotion": "calm confidence",
+        "intonation": "natural conversational rises",
+        "rhythm": "measured product proof beats",
+        "pace": "measured",
+        "pause_after_seconds": 0.25,
+    }
+    script = {
+        "version": "1.0",
+        "title": "Assets Checkpoint Script",
+        "total_duration_seconds": 8,
+        "user_approved": True,
+        "sections": [
+            {
+                "id": "hook",
+                "text": "Meet the workflow that keeps every launch on track.",
+                "start_seconds": 0,
+                "end_seconds": 4,
+                "speaker_directions": "Open with understated confidence.",
+                "voice_performance": voice_performance,
+                "tts_directive": {"speed_mult": 1.0},
+            },
+            {
+                "id": "cta",
+                "text": "Start your next campaign with fewer handoffs.",
+                "start_seconds": 4,
+                "end_seconds": 8,
+                "speaker_directions": "Close with a precise CTA.",
+                "voice_performance": voice_performance,
+                "tts_directive": {"speed_mult": 1.0},
+            },
+        ],
+    }
+    scene_plan = {
+        "version": "1.0",
+        "style_mode": "cinematic",
+        "total_duration_seconds": 8,
+        "scenes": [
+            {
+                "id": "scene-1",
+                "type": "text_card",
+                "description": "Brand promise text card over abstract interface motion.",
+                "start_seconds": 0,
+                "end_seconds": 8,
+                "core": True,
+                "motion_required": False,
+                "product_visibility": "none",
+                "product_reference_required": False,
+            }
+        ],
+    }
+    decision_log = {
+        "version": "1.0",
+        "project_id": "assets-checkpoint-context",
+        "decisions": [
+            {
+                "decision_id": "d-runtime",
+                "stage": "proposal",
+                "category": "render_runtime_selection",
+                "subject": "Select render runtime",
+                "options_considered": [
+                    {
+                        "option_id": "ffmpeg",
+                        "label": "FFmpeg",
+                        "score": 0.8,
+                        "reason": "Best fit for this simple cinematic checkpoint fixture.",
+                    }
+                ],
+                "selected": "ffmpeg",
+                "reason": "Matches the locked proposal runtime.",
+                "user_visible": True,
+                "user_approved": True,
+            },
+            {
+                "decision_id": "d-product-reference",
+                "stage": "proposal",
+                "category": "product_identity_reference_selection",
+                "subject": "Select product reference strategy",
+                "options_considered": [
+                    {
+                        "option_id": "not_applicable",
+                        "label": "Not applicable",
+                        "score": 0.9,
+                        "reason": "No product-visible scenes are planned.",
+                    }
+                ],
+                "selected": "not_applicable",
+                "reason": "No product-visible scenes are planned.",
+                "user_visible": True,
+                "user_approved": True,
+            },
+            {
+                "decision_id": "d-music",
+                "stage": "proposal",
+                "category": "music_strategy_selection",
+                "subject": "Select music strategy",
+                "options_considered": [
+                    {
+                        "option_id": "generative_loose",
+                        "label": "Generative loose",
+                        "score": 0.8,
+                        "reason": "Adequate for a non-beat-locked checkpoint fixture.",
+                    }
+                ],
+                "selected": "generative_loose",
+                "reason": "Matches the locked proposal music strategy.",
+                "user_visible": True,
+                "user_approved": True,
+            },
+        ],
+    }
+    return {
+        "production_proposal": proposal,
+        "production_bible": ad_video_production_bible(),
+        "script": script,
+        "scene_plan": scene_plan,
+        "decision_log": decision_log,
+    }
+
+
+def ad_video_assets_manifest_with_narration_inventory(section_ids=("hook", "cta")) -> dict:
+    assets = [
+        {
+            "id": f"narr-{section_id}",
+            "type": "narration",
+            "path": f"assets/audio/{section_id}.mp3",
+            "source_tool": "cosyvoice_tts",
+            "scene_id": "global",
+            "model": "qwen3-tts-instruct-flash",
+        }
+        for section_id in section_ids
+    ]
+    assets.append(
+        {
+            "id": "music-1",
+            "type": "music",
+            "path": "assets/music/background.mp3",
+            "source_tool": "minimax_music",
+            "scene_id": "global",
+            "model": "music-2.6",
+        }
+    )
+    return {
+        "version": "1.0",
+        "assets": assets,
+        "narration_files": [
+            {
+                "section_id": section_id,
+                "file": f"assets/audio/{section_id}.mp3",
+                "duration_seconds": 4,
+            }
+            for section_id in section_ids
+        ],
+        "subtitle_file": "assets/subtitles.ass",
+        "music_file": "assets/music/background.mp3",
+        "costs": [
+            {"tool": "cosyvoice_tts", "cost_usd": 0.0},
+            {"tool": "minimax_music", "cost_usd": 0.0},
+        ],
+        "total_cost_usd": 0.0,
+    }
+
+
+def ad_video_assets_checkpoint_artifacts(product_identity_reference: dict) -> dict:
+    return {
+        "product_identity_reference": product_identity_reference,
+        "asset_manifest": ad_video_assets_manifest_with_narration_inventory(),
+        **ad_video_assets_checkpoint_context(),
+    }
+
+
+def ad_video_scene_plan_for_edit() -> dict:
+    return {
+        "version": "1.0",
+        "style_mode": "cinematic",
+        "total_duration_seconds": 1.2,
+        "scenes": [
+            {
+                "id": "scene-1",
+                "type": "generated",
+                "description": "Single edit checkpoint scene.",
+                "start_seconds": 0,
+                "end_seconds": 1.2,
+                "duration_seconds": 1.2,
+                "product_visibility": "none",
+                "product_reference_required": False,
+                "core": True,
+                "motion_required": True,
+            }
+        ],
+    }
+
+
+def ad_video_production_bible() -> dict:
+    truth_rule = {
+        "rule_id": "TC-1",
+        "requirement": "Product remains Acme Widget Pro.",
+        "prohibited_failure": "Renaming or visually replacing the product.",
+        "evidence_source": "brief",
+        "source_confidence": "source-backed",
+    }
+    return {
+        "version": "1.0",
+        "pipeline": "ad-video",
+        "project_id": "phase0-test",
+        "approval": {
+            "strategic_approved": True,
+            "execution_approved": True,
+            "modifications_log": [],
+        },
+        "identity": {
+            "product": "Acme Widget Pro",
+            "brand_name": "Acme",
+            "platform": "youtube",
+            "duration_target_seconds": 30,
+            "key_message": "Widget Pro saves time.",
+            "cta": "Buy now at acme.com",
+            "tone": "confident",
+        },
+        "narrative": {
+            "arc_type": "problem-solution",
+            "pacing_model": "punchy",
+            "hook_mechanic": "question",
+            "hook_window_seconds": 3,
+            "tension_peak_at_seconds": 20,
+            "resolution_type": "aspiration",
+            "emotional_beat_sequence": [
+                {
+                    "beat_id": "B1",
+                    "name": "HOOK",
+                    "duration_seconds": 10,
+                    "emotional_target": "confidence",
+                    "intensity": 0.7,
+                    "script_constraint": "Open with the product promise.",
+                    "visual_constraint": "Show the product clearly.",
+                },
+                {
+                    "beat_id": "B2",
+                    "name": "CTA",
+                    "duration_seconds": 20,
+                    "emotional_target": "action",
+                    "intensity": 0.8,
+                    "script_constraint": "Close on the call to action.",
+                    "visual_constraint": "End with brand and product visible.",
+                }
+            ],
+            "intensity_curve": [
+                {"t_seconds": 0, "value": 0.7},
+                {"t_seconds": 10, "value": 0.8},
+                {"t_seconds": 30, "value": 0.8},
+            ],
+        },
+        "intelligence": {
+            "trend_alignment": {"selected_trend_ids": [], "alignments": []},
+            "knowledge_alignment": {"selected_card_ids": [], "alignments": []},
+        },
+        "truth_contract": {
+            "objective_facts": [truth_rule],
+            "physical_constraints": [truth_rule],
+            "product_geometry_rules": [truth_rule],
+            "motion_coherence_rules": [truth_rule],
+            "values_guardrails": [truth_rule],
+        },
+        "visual": {"style_mode": "cinematic"},
+        "audio": {
+            "voice_character": {
+                "tone": "warm",
+                "pacing": "measured",
+                "persona": "product narrator",
+            },
+            "music_direction": {"mood": "aspirational"},
+            "av_sync_notes": "",
+        },
+        "brand_constraints": {"brand_name_in_final_frame": True},
+        "deliverables": {
+            "primary": {
+                "aspect_ratio": "16:9",
+                "duration_seconds": 30,
+            }
+        },
+        "compliance_manifest": {"checkpoints": []},
+    }
+
+
+def ad_video_render_report() -> dict:
+    return {
+        "version": "1.0",
+        "renderer": "ffmpeg",
+        "outputs": [
+            {
+                "path": "renders/final.mp4",
+                "format": "mp4",
+                "resolution": "1920x1080",
+                "duration_seconds": 30,
+                "variant": "16:9",
+                "audio_channels": 2,
+            }
+        ],
+        "probe_results": {
+            "16:9": {
+                "duration_check": "PASS",
+                "resolution_check": "PASS",
+                "audio_check": "PASS",
+            }
+        },
+    }
+
+
+def ad_video_final_review(status: str = "pass") -> dict:
+    return {
+        "version": "1.0",
+        "output_path": "renders/final.mp4",
+        "status": status,
+        "checks": {
+            "technical_probe": {
+                "valid_container": True,
+                "duration_seconds": 30,
+                "resolution": "1920x1080",
+                "fps": 30,
+                "has_audio": True,
+                "codec": "h264",
+                "file_size_bytes": 1200000,
+                "issues": [],
+            },
+            "visual_spotcheck": {
+                "frames_sampled": 4,
+                "frame_paths": [
+                    "assets/keyframes/final/open.png",
+                    "assets/keyframes/final/mid.png",
+                    "assets/keyframes/final/climax.png",
+                    "assets/keyframes/final/end.png",
+                ],
+                "black_frames_detected": False,
+                "broken_overlays": False,
+                "missing_assets": False,
+                "unreadable_text": False,
+                "issues": [],
+            },
+            "audio_spotcheck": {
+                "narration_present": True,
+                "music_present": True,
+                "unexpected_silence": False,
+                "clipping_detected": False,
+                "mix_intelligible": True,
+                "issues": [],
+            },
+            "promise_preservation": {
+                "delivery_promise_honored": True,
+                "renderer_family_used": "product-reveal",
+                "render_runtime_used": "ffmpeg",
+                "runtime_swap_detected": False,
+                "runtime_swap_check": "ok - runtime matched approved proposal",
+                "motion_ratio_actual": 0.85,
+                "silent_downgrade_detected": False,
+                "issues": [],
+            },
+            "subtitle_check": {
+                "subtitles_expected": True,
+                "subtitles_present": True,
+                "coverage_ratio": 1.0,
+                "timing_drift_detected": False,
+                "issues": [],
+            },
+        },
+        "issues_found": [] if status == "pass" else ["Render has visible defects."],
+        "recommended_action": "present_to_user" if status == "pass" else "revise_edit",
+    }
+
+
+def ad_video_publish_log() -> dict:
+    return {
+        "version": "1.0",
+        "entries": [
+            {
+                "platform": "youtube",
+                "status": "exported",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "export_path": "renders/final.mp4",
+            }
+        ],
+        "output_file_matrix": [
+            {
+                "file": "renders/final.mp4",
+                "variant": "16:9",
+                "duration_seconds": 30,
+                "target_platforms": ["youtube"],
+                "thumbnail_concept": "Product hero shot",
+                "metadata": {
+                    "title": "Acme Widget Launch",
+                    "description": "A direct response product spot.",
+                    "tags": ["acme", "widget", "ad"],
+                    "cta_url": "https://example.com",
+                },
+            }
+        ],
+    }
 
 
 # ---- Config ----
@@ -528,7 +961,10 @@ class TestCheckpoint:
                 "proj",
                 "assets",
                 "completed",
-                {"asset_manifest": sample_artifact("asset_manifest")},
+                {
+                    "asset_manifest": ad_video_assets_manifest_with_narration_inventory(),
+                    **ad_video_assets_checkpoint_context(),
+                },
                 pipeline_type="ad-video",
             )
 
@@ -547,14 +983,174 @@ class TestCheckpoint:
             "proj",
             "assets",
             "completed",
-            {
-                "product_identity_reference": product_identity_reference,
-                "asset_manifest": sample_artifact("asset_manifest"),
-            },
+            ad_video_assets_checkpoint_artifacts(product_identity_reference),
             pipeline_type="ad-video",
+            metadata={
+                "ep_state": {
+                    "sample_approved": True,
+                    "asset_review_approved": True,
+                    "music_review_approved": True,
+                }
+            },
         )
 
         assert path.exists()
+
+    def test_ad_video_assets_checkpoint_requires_cross_stage_validation_context(self, tmp_path):
+        product_identity_reference = {
+            "version": "1.0",
+            "reference_id": "pir-none",
+            "product_name": "Acme SaaS",
+            "source_type": "not_applicable",
+            "approval_status": "not_required",
+            "required_visual_features": [],
+            "prohibited_variations": [],
+        }
+
+        with pytest.raises(CheckpointValidationError, match="production_proposal"):
+            write_checkpoint(
+                tmp_path,
+                "proj",
+                "assets",
+                "completed",
+                {
+                    "product_identity_reference": product_identity_reference,
+                    "asset_manifest": ad_video_assets_manifest_with_narration_inventory(),
+                },
+                pipeline_type="ad-video",
+                metadata={
+                    "ep_state": {
+                        "sample_approved": True,
+                        "asset_review_approved": True,
+                        "music_review_approved": True,
+                    }
+                },
+            )
+
+    def test_ad_video_assets_checkpoint_runs_provider_consistency_with_script(self, tmp_path):
+        product_identity_reference = {
+            "version": "1.0",
+            "reference_id": "pir-none",
+            "product_name": "Acme SaaS",
+            "source_type": "not_applicable",
+            "approval_status": "not_required",
+            "required_visual_features": [],
+            "prohibited_variations": [],
+        }
+        artifacts = {
+            "product_identity_reference": product_identity_reference,
+            "asset_manifest": ad_video_assets_manifest_with_narration_inventory(
+                section_ids=("hook",)
+            ),
+            **ad_video_assets_checkpoint_context(),
+        }
+
+        with pytest.raises(CheckpointValidationError, match="provider_consistency_check"):
+            write_checkpoint(
+                tmp_path,
+                "proj",
+                "assets",
+                "completed",
+                artifacts,
+                pipeline_type="ad-video",
+                metadata={
+                    "ep_state": {
+                        "sample_approved": True,
+                        "asset_review_approved": True,
+                        "music_review_approved": True,
+                    }
+                },
+            )
+
+    def test_ad_video_assets_checkpoint_requires_approval_gate_state(self, tmp_path):
+        product_identity_reference = {
+            "version": "1.0",
+            "reference_id": "pir-none",
+            "product_name": "Acme SaaS",
+            "source_type": "not_applicable",
+            "approval_status": "not_required",
+            "required_visual_features": [],
+            "prohibited_variations": [],
+        }
+        artifacts = ad_video_assets_checkpoint_artifacts(product_identity_reference)
+
+        with pytest.raises(CheckpointValidationError, match="sample_approved"):
+            write_checkpoint(
+                tmp_path,
+                "proj",
+                "assets",
+                "completed",
+                artifacts,
+                pipeline_type="ad-video",
+            )
+
+        with pytest.raises(CheckpointValidationError, match="asset_review_approved"):
+            write_checkpoint(
+                tmp_path,
+                "proj",
+                "assets",
+                "completed",
+                artifacts,
+                pipeline_type="ad-video",
+                metadata={
+                    "ep_state": {
+                        "sample_approved": True,
+                        "asset_review_approved": False,
+                        "music_review_approved": True,
+                    }
+                },
+            )
+
+        path = write_checkpoint(
+            tmp_path,
+            "proj",
+            "assets",
+            "completed",
+            artifacts,
+            pipeline_type="ad-video",
+            metadata={
+                "ep_state": {
+                    "sample_approved": True,
+                    "asset_review_approved": True,
+                    "music_review_approved": True,
+                }
+            },
+        )
+
+        assert path.exists()
+
+    def test_ad_video_assets_checkpoint_rejects_pending_product_reference(self, tmp_path):
+        product_identity_reference = {
+            "version": "1.0",
+            "reference_id": "pir-generated",
+            "product_name": "Acme Phone",
+            "source_type": "generated",
+            "approval_status": "pending",
+            "selected_reference_image_path": "reference_assets/product.png",
+            "required_visual_features": ["round camera island"],
+            "prohibited_variations": ["generic rectangle camera bar"],
+        }
+
+        with pytest.raises(CheckpointValidationError, match="product_identity_reference"):
+            write_checkpoint(
+                tmp_path,
+                "proj",
+                "assets",
+                "completed",
+                {
+                    "product_identity_reference": product_identity_reference,
+                    "asset_manifest": ad_video_assets_manifest_with_narration_inventory(),
+                    **ad_video_assets_checkpoint_context(),
+                },
+                pipeline_type="ad-video",
+                metadata={
+                    "ep_state": {
+                        "sample_approved": True,
+                        "asset_review_approved": True,
+                        "music_review_approved": True,
+                    }
+                },
+            )
 
     def test_ad_video_script_checkpoint_requires_voice_cues(self, tmp_path):
         with pytest.raises(CheckpointValidationError, match="speaker_directions"):
@@ -615,6 +1211,9 @@ class TestCheckpoint:
             )
 
     def test_ad_video_edit_checkpoint_requires_volume_schedule(self, tmp_path):
+        proposal = _minimal_production_proposal()
+        proposal["render_runtime"] = "remotion"
+
         with pytest.raises(CheckpointValidationError, match="volume_schedule"):
             write_checkpoint(
                 tmp_path,
@@ -622,9 +1221,13 @@ class TestCheckpoint:
                 "edit",
                 "completed",
                 {
+                    "production_proposal": proposal,
+                    "scene_plan": ad_video_scene_plan_for_edit(),
+                    "asset_manifest": sample_artifact("asset_manifest"),
                     "edit_decisions": {
                         "version": "1.0",
                         "render_runtime": "remotion",
+                        "music_strategy": "generative_loose",
                         "cuts": [
                             {
                                 "id": "cut-1",
@@ -640,6 +1243,9 @@ class TestCheckpoint:
             )
 
     def test_ad_video_edit_checkpoint_requires_cut_beat_labels(self, tmp_path):
+        proposal = _minimal_production_proposal()
+        proposal["render_runtime"] = "remotion"
+
         with pytest.raises(CheckpointValidationError, match="beat"):
             write_checkpoint(
                 tmp_path,
@@ -647,9 +1253,13 @@ class TestCheckpoint:
                 "edit",
                 "completed",
                 {
+                    "production_proposal": proposal,
+                    "scene_plan": ad_video_scene_plan_for_edit(),
+                    "asset_manifest": sample_artifact("asset_manifest"),
                     "edit_decisions": {
                         "version": "1.0",
                         "render_runtime": "remotion",
+                        "music_strategy": "generative_loose",
                         "cuts": [
                             {
                                 "id": "cut-1",
@@ -674,12 +1284,19 @@ class TestCheckpoint:
             )
 
     def test_ad_video_edit_checkpoint_allows_no_music_strategy_none(self, tmp_path):
+        proposal = _minimal_production_proposal()
+        proposal["music_strategy"] = "none"
+        proposal["render_runtime"] = "remotion"
+
         path = write_checkpoint(
             tmp_path,
             "proj",
             "edit",
             "completed",
             {
+                "production_proposal": proposal,
+                "scene_plan": ad_video_scene_plan_for_edit(),
+                "asset_manifest": ad_video_asset_manifest_with_narration(),
                 "edit_decisions": {
                     "version": "1.0",
                     "render_runtime": "remotion",
@@ -710,6 +1327,487 @@ class TestCheckpoint:
         )
 
         assert path.exists()
+
+    def test_ad_video_edit_checkpoint_requires_production_proposal(self, tmp_path):
+        with pytest.raises(CheckpointValidationError, match="production_proposal"):
+            write_checkpoint(
+                tmp_path,
+                "proj",
+                "edit",
+                "completed",
+                {
+                    "scene_plan": ad_video_scene_plan_for_edit(),
+                    "asset_manifest": sample_artifact("asset_manifest"),
+                    "edit_decisions": {
+                        "version": "1.0",
+                        "render_runtime": "ffmpeg",
+                        "music_strategy": "none",
+                        "cuts": [
+                            {
+                                "id": "cut-1",
+                                "source": "asset-1",
+                                "in_seconds": 0,
+                                "out_seconds": 1.2,
+                                "maps_to_beat": "B3",
+                            }
+                        ],
+                    }
+                },
+                pipeline_type="ad-video",
+            )
+
+    def test_ad_video_edit_checkpoint_requires_asset_manifest(self, tmp_path):
+        proposal = _minimal_production_proposal()
+        proposal["music_strategy"] = "none"
+
+        with pytest.raises(CheckpointValidationError, match="asset_manifest"):
+            write_checkpoint(
+                tmp_path,
+                "proj",
+                "edit",
+                "completed",
+                {
+                    "production_proposal": proposal,
+                    "scene_plan": ad_video_scene_plan_for_edit(),
+                    "edit_decisions": {
+                        "version": "1.0",
+                        "render_runtime": "ffmpeg",
+                        "music_strategy": "none",
+                        "cuts": [
+                            {
+                                "id": "cut-1",
+                                "source": "asset-1",
+                                "in_seconds": 0,
+                                "out_seconds": 1.2,
+                                "maps_to_beat": "B3",
+                            }
+                        ],
+                    },
+                },
+                pipeline_type="ad-video",
+            )
+
+    def test_ad_video_edit_checkpoint_requires_scene_plan(self, tmp_path):
+        proposal = _minimal_production_proposal()
+        proposal["music_strategy"] = "none"
+
+        with pytest.raises(CheckpointValidationError, match="scene_plan"):
+            write_checkpoint(
+                tmp_path,
+                "proj",
+                "edit",
+                "completed",
+                {
+                    "production_proposal": proposal,
+                    "asset_manifest": sample_artifact("asset_manifest"),
+                    "edit_decisions": {
+                        "version": "1.0",
+                        "render_runtime": "ffmpeg",
+                        "music_strategy": "none",
+                        "cuts": [
+                            {
+                                "id": "cut-1",
+                                "source": "asset-1",
+                                "in_seconds": 0,
+                                "out_seconds": 1.2,
+                                "maps_to_beat": "B3",
+                            }
+                        ],
+                    },
+                },
+                pipeline_type="ad-video",
+            )
+
+    def test_ad_video_edit_checkpoint_rejects_timeline_gap(self, tmp_path):
+        proposal = _minimal_production_proposal()
+        proposal["music_strategy"] = "none"
+        scene_plan = ad_video_scene_plan_for_edit()
+        scene_plan["total_duration_seconds"] = 2.0
+        scene_plan["scenes"][0]["end_seconds"] = 2.0
+        scene_plan["scenes"][0]["duration_seconds"] = 2.0
+
+        with pytest.raises(CheckpointValidationError, match="timeline gap"):
+            write_checkpoint(
+                tmp_path,
+                "proj",
+                "edit",
+                "completed",
+                {
+                    "production_proposal": proposal,
+                    "scene_plan": scene_plan,
+                    "asset_manifest": sample_artifact("asset_manifest"),
+                    "edit_decisions": {
+                        "version": "1.0",
+                        "render_runtime": "ffmpeg",
+                        "music_strategy": "none",
+                        "cuts": [
+                            {
+                                "id": "cut-1",
+                                "source": "asset-1",
+                                "in_seconds": 0,
+                                "out_seconds": 0.8,
+                                "maps_to_beat": "B1",
+                            },
+                            {
+                                "id": "cut-2",
+                                "source": "remotion:stat_card",
+                                "in_seconds": 1.0,
+                                "out_seconds": 2.0,
+                                "maps_to_beat": "B2",
+                            },
+                        ],
+                    },
+                },
+                pipeline_type="ad-video",
+            )
+
+    def test_ad_video_edit_checkpoint_rejects_unresolved_cut_source(self, tmp_path):
+        proposal = _minimal_production_proposal()
+        proposal["music_strategy"] = "none"
+
+        with pytest.raises(CheckpointValidationError, match="cut source"):
+            write_checkpoint(
+                tmp_path,
+                "proj",
+                "edit",
+                "completed",
+                {
+                    "production_proposal": proposal,
+                    "scene_plan": ad_video_scene_plan_for_edit(),
+                    "asset_manifest": sample_artifact("asset_manifest"),
+                    "edit_decisions": {
+                        "version": "1.0",
+                        "render_runtime": "ffmpeg",
+                        "music_strategy": "none",
+                        "cuts": [
+                            {
+                                "id": "cut-1",
+                                "source": "missing-asset",
+                                "in_seconds": 0,
+                                "out_seconds": 1.2,
+                                "maps_to_beat": "B3",
+                            }
+                        ],
+                    },
+                },
+                pipeline_type="ad-video",
+            )
+
+    def test_ad_video_edit_checkpoint_rejects_missing_music_asset_id(self, tmp_path):
+        proposal = _minimal_production_proposal()
+
+        with pytest.raises(CheckpointValidationError, match="audio.music.asset_id"):
+            write_checkpoint(
+                tmp_path,
+                "proj",
+                "edit",
+                "completed",
+                {
+                    "production_proposal": proposal,
+                    "scene_plan": ad_video_scene_plan_for_edit(),
+                    "asset_manifest": sample_artifact("asset_manifest"),
+                    "edit_decisions": {
+                        "version": "1.0",
+                        "render_runtime": "ffmpeg",
+                        "music_strategy": "generative_loose",
+                        "cuts": [
+                            {
+                                "id": "cut-1",
+                                "source": "asset-1",
+                                "in_seconds": 0,
+                                "out_seconds": 1.2,
+                                "maps_to_beat": "B3",
+                            }
+                        ],
+                        "audio": {
+                            "music": {
+                                "volume_schedule": [
+                                    {"t_seconds": 0.0, "gain_db": 0.0},
+                                    {"t_seconds": 0.3, "gain_db": -11.2},
+                                    {"t_seconds": 1.2, "gain_db": -11.2},
+                                    {"t_seconds": 1.5, "gain_db": 0.0},
+                                ],
+                            }
+                        },
+                    },
+                },
+                pipeline_type="ad-video",
+            )
+
+    def test_ad_video_edit_checkpoint_rejects_unresolved_subtitle_source(self, tmp_path):
+        proposal = _minimal_production_proposal()
+        proposal["music_strategy"] = "none"
+
+        with pytest.raises(CheckpointValidationError, match="subtitles.source"):
+            write_checkpoint(
+                tmp_path,
+                "proj",
+                "edit",
+                "completed",
+                {
+                    "production_proposal": proposal,
+                    "scene_plan": ad_video_scene_plan_for_edit(),
+                    "asset_manifest": sample_artifact("asset_manifest"),
+                    "edit_decisions": {
+                        "version": "1.0",
+                        "render_runtime": "ffmpeg",
+                        "music_strategy": "none",
+                        "cuts": [
+                            {
+                                "id": "cut-1",
+                                "source": "asset-1",
+                                "in_seconds": 0,
+                                "out_seconds": 1.2,
+                                "maps_to_beat": "B3",
+                            }
+                        ],
+                        "subtitles": {
+                            "enabled": True,
+                            "source": "missing-subtitle",
+                        },
+                    },
+                },
+                pipeline_type="ad-video",
+            )
+
+    def test_ad_video_edit_checkpoint_rejects_runtime_mismatch_to_proposal(self, tmp_path):
+        proposal = _minimal_production_proposal()
+        proposal["music_strategy"] = "none"
+
+        with pytest.raises(CheckpointValidationError, match="render_runtime"):
+            write_checkpoint(
+                tmp_path,
+                "proj",
+                "edit",
+                "completed",
+                {
+                    "production_proposal": proposal,
+                    "scene_plan": ad_video_scene_plan_for_edit(),
+                    "asset_manifest": sample_artifact("asset_manifest"),
+                    "edit_decisions": {
+                        "version": "1.0",
+                        "render_runtime": "remotion",
+                        "music_strategy": "none",
+                        "cuts": [
+                            {
+                                "id": "cut-1",
+                                "source": "asset-1",
+                                "in_seconds": 0,
+                                "out_seconds": 1.2,
+                                "maps_to_beat": "B3",
+                            }
+                        ],
+                    },
+                },
+                pipeline_type="ad-video",
+            )
+
+    def test_ad_video_edit_checkpoint_requires_derivative_specs_for_variants(self, tmp_path):
+        proposal = _minimal_production_proposal()
+        proposal["music_strategy"] = "none"
+        proposal["derivatives_added"] = ["9:16"]
+
+        with pytest.raises(CheckpointValidationError, match="derivative_specs"):
+            write_checkpoint(
+                tmp_path,
+                "proj",
+                "edit",
+                "completed",
+                {
+                    "production_proposal": proposal,
+                    "scene_plan": ad_video_scene_plan_for_edit(),
+                    "asset_manifest": sample_artifact("asset_manifest"),
+                    "edit_decisions": {
+                        "version": "1.0",
+                        "render_runtime": "ffmpeg",
+                        "music_strategy": "none",
+                        "cuts": [
+                            {
+                                "id": "cut-1",
+                                "source": "asset-1",
+                                "in_seconds": 0,
+                                "out_seconds": 1.2,
+                                "maps_to_beat": "B3",
+                            }
+                        ],
+                    },
+                },
+                pipeline_type="ad-video",
+            )
+
+    def test_ad_video_compose_checkpoint_requires_final_review(self, tmp_path):
+        with pytest.raises(CheckpointValidationError, match="final_review"):
+            write_checkpoint(
+                tmp_path,
+                "proj",
+                "compose",
+                "completed",
+                {"render_report": ad_video_render_report()},
+                pipeline_type="ad-video",
+            )
+
+    def test_ad_video_compose_checkpoint_rejects_non_passing_final_review(self, tmp_path):
+        with pytest.raises(CheckpointValidationError, match="final_review.status"):
+            write_checkpoint(
+                tmp_path,
+                "proj",
+                "compose",
+                "completed",
+                {
+                    "production_proposal": _minimal_production_proposal(),
+                    "production_bible": ad_video_production_bible(),
+                    "render_report": ad_video_render_report(),
+                    "final_review": ad_video_final_review(status="revise"),
+                },
+                pipeline_type="ad-video",
+            )
+
+    def test_ad_video_compose_checkpoint_accepts_passing_final_review(self, tmp_path):
+        path = write_checkpoint(
+            tmp_path,
+            "proj",
+            "compose",
+            "completed",
+            {
+                "production_proposal": _minimal_production_proposal(),
+                "production_bible": ad_video_production_bible(),
+                "render_report": ad_video_render_report(),
+                "final_review": ad_video_final_review(),
+            },
+            pipeline_type="ad-video",
+        )
+
+        assert path.exists()
+
+    def test_ad_video_compose_checkpoint_rejects_final_review_not_matching_render_report(
+        self, tmp_path
+    ):
+        final_review = ad_video_final_review()
+        final_review["output_path"] = "renders/not-rendered.mp4"
+
+        with pytest.raises(CheckpointValidationError, match="output_path"):
+            write_checkpoint(
+                tmp_path,
+                "proj",
+                "compose",
+                "completed",
+                {
+                    "render_report": ad_video_render_report(),
+                    "final_review": final_review,
+                    "production_proposal": _minimal_production_proposal(),
+                    "production_bible": ad_video_production_bible(),
+                },
+                pipeline_type="ad-video",
+            )
+
+    def test_ad_video_compose_checkpoint_rejects_missing_derivative_render(
+        self, tmp_path
+    ):
+        proposal = _minimal_production_proposal()
+        proposal["derivatives_added"] = ["9:16"]
+
+        with pytest.raises(CheckpointValidationError, match="derivatives_added"):
+            write_checkpoint(
+                tmp_path,
+                "proj",
+                "compose",
+                "completed",
+                {
+                    "production_proposal": proposal,
+                    "production_bible": ad_video_production_bible(),
+                    "render_report": ad_video_render_report(),
+                    "final_review": ad_video_final_review(),
+                },
+                pipeline_type="ad-video",
+            )
+
+    def test_ad_video_publish_checkpoint_requires_final_review(self, tmp_path):
+        with pytest.raises(CheckpointValidationError, match="final_review"):
+            write_checkpoint(
+                tmp_path,
+                "proj",
+                "publish",
+                "completed",
+                {"publish_log": ad_video_publish_log()},
+                pipeline_type="ad-video",
+            )
+
+    def test_ad_video_publish_checkpoint_rejects_non_passing_final_review(self, tmp_path):
+        with pytest.raises(CheckpointValidationError, match="final_review.status"):
+            write_checkpoint(
+                tmp_path,
+                "proj",
+                "publish",
+                "completed",
+                {
+                    "production_proposal": _minimal_production_proposal(),
+                    "production_bible": ad_video_production_bible(),
+                    "publish_log": ad_video_publish_log(),
+                    "render_report": ad_video_render_report(),
+                    "final_review": ad_video_final_review(status="fail"),
+                },
+                pipeline_type="ad-video",
+            )
+
+    def test_ad_video_publish_checkpoint_requires_render_report(self, tmp_path):
+        with pytest.raises(CheckpointValidationError, match="render_report"):
+            write_checkpoint(
+                tmp_path,
+                "proj",
+                "publish",
+                "completed",
+                {
+                    "production_proposal": _minimal_production_proposal(),
+                    "production_bible": ad_video_production_bible(),
+                    "publish_log": ad_video_publish_log(),
+                    "final_review": ad_video_final_review(),
+                },
+                pipeline_type="ad-video",
+            )
+
+    def test_ad_video_publish_checkpoint_rejects_publish_log_not_matching_render_report(
+        self, tmp_path
+    ):
+        publish_log = ad_video_publish_log()
+        publish_log["entries"][0]["export_path"] = "renders/other.mp4"
+
+        with pytest.raises(CheckpointValidationError, match="export_path"):
+            write_checkpoint(
+                tmp_path,
+                "proj",
+                "publish",
+                "completed",
+                {
+                    "publish_log": publish_log,
+                    "render_report": ad_video_render_report(),
+                    "final_review": ad_video_final_review(),
+                    "production_proposal": _minimal_production_proposal(),
+                    "production_bible": ad_video_production_bible(),
+                },
+                pipeline_type="ad-video",
+            )
+
+    def test_ad_video_publish_checkpoint_rejects_missing_derivative_render(
+        self, tmp_path
+    ):
+        proposal = _minimal_production_proposal()
+        proposal["derivatives_added"] = ["9:16"]
+
+        with pytest.raises(CheckpointValidationError, match="derivatives_added"):
+            write_checkpoint(
+                tmp_path,
+                "proj",
+                "publish",
+                "completed",
+                {
+                    "publish_log": ad_video_publish_log(),
+                    "render_report": ad_video_render_report(),
+                    "final_review": ad_video_final_review(),
+                    "production_proposal": proposal,
+                    "production_bible": ad_video_production_bible(),
+                },
+                pipeline_type="ad-video",
+            )
 
     def test_invalid_canonical_artifact_rejected(self, tmp_path):
         with pytest.raises(CheckpointValidationError):

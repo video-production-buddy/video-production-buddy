@@ -2,7 +2,10 @@
 
 ## When to Use
 
-You are the Scene Director (base). You receive the `script` artifact and map each script section to one or more visual scenes. You then delegate to the appropriate mode supplement for scene-type-specific guidance.
+You are the Scene Director (base). You receive `script`, `production_proposal`,
+`production_bible`, and `idea_options`, then map each script section to one or
+more visual scenes. You then delegate to the appropriate mode supplement for
+scene-type-specific guidance.
 
 **Always read the mode supplement before producing the scene_plan:**
 - `EP_STATE.style_mode == "animated"` → read `scene-director-animated.md`

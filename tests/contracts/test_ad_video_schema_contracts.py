@@ -18,6 +18,158 @@ from tests.contracts.conftest import (
 )
 
 
+def _valid_ad_video_scene_plan() -> dict:
+    return {
+        "version": "1.0",
+        "style_mode": "cinematic",
+        "total_duration_seconds": 10,
+        "scenes": [
+            {
+                "id": "scene-1",
+                "type": "generated",
+                "description": "First product moment.",
+                "start_seconds": 0,
+                "end_seconds": 4,
+                "duration_seconds": 4,
+                "core": True,
+                "motion_required": True,
+                "product_visibility": "hero",
+                "product_reference_required": True,
+            },
+            {
+                "id": "scene-2",
+                "type": "generated",
+                "description": "Second product moment.",
+                "start_seconds": 4,
+                "end_seconds": 10,
+                "duration_seconds": 6,
+                "core": True,
+                "motion_required": True,
+                "product_visibility": "none",
+                "product_reference_required": False,
+            },
+        ],
+    }
+
+
+def _valid_ad_video_asset_manifest() -> dict:
+    return {
+        "version": "1.0",
+        "assets": [
+            {
+                "id": "asset-1",
+                "type": "video",
+                "path": "assets/video/scene-1.mp4",
+                "source_tool": "wan_video_api",
+                "scene_id": "scene-1",
+            },
+            {
+                "id": "asset-2",
+                "type": "audio",
+                "path": "assets/audio/narration.mp3",
+                "source_tool": "tts_selector",
+                "scene_id": "scene-1",
+            },
+        ],
+        "costs": [
+            {"tool": "wan_video_api", "cost_usd": 0.18},
+            {"tool": "tts_selector", "cost_usd": 0.02},
+        ],
+        "total_cost_usd": 0.20,
+    }
+
+
+def _library_locked_music_alignment() -> dict:
+    return {
+        "strategy": "library_locked",
+        "target_peak_seconds": 18.0,
+        "selected_peak_seconds": 30.0,
+        "aligned_peak_seconds": 18.2,
+        "drift_seconds": 0.2,
+        "timing_sidecar_path": "music_library/background.timing.json",
+        "evidence": "Validated timing sidecar and trimmed the track to target.",
+    }
+
+
+def _search_align_music_alignment() -> dict:
+    return {
+        "strategy": "search_align",
+        "target_peak_seconds": 18.0,
+        "selected_peak_seconds": 26.4,
+        "aligned_peak_seconds": 17.9,
+        "drift_seconds": -0.1,
+        "beat_detection_report": {
+            "source": "lib.beat_detector",
+            "drop_seconds": [26.4],
+        },
+        "evidence": "Detected stock track drop and trimmed it to target.",
+    }
+
+
+def _valid_ad_video_edit_decisions() -> dict:
+    return {
+        "version": "1.0",
+        "render_runtime": "remotion",
+        "music_strategy": "none",
+        "total_duration_seconds": 10,
+        "cuts": [
+            {
+                "id": "cut-1",
+                "source": "asset-1",
+                "in_seconds": 0,
+                "out_seconds": 4,
+                "maps_to_beat": "hook",
+            },
+            {
+                "id": "cut-2",
+                "source": "asset-2",
+                "in_seconds": 4,
+                "out_seconds": 10,
+                "maps_to_beat": "cta",
+            },
+        ],
+    }
+
+
+def _valid_ad_video_script() -> dict:
+    voice_performance = {
+        "emotion": "calm urgency",
+        "intonation": "clear lift then resolve",
+        "rhythm": "short phrases with a breath",
+        "pace": "measured",
+        "pause_after_seconds": 0.2,
+    }
+    return {
+        "version": "1.0",
+        "title": "Proof Script",
+        "style_mode": "cinematic",
+        "total_duration_seconds": 10,
+        "user_approved": True,
+        "sections": [
+            {
+                "id": "hook",
+                "text": "The first proof lands fast.",
+                "start_seconds": 0,
+                "end_seconds": 4,
+                "duration_estimate_seconds": 4,
+                "speaker_directions": "Measured opening with clean emphasis.",
+                "voice_performance": dict(voice_performance),
+                "tts_directive": {"speed_mult": 0.96},
+            },
+            {
+                "id": "cta_brand",
+                "text": "Choose Flowcut today. Flowcut.",
+                "start_seconds": 4,
+                "end_seconds": 10,
+                "duration_estimate_seconds": 6,
+                "speaker_directions": "Confident low-pressure close.",
+                "voice_performance": dict(voice_performance),
+                "tts_directive": {"speed_mult": 0.96},
+            },
+        ],
+    }
+
+
 def test_production_proposal_audio_contract_locks_voice_performance_controls() -> None:
     """Proposal must lock the expressive voice controls before TTS generation."""
     proposal = _minimal_production_proposal()
@@ -41,6 +193,128 @@ def test_production_proposal_audio_contract_locks_voice_performance_controls() -
     del bad["audio_contract"]["voice_performance"]["rhythm"]
     with pytest.raises(Exception):
         validate_artifact("production_proposal", bad)
+
+
+def test_ad_video_proposal_requires_user_confirmed_budget_and_subtitles() -> None:
+    proposal = _minimal_production_proposal()
+    validate_artifact("production_proposal", proposal, pipeline_type="ad-video")
+
+    budget_not_confirmed = deepcopy(proposal)
+    budget_not_confirmed["budget_confirmed"] = False
+    with pytest.raises(Exception, match="budget_confirmed"):
+        validate_artifact(
+            "production_proposal", budget_not_confirmed, pipeline_type="ad-video"
+        )
+
+    subtitles_not_confirmed = deepcopy(proposal)
+    subtitles_not_confirmed["subtitles"]["user_confirmed"] = False
+    with pytest.raises(Exception, match="subtitles.user_confirmed"):
+        validate_artifact(
+            "production_proposal", subtitles_not_confirmed, pipeline_type="ad-video"
+        )
+
+    missing_subtitle_confirmation = deepcopy(proposal)
+    del missing_subtitle_confirmation["subtitles"]["user_confirmed"]
+    with pytest.raises(Exception, match="subtitles.user_confirmed"):
+        validate_artifact(
+            "production_proposal",
+            missing_subtitle_confirmation,
+            pipeline_type="ad-video",
+        )
+
+
+def test_ad_video_proposal_requires_locked_music_strategy() -> None:
+    proposal = _minimal_production_proposal()
+    del proposal["music_strategy"]
+
+    with pytest.raises(Exception, match="music_strategy"):
+        validate_artifact("production_proposal", proposal, pipeline_type="ad-video")
+
+
+def test_ad_video_proposal_requires_visual_asset_provider_locks() -> None:
+    proposal = _minimal_production_proposal()
+    del proposal["visual_contract"]["visual_asset_provider_locks"]
+
+    with pytest.raises(Exception, match="visual_asset_provider_locks"):
+        validate_artifact("production_proposal", proposal, pipeline_type="ad-video")
+
+
+def test_ad_video_asset_manifest_accepts_strict_music_alignment_evidence() -> None:
+    manifest = _valid_ad_video_asset_manifest()
+    manifest["assets"].append(
+        {
+            "id": "music-1",
+            "type": "music",
+            "path": "assets/music/background.mp3",
+            "source_tool": "music_library",
+            "scene_id": "global",
+            "music_alignment": _library_locked_music_alignment(),
+        }
+    )
+    manifest["costs"].append({"tool": "music_library", "cost_usd": 0.0})
+
+    validate_artifact("asset_manifest", manifest, pipeline_type="ad-video")
+
+    search_manifest = deepcopy(manifest)
+    search_manifest["assets"][-1]["source_tool"] = "pixabay_music"
+    search_manifest["assets"][-1]["music_alignment"] = _search_align_music_alignment()
+    search_manifest["costs"][-1]["tool"] = "pixabay_music"
+    validate_artifact("asset_manifest", search_manifest, pipeline_type="ad-video")
+
+
+def test_ad_video_asset_manifest_rejects_malformed_music_alignment() -> None:
+    manifest = _valid_ad_video_asset_manifest()
+    manifest["assets"].append(
+        {
+            "id": "music-1",
+            "type": "music",
+            "path": "assets/music/background.mp3",
+            "source_tool": "music_library",
+            "scene_id": "global",
+            "music_alignment": _library_locked_music_alignment(),
+        }
+    )
+    manifest["costs"].append({"tool": "music_library", "cost_usd": 0.0})
+
+    missing_sidecar = deepcopy(manifest)
+    del missing_sidecar["assets"][-1]["music_alignment"]["timing_sidecar_path"]
+    with pytest.raises(Exception, match="timing_sidecar_path"):
+        validate_artifact("asset_manifest", missing_sidecar, pipeline_type="ad-video")
+
+    missing_report = deepcopy(manifest)
+    missing_report["assets"][-1]["source_tool"] = "pixabay_music"
+    missing_report["assets"][-1]["music_alignment"] = _search_align_music_alignment()
+    missing_report["assets"][-1]["music_alignment"].pop("beat_detection_report")
+    missing_report["costs"][-1]["tool"] = "pixabay_music"
+    with pytest.raises(Exception):
+        validate_artifact("asset_manifest", missing_report, pipeline_type="ad-video")
+
+
+def test_production_proposal_rejects_duplicate_derivative_variants() -> None:
+    proposal = _minimal_production_proposal()
+    proposal["derivatives_added"] = ["9:16", "9:16"]
+
+    with pytest.raises(Exception, match="derivatives_added"):
+        validate_artifact("production_proposal", proposal, pipeline_type="ad-video")
+
+
+def test_production_proposal_rejects_unknown_derivative_variants() -> None:
+    proposal = _minimal_production_proposal()
+    proposal["derivatives_added"] = ["portrait_crop"]
+
+    with pytest.raises(Exception, match="derivatives_added"):
+        validate_artifact("production_proposal", proposal, pipeline_type="ad-video")
+
+
+def test_production_proposal_rejects_duplicate_dubbing_languages() -> None:
+    proposal = _minimal_production_proposal()
+    proposal["dubbing"] = [
+        {"language": "es-ES", "voice_id": "narrator-es-a"},
+        {"language": "es-ES", "voice_id": "narrator-es-b"},
+    ]
+
+    with pytest.raises(Exception, match="dubbing"):
+        validate_artifact("production_proposal", proposal, pipeline_type="ad-video")
 
 
 def test_production_proposal_rejects_non_instruct_qwen_voice_model() -> None:
@@ -79,6 +353,67 @@ def test_production_proposal_rejects_known_qwen_voice_gender_mismatch() -> None:
     female_voice["audio_contract"]["voice_id"] = "Cherry"
     female_voice["audio_contract"]["voice_gender"] = "female"
     validate_artifact("production_proposal", female_voice)
+
+
+def test_idea_options_requires_exactly_one_matching_selected_concept() -> None:
+    idea_options = {
+        "version": "1.0",
+        "concepts": [
+            {
+                "id": "C1",
+                "name": "Quiet Proof",
+                "scenario": "A compact product proof story.",
+                "selected": False,
+            },
+            {
+                "id": "C2",
+                "name": "Tactile Reveal",
+                "scenario": "A tactile reveal with the product in use.",
+                "selected": True,
+            },
+        ],
+        "selected_concept_id": "C2",
+    }
+    validate_artifact("idea_options", idea_options)
+
+    no_selected = deepcopy(idea_options)
+    no_selected["concepts"][1]["selected"] = False
+    with pytest.raises(Exception, match="selected"):
+        validate_artifact("idea_options", no_selected)
+
+    two_selected = deepcopy(idea_options)
+    two_selected["concepts"][0]["selected"] = True
+    with pytest.raises(Exception, match="exactly one"):
+        validate_artifact("idea_options", two_selected)
+
+    mismatched_id = deepcopy(idea_options)
+    mismatched_id["selected_concept_id"] = "C1"
+    with pytest.raises(Exception, match="selected_concept_id"):
+        validate_artifact("idea_options", mismatched_id)
+
+
+def test_idea_options_rejects_duplicate_concept_ids() -> None:
+    idea_options = {
+        "version": "1.0",
+        "concepts": [
+            {
+                "id": "C1",
+                "name": "Quiet Proof",
+                "scenario": "A compact product proof story.",
+                "selected": True,
+            },
+            {
+                "id": "C1",
+                "name": "Tactile Reveal",
+                "scenario": "A tactile reveal with the product in use.",
+                "selected": False,
+            },
+        ],
+        "selected_concept_id": "C1",
+    }
+
+    with pytest.raises(Exception, match="duplicate concept id"):
+        validate_artifact("idea_options", idea_options)
 
 
 def test_script_schema_accepts_structured_voice_performance_per_section() -> None:
@@ -125,7 +460,7 @@ def test_ad_video_script_validation_requires_section_voice_cues() -> None:
                 "id": "hook",
                 "text": "Night changes when the lens starts listening.",
                 "start_seconds": 0,
-                "end_seconds": 3,
+                "end_seconds": 6,
             }
         ],
     }
@@ -156,7 +491,66 @@ def test_ad_video_script_validation_requires_section_voice_cues() -> None:
         validate_artifact("script", script, pipeline_type="ad-video")
 
     script["sections"][0]["tts_directive"] = {"speed_mult": 0.94}
+    with pytest.raises(Exception, match="user_approved"):
+        validate_artifact("script", script, pipeline_type="ad-video")
+
+    script["user_approved"] = True
     validate_artifact("script", script, pipeline_type="ad-video")
+
+
+def test_ad_video_script_rejects_duplicate_section_ids() -> None:
+    """Section IDs must be unique because scene_plan maps back to script sections."""
+    script = _valid_ad_video_script()
+    script["sections"][1]["id"] = "hook"
+
+    with pytest.raises(Exception, match="duplicate section id"):
+        validate_artifact("script", script, pipeline_type="ad-video")
+
+
+def test_ad_video_script_rejects_non_positive_section_duration() -> None:
+    """Script sections must have positive time windows before TTS generation."""
+    script = _valid_ad_video_script()
+    script["sections"][0]["end_seconds"] = 0
+
+    with pytest.raises(Exception, match="end_seconds.*greater than start_seconds"):
+        validate_artifact("script", script, pipeline_type="ad-video")
+
+
+def test_ad_video_script_rejects_overlapping_sections() -> None:
+    """Script timing must be ordered and non-overlapping."""
+    script = _valid_ad_video_script()
+    script["sections"][1]["start_seconds"] = 3.5
+
+    with pytest.raises(Exception, match="overlaps previous section"):
+        validate_artifact("script", script, pipeline_type="ad-video")
+
+
+def test_ad_video_script_rejects_timeline_gaps() -> None:
+    """Script sections should cover the narration timeline without blank gaps."""
+    script = _valid_ad_video_script()
+    script["sections"][1]["start_seconds"] = 5
+    script["sections"][1]["duration_estimate_seconds"] = 5
+
+    with pytest.raises(Exception, match="gap before section"):
+        validate_artifact("script", script, pipeline_type="ad-video")
+
+
+def test_ad_video_script_rejects_duration_estimate_drift() -> None:
+    """duration_estimate_seconds must agree with start/end when present."""
+    script = _valid_ad_video_script()
+    script["sections"][0]["duration_estimate_seconds"] = 9
+
+    with pytest.raises(Exception, match="duration_estimate_seconds"):
+        validate_artifact("script", script, pipeline_type="ad-video")
+
+
+def test_ad_video_script_rejects_total_duration_mismatch() -> None:
+    """Script total duration must match the final section end."""
+    script = _valid_ad_video_script()
+    script["total_duration_seconds"] = 8
+
+    with pytest.raises(Exception, match="total_duration_seconds"):
+        validate_artifact("script", script, pipeline_type="ad-video")
 
 
 def test_explicit_non_ad_pipeline_context_does_not_apply_ad_video_script_heuristics() -> None:
@@ -208,6 +602,35 @@ def test_scene_plan_schema_accepts_animated_scene_contract_fields() -> None:
     }
 
     validate_artifact("scene_plan", scene_plan)
+
+
+def test_ad_video_animated_scene_plan_requires_scene_type() -> None:
+    scene_plan = {
+        "version": "1.0",
+        "style_mode": "animated",
+        "total_duration_seconds": 5,
+        "scenes": [
+            {
+                "id": "scene-1",
+                "type": "animation",
+                "description": "Animated brand-card CTA.",
+                "start_seconds": 0,
+                "end_seconds": 5,
+                "core": True,
+                "motion_required": True,
+                "product_visibility": "none",
+                "product_reference_required": False,
+                "fulfills_kvm": [],
+                "motion_specs": ["letter_spring"],
+            }
+        ],
+    }
+
+    with pytest.raises(Exception, match="scene_type"):
+        validate_artifact("scene_plan", scene_plan, pipeline_type="ad-video")
+
+    scene_plan["scenes"][0]["scene_type"] = "brand_card"
+    validate_artifact("scene_plan", scene_plan, pipeline_type="ad-video")
 
 
 def test_production_proposal_schema_requires_product_reference_strategy() -> None:
@@ -344,6 +767,103 @@ def test_asset_manifest_schema_accepts_product_identity_conditioning_metadata() 
         validate_artifact("asset_manifest", bad)
 
 
+def test_ad_video_asset_manifest_requires_ass_subtitle_paths() -> None:
+    manifest = {
+        "version": "1.0",
+        "subtitle_file": "assets/subtitles.srt",
+        "assets": [
+            {
+                "id": "subtitle-1",
+                "type": "subtitle",
+                "path": "assets/subtitles.srt",
+                "source_tool": "subtitle_gen",
+                "scene_id": "global",
+            }
+        ],
+        "costs": [{"tool": "subtitle_gen", "cost_usd": 0.0}],
+        "total_cost_usd": 0.0,
+    }
+
+    with pytest.raises(Exception, match="ASS"):
+        validate_artifact("asset_manifest", manifest, pipeline_type="ad-video")
+
+    manifest["subtitle_file"] = "assets/subtitles.ass"
+    manifest["assets"][0]["path"] = "assets/subtitles.ass"
+    validate_artifact("asset_manifest", manifest, pipeline_type="ad-video")
+
+
+def test_ad_video_asset_manifest_rejects_duplicate_asset_ids() -> None:
+    """Asset IDs must be unique because edit and review artifacts reference them."""
+    manifest = _valid_ad_video_asset_manifest()
+    manifest["assets"][1]["id"] = "asset-1"
+
+    with pytest.raises(Exception, match="duplicate asset id"):
+        validate_artifact("asset_manifest", manifest, pipeline_type="ad-video")
+
+
+def test_ad_video_asset_manifest_requires_cost_log_for_assets() -> None:
+    """Ad-video assets must carry an auditable per-tool cost log."""
+    manifest = _valid_ad_video_asset_manifest()
+    del manifest["costs"]
+
+    with pytest.raises(Exception, match="costs"):
+        validate_artifact("asset_manifest", manifest, pipeline_type="ad-video")
+
+
+def test_ad_video_asset_manifest_rejects_total_cost_mismatch() -> None:
+    """The manifest total must match the per-tool cost log."""
+    manifest = _valid_ad_video_asset_manifest()
+    manifest["total_cost_usd"] = 0.01
+
+    with pytest.raises(Exception, match="total_cost_usd"):
+        validate_artifact("asset_manifest", manifest, pipeline_type="ad-video")
+
+
+def test_ad_video_asset_manifest_requires_cost_entry_for_each_source_tool() -> None:
+    """Every generated or sourced asset tool must be represented in costs[]."""
+    manifest = _valid_ad_video_asset_manifest()
+    manifest["costs"] = [{"tool": "tts_selector", "cost_usd": 0.02}]
+    manifest["total_cost_usd"] = 0.02
+
+    with pytest.raises(Exception, match="wan_video_api"):
+        validate_artifact("asset_manifest", manifest, pipeline_type="ad-video")
+
+
+def test_ad_video_edit_decisions_reject_duplicate_cut_ids() -> None:
+    """Cut IDs must be unique for deterministic review and render diagnostics."""
+    edit_decisions = _valid_ad_video_edit_decisions()
+    edit_decisions["cuts"][1]["id"] = "cut-1"
+
+    with pytest.raises(Exception, match="duplicate cut id"):
+        validate_artifact("edit_decisions", edit_decisions, pipeline_type="ad-video")
+
+
+def test_ad_video_edit_decisions_require_locked_music_strategy() -> None:
+    edit_decisions = _valid_ad_video_edit_decisions()
+    del edit_decisions["music_strategy"]
+
+    with pytest.raises(Exception, match="music_strategy"):
+        validate_artifact("edit_decisions", edit_decisions, pipeline_type="ad-video")
+
+
+def test_ad_video_edit_decisions_reject_non_positive_cut_duration() -> None:
+    """Cut source ranges must have positive duration before composition."""
+    edit_decisions = _valid_ad_video_edit_decisions()
+    edit_decisions["cuts"][0]["out_seconds"] = 0
+
+    with pytest.raises(Exception, match="out_seconds.*greater than in_seconds"):
+        validate_artifact("edit_decisions", edit_decisions, pipeline_type="ad-video")
+
+
+def test_ad_video_edit_decisions_reject_total_duration_mismatch() -> None:
+    """Edit duration should preserve the approved scene/script runtime."""
+    edit_decisions = _valid_ad_video_edit_decisions()
+    edit_decisions["total_duration_seconds"] = 7
+
+    with pytest.raises(Exception, match="total_duration_seconds"):
+        validate_artifact("edit_decisions", edit_decisions, pipeline_type="ad-video")
+
+
 def test_enriched_brief_schema_requires_truth_and_safety_constraints_dimension() -> None:
     """G-0 must capture explicit truth/safety constraints before enrichment."""
     from tests.qa.test_schemas_preproduction import _minimal_enriched_brief
@@ -360,6 +880,18 @@ def test_enriched_brief_schema_requires_truth_and_safety_constraints_dimension()
     bad["creative_requirements"]["truth_and_safety_constraints"]["source"] = "INFERRED"
     with pytest.raises(Exception):
         validate_artifact("enriched_brief", bad)
+
+
+def test_ad_video_enriched_brief_requires_explicit_user_approval() -> None:
+    from tests.qa.test_schemas_preproduction import _minimal_enriched_brief
+
+    brief = _minimal_enriched_brief()
+    brief["user_approved"] = True
+    validate_artifact("enriched_brief", brief, pipeline_type="ad-video")
+
+    brief["user_approved"] = False
+    with pytest.raises(Exception, match="user_approved"):
+        validate_artifact("enriched_brief", brief, pipeline_type="ad-video")
 
 
 def test_production_bible_schema_requires_truth_contract() -> None:
@@ -396,6 +928,17 @@ def test_production_bible_validation_requires_derived_intensity_curve() -> None:
     drifted["narrative"]["intensity_curve"][1]["value"] = 0.1
     with pytest.raises(Exception, match="derive_intensity_curve"):
         validate_artifact("production_bible", drifted)
+
+
+def test_production_bible_rejects_duplicate_narrative_beat_ids() -> None:
+    """Beat ids must be unique because script, scene, edit, and compliance refs key by them."""
+    from tests.qa.test_artifact_chain import PRODUCTION_BIBLE_VALID
+
+    bible = deepcopy(PRODUCTION_BIBLE_VALID)
+    bible["narrative"]["emotional_beat_sequence"][1]["beat_id"] = "B1"
+
+    with pytest.raises(Exception, match="duplicate beat_id"):
+        validate_artifact("production_bible", bible, pipeline_type="ad-video")
 
 
 def _trend_alignment_block() -> dict:
@@ -446,6 +989,56 @@ def test_production_bible_schema_requires_trend_alignment_block() -> None:
     unsafe["intelligence"]["trend_alignment"]["alignments"][0]["brand_safety"] = "unsafe"
     with pytest.raises(Exception):
         validate_artifact("production_bible", unsafe)
+
+
+def test_production_bible_selected_trends_must_resolve_to_alignment_rows() -> None:
+    """Selected trend ids are canonical refs, not advisory labels."""
+    from tests.qa.test_artifact_chain import PRODUCTION_BIBLE_VALID
+
+    bible = deepcopy(PRODUCTION_BIBLE_VALID)
+    bible["intelligence"]["trend_alignment"]["selected_trend_ids"] = ["trend-missing"]
+
+    with pytest.raises(Exception, match="selected_trend_ids"):
+        validate_artifact("production_bible", bible, pipeline_type="ad-video")
+
+
+def test_production_bible_trend_source_refs_must_match_alignment_id() -> None:
+    """Script refs must use the canonical trend_alignment:<trend_id> value."""
+    from tests.qa.test_artifact_chain import PRODUCTION_BIBLE_VALID
+
+    bible = deepcopy(PRODUCTION_BIBLE_VALID)
+    bible["intelligence"]["trend_alignment"]["alignments"][0]["script_usage"][
+        "source_ref"
+    ] = "trend_alignment:wrong-trend"
+
+    with pytest.raises(Exception, match="source_ref"):
+        validate_artifact("production_bible", bible, pipeline_type="ad-video")
+
+
+def test_production_bible_selected_knowledge_cards_must_resolve_to_alignment_rows() -> None:
+    """Selected knowledge card ids must have a matching alignment contract."""
+    from tests.qa.test_artifact_chain import PRODUCTION_BIBLE_VALID
+
+    bible = deepcopy(PRODUCTION_BIBLE_VALID)
+    bible["intelligence"]["knowledge_alignment"]["selected_card_ids"] = [
+        "missing.card",
+    ]
+
+    with pytest.raises(Exception, match="selected_card_ids"):
+        validate_artifact("production_bible", bible, pipeline_type="ad-video")
+
+
+def test_production_bible_knowledge_source_refs_must_match_alignment_id() -> None:
+    """Professional-knowledge refs must survive as knowledge_alignment:<card_id>."""
+    from tests.qa.test_artifact_chain import PRODUCTION_BIBLE_VALID
+
+    bible = deepcopy(PRODUCTION_BIBLE_VALID)
+    bible["intelligence"]["knowledge_alignment"]["alignments"][0][
+        "source_ref"
+    ] = "knowledge_alignment:wrong.card"
+
+    with pytest.raises(Exception, match="source_ref"):
+        validate_artifact("production_bible", bible, pipeline_type="ad-video")
 
 
 def test_production_bible_schema_accepts_structured_editing_rhythm_checkpoint() -> None:
@@ -661,6 +1254,100 @@ def test_ad_video_scene_plan_schema_requires_scene_governance_fields() -> None:
         validate_artifact("scene_plan", scene_plan)
 
 
+def test_ad_video_scene_plan_rejects_duplicate_scene_ids() -> None:
+    """Scene ids must be unique because asset/review gates key by scene_id."""
+    scene_plan = {
+        "version": "1.0",
+        "style_mode": "cinematic",
+        "total_duration_seconds": 10,
+        "scenes": [
+            {
+                "id": "scene-1",
+                "type": "generated",
+                "description": "First product moment.",
+                "start_seconds": 0,
+                "end_seconds": 5,
+                "core": True,
+                "motion_required": True,
+                "product_visibility": "hero",
+                "product_reference_required": True,
+            },
+            {
+                "id": "scene-1",
+                "type": "generated",
+                "description": "Second product moment with the same id.",
+                "start_seconds": 5,
+                "end_seconds": 10,
+                "core": True,
+                "motion_required": True,
+                "product_visibility": "none",
+                "product_reference_required": False,
+            },
+        ],
+    }
+
+    with pytest.raises(Exception, match="duplicate scene id"):
+        validate_artifact("scene_plan", scene_plan, pipeline_type="ad-video")
+
+
+def test_ad_video_scene_plan_rejects_bare_trend_alignment_refs() -> None:
+    """Trend refs must use the canonical trend_alignment:<id> form."""
+    scene_plan = _valid_ad_video_scene_plan()
+    scene_plan["scenes"][0]["trend_alignment_refs"] = ["trend-tiktok-lofi-hook"]
+    scene_plan["scenes"][0]["trend_alignment_notes"] = (
+        "Use warm native pacing without copying source captions or shot order."
+    )
+
+    with pytest.raises(Exception, match="trend_alignment"):
+        validate_artifact("scene_plan", scene_plan, pipeline_type="ad-video")
+
+
+def test_ad_video_scene_plan_rejects_non_positive_scene_duration() -> None:
+    """Scenes must have positive timeline duration before assets/edit can key timing."""
+    scene_plan = _valid_ad_video_scene_plan()
+    scene_plan["scenes"][0]["end_seconds"] = 0
+
+    with pytest.raises(Exception, match="end_seconds.*greater than start_seconds"):
+        validate_artifact("scene_plan", scene_plan, pipeline_type="ad-video")
+
+
+def test_ad_video_scene_plan_rejects_overlapping_timeline() -> None:
+    """Scene timelines must be ordered and non-overlapping for deterministic edits."""
+    scene_plan = _valid_ad_video_scene_plan()
+    scene_plan["scenes"][1]["start_seconds"] = 3.5
+
+    with pytest.raises(Exception, match="overlaps previous scene"):
+        validate_artifact("scene_plan", scene_plan, pipeline_type="ad-video")
+
+
+def test_ad_video_scene_plan_rejects_timeline_gaps() -> None:
+    """Scene durations must cover the timeline instead of hiding blank gaps."""
+    scene_plan = _valid_ad_video_scene_plan()
+    scene_plan["scenes"][1]["start_seconds"] = 5
+    scene_plan["scenes"][1]["duration_seconds"] = 5
+
+    with pytest.raises(Exception, match="gap before scene"):
+        validate_artifact("scene_plan", scene_plan, pipeline_type="ad-video")
+
+
+def test_ad_video_scene_plan_rejects_duration_seconds_drift() -> None:
+    """Optional duration_seconds must agree with start/end when present."""
+    scene_plan = _valid_ad_video_scene_plan()
+    scene_plan["scenes"][0]["duration_seconds"] = 9
+
+    with pytest.raises(Exception, match="duration_seconds"):
+        validate_artifact("scene_plan", scene_plan, pipeline_type="ad-video")
+
+
+def test_ad_video_scene_plan_rejects_total_duration_mismatch() -> None:
+    """Scene-plan total duration must match the final timeline end."""
+    scene_plan = _valid_ad_video_scene_plan()
+    scene_plan["total_duration_seconds"] = 8
+
+    with pytest.raises(Exception, match="total_duration_seconds"):
+        validate_artifact("scene_plan", scene_plan, pipeline_type="ad-video")
+
+
 def test_ad_video_scene_plan_schema_requires_crop_regions_for_aspect_ratio_derivatives() -> None:
     """Aspect-ratio derivatives are not renderable unless every scene has crop regions."""
     scene_plan = {
@@ -754,6 +1441,23 @@ def test_production_bible_schema_allows_runtime_deferral_until_proposal() -> Non
     validate_artifact("production_bible", bible)
 
 
+def test_ad_video_production_bible_requires_approval_flags_and_cta() -> None:
+    from tests.qa.test_artifact_chain import PRODUCTION_BIBLE_VALID
+
+    bible = deepcopy(PRODUCTION_BIBLE_VALID)
+    validate_artifact("production_bible", bible, pipeline_type="ad-video")
+
+    not_approved = deepcopy(bible)
+    not_approved["approval"]["execution_approved"] = False
+    with pytest.raises(Exception, match="execution_approved"):
+        validate_artifact("production_bible", not_approved, pipeline_type="ad-video")
+
+    missing_cta = deepcopy(bible)
+    missing_cta["identity"]["cta"] = None
+    with pytest.raises(Exception, match="cta"):
+        validate_artifact("production_bible", missing_cta, pipeline_type="ad-video")
+
+
 def test_production_bible_schema_requires_kvm_motion_primitives() -> None:
     """Bible KVMs must name the scene motion primitives needed to fulfill them."""
     from tests.qa.test_artifact_chain import PRODUCTION_BIBLE_VALID
@@ -772,3 +1476,96 @@ def test_production_bible_schema_requires_kvm_motion_primitives() -> None:
     bad["visual"]["key_visual_moments"][0]["required_motion_primitives"] = []
     with pytest.raises(Exception):
         validate_artifact("production_bible", bad)
+
+
+def test_ad_video_publish_log_requires_complete_output_file_matrix() -> None:
+    publish_log = {
+        "version": "1.0",
+        "pipeline": "ad-video",
+        "brand_name": "Acme",
+        "entries": [
+            {
+                "platform": "local-export",
+                "status": "exported",
+                "timestamp": "2026-05-25T00:00:00Z",
+                "export_path": "renders/output_16x9.mp4",
+            }
+        ],
+    }
+
+    with pytest.raises(Exception):
+        validate_artifact("publish_log", publish_log, pipeline_type="ad-video")
+
+    publish_log["output_file_matrix"] = []
+    with pytest.raises(Exception):
+        validate_artifact("publish_log", publish_log, pipeline_type="ad-video")
+
+    publish_log["output_file_matrix"] = [
+        {
+            "file": "renders/output_16x9.mp4",
+            "variant": "16:9",
+            "duration_seconds": 30.0,
+            "target_platforms": ["youtube"],
+            "metadata": {
+                "title": "Acme Launch",
+                "description": "A direct product story.",
+                "tags": ["Acme", "ad"],
+                "cta_url": "https://example.com",
+            },
+            "thumbnail_concept": "Product hero frame with short headline",
+        }
+    ]
+    validate_artifact("publish_log", publish_log, pipeline_type="ad-video")
+
+    missing_metadata = deepcopy(publish_log)
+    del missing_metadata["output_file_matrix"][0]["metadata"]["title"]
+    with pytest.raises(Exception):
+        validate_artifact("publish_log", missing_metadata, pipeline_type="ad-video")
+
+
+def test_ad_video_render_report_requires_verified_stereo_outputs() -> None:
+    render_report = {
+        "version": "1.0",
+        "renderer": "remotion",
+        "outputs": [
+            {
+                "path": "renders/output_16x9.mp4",
+                "format": "mp4",
+                "resolution": "1920x1080",
+                "duration_seconds": 30.0,
+                "variant": "16:9",
+                "audio_channels": 2,
+            }
+        ],
+        "probe_results": {
+            "16:9": {
+                "duration_check": "PASS",
+                "resolution_check": "PASS",
+                "audio_check": "PASS",
+            }
+        },
+    }
+
+    missing_audio = deepcopy(render_report)
+    del missing_audio["outputs"][0]["audio_channels"]
+    with pytest.raises(Exception, match="audio_channels"):
+        validate_artifact("render_report", missing_audio, pipeline_type="ad-video")
+
+    failed_probe = deepcopy(render_report)
+    failed_probe["probe_results"]["16:9"]["audio_check"] = "FAIL"
+    with pytest.raises(Exception, match="probe_results"):
+        validate_artifact("render_report", failed_probe, pipeline_type="ad-video")
+
+    missing_probe_check = deepcopy(render_report)
+    del missing_probe_check["probe_results"]["16:9"]["audio_check"]
+    with pytest.raises(Exception, match="audio_check"):
+        validate_artifact(
+            "render_report", missing_probe_check, pipeline_type="ad-video"
+        )
+
+    zero_duration = deepcopy(render_report)
+    zero_duration["outputs"][0]["duration_seconds"] = 0
+    with pytest.raises(Exception, match="duration_seconds"):
+        validate_artifact("render_report", zero_duration, pipeline_type="ad-video")
+
+    validate_artifact("render_report", render_report, pipeline_type="ad-video")

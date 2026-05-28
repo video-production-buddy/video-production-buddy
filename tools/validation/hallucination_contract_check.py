@@ -21,8 +21,21 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 from pathlib import Path
 from typing import Any
+
+from tools.base_tool import (
+    BaseTool,
+    Determinism,
+    ExecutionMode,
+    ResourceProfile,
+    ToolResult,
+    ToolRuntime,
+    ToolStability,
+    ToolTier,
+)
+from tools.validation._scene_scope import validate_scene_id_list
 
 
 PRODUCT_VISIBLE_VALUES = {"background", "partial", "hero", "detail", "packshot"}
@@ -192,10 +205,6 @@ def _generated_visual_asset_scene_ids(asset_manifest: dict[str, Any]) -> set[str
 
 def _selected_option_is_waiver(decision: dict[str, Any]) -> bool:
     selected = decision.get("selected")
-    selected_token = _normalized_token(selected)
-    if selected_token in WAIVER_SELECTED_VALUES:
-        return True
-
     options = decision.get("options_considered")
     if not isinstance(options, list):
         return False
@@ -260,6 +269,7 @@ def check_hallucination_contract(
     scene_plan: dict[str, Any],
     asset_manifest: dict[str, Any],
     decision_log: dict[str, Any] | None = None,
+    generated_scene_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     """Validate the ad-video hallucination review contract.
 
@@ -275,22 +285,76 @@ def check_hallucination_contract(
     warnings: list[str] = []
     waivers = 0
     reviewed_assets = 0
-
-    high_risk_scenes: dict[str, dict[str, Any]] = {}
-    scene_check_map: dict[str, dict[str, dict[str, Any]]] = {}
+    asset_scope = "full"
     generated_visual_asset_scene_ids = _generated_visual_asset_scene_ids(asset_manifest)
+    scene_ids_in_plan = {
+        scene.get("id")
+        for scene in scene_plan.get("scenes", []) or []
+        if isinstance(scene, dict) and scene.get("id")
+    }
+    for asset in asset_manifest.get("assets", []) or []:
+        if not isinstance(asset, dict):
+            continue
+        scene_id = asset.get("scene_id")
+        if (
+            isinstance(scene_id, str)
+            and scene_id not in scene_ids_in_plan
+            and asset.get("type") in VISUAL_ASSET_TYPES
+            and not _asset_has_sourced_provenance(asset)
+            and _asset_has_generated_provenance(asset)
+        ):
+            asset_id = asset.get("id", "<unknown>")
+            issues.append(
+                f"Generated visual asset {asset_id} references scene_id={scene_id!r}, "
+                "but that scene id was not found in scene_plan.scenes[]."
+            )
 
+    all_high_risk_scenes: dict[str, dict[str, Any]] = {}
     for scene in scene_plan.get("scenes", []) or []:
         if not isinstance(scene, dict):
             continue
         scene_id = scene.get("id", "<unknown>")
-        if not _scene_is_high_risk(
+        if _scene_is_high_risk(
             scene,
             has_generated_visual_asset=scene_id in generated_visual_asset_scene_ids,
         ):
-            continue
+            all_high_risk_scenes[scene_id] = scene
 
-        high_risk_scenes[scene_id] = scene
+    high_risk_scenes = all_high_risk_scenes
+    generated_scene_id_set: set[str] | None = None
+    if generated_scene_ids is not None:
+        asset_scope = "generated_scene_ids"
+        generated_scene_ids, scene_id_issues, usable_scene_ids = validate_scene_id_list(
+            generated_scene_ids,
+            "generated_scene_ids",
+        )
+        issues.extend(scene_id_issues)
+        if usable_scene_ids:
+            generated_scene_id_set = set(generated_scene_ids)
+            missing_scene_ids = sorted(generated_scene_id_set - scene_ids_in_plan)
+            for scene_id in missing_scene_ids:
+                issues.append(
+                    f"Generated scene id {scene_id!r} was not found in scene_plan.scenes[]."
+                )
+            high_risk_scenes = {
+                scene_id: scene
+                for scene_id, scene in all_high_risk_scenes.items()
+                if scene_id in generated_scene_id_set
+            }
+            if all_high_risk_scenes and not high_risk_scenes:
+                issues.append(
+                    "generated_scene_ids was provided for a scoped hallucination "
+                    "review, but it does not include any high-risk generated scene "
+                    "from scene_plan.scenes[]. Generated samples must include at "
+                    "least one high-risk generated scene so hallucination checks can "
+                    "be inspected before sample approval."
+                )
+        else:
+            high_risk_scenes = {}
+
+    scene_check_map: dict[str, dict[str, dict[str, Any]]] = {}
+
+    for scene_id, scene in high_risk_scenes.items():
         checks = _scene_checks(scene)
         if not checks:
             issues.append(
@@ -304,6 +368,13 @@ def check_hallucination_contract(
         for check in checks:
             check_id = check.get("check_id")
             if isinstance(check_id, str) and check_id:
+                if check_id in by_id:
+                    issues.append(
+                        f"High-risk generated scene {scene_id} has duplicate "
+                        f"hallucination check id {check_id!r}; check ids must "
+                        "be unique so asset review verdicts map unambiguously."
+                    )
+                    continue
                 by_id[check_id] = check
         scene_check_map[scene_id] = by_id
 
@@ -361,6 +432,19 @@ def check_hallucination_contract(
             for verdict in review.get("check_verdicts", []) or []
             if isinstance(verdict, dict)
         ]
+        seen_verdict_ids: set[str] = set()
+        for verdict in verdicts:
+            check_id = verdict.get("check_id")
+            if not isinstance(check_id, str) or not check_id:
+                continue
+            if check_id in seen_verdict_ids:
+                issues.append(
+                    f"Generated visual asset {asset_id} has duplicate "
+                    f"hallucination_review verdict id {check_id!r}; verdict "
+                    "ids must be unique for scene check auditability."
+                )
+            seen_verdict_ids.add(check_id)
+
         verdict_ids = {
             verdict.get("check_id")
             for verdict in verdicts
@@ -424,11 +508,15 @@ def check_hallucination_contract(
             "high_risk_scenes": len(high_risk_scenes),
             "reviewed_assets": reviewed_assets,
             "waivers": waivers,
+            "asset_scope": asset_scope,
         },
     }
 
 
-def check_project(project_dir: Path) -> dict[str, Any]:
+def check_project(
+    project_dir: Path,
+    generated_scene_ids: list[str] | None = None,
+) -> dict[str, Any]:
     production_bible = _load_artifact(project_dir, "production_bible.json")
     scene_plan = _load_artifact(project_dir, "scene_plan.json")
     asset_manifest = _load_artifact(project_dir, "asset_manifest.json")
@@ -438,7 +526,89 @@ def check_project(project_dir: Path) -> dict[str, Any]:
         scene_plan,
         asset_manifest,
         decision_log,
+        generated_scene_ids=generated_scene_ids,
     )
+
+
+class HallucinationContractCheck(BaseTool):
+    name = "hallucination_contract_check"
+    version = "0.1.0"
+    tier = ToolTier.CORE
+    capability = "validation"
+    provider = "openmontage"
+    stability = ToolStability.PRODUCTION
+    execution_mode = ExecutionMode.SYNC
+    determinism = Determinism.DETERMINISTIC
+    runtime = ToolRuntime.LOCAL
+    resource_profile = ResourceProfile(cpu_cores=1, ram_mb=128, disk_mb=1, network_required=False)
+    capabilities = [
+        "validate_ad_video_hallucination_contract",
+        "validate_truth_contract_threading",
+        "validate_generated_asset_keyframe_review",
+        "block_hallucination_flags_before_compose",
+    ]
+    best_for = [
+        "blocking ad-video compose when high-risk generated assets lack hallucination review",
+        "checking user-approved hallucination-review waiver decisions",
+    ]
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "project_dir": {"type": "string"},
+            "production_bible": {"type": "object"},
+            "scene_plan": {"type": "object"},
+            "asset_manifest": {"type": "object"},
+            "decision_log": {"type": "object"},
+            "generated_scene_ids": {"type": "array", "items": {"type": "string"}},
+        },
+        "anyOf": [
+            {"required": ["project_dir"]},
+            {"required": ["production_bible", "scene_plan", "asset_manifest"]},
+        ],
+    }
+    output_schema = {
+        "type": "object",
+        "required": ["status", "issues", "warnings", "summary"],
+        "properties": {
+            "status": {"type": "string", "enum": ["PASS", "WARN", "FAIL"]},
+            "issues": {"type": "array"},
+            "warnings": {"type": "array"},
+            "summary": {"type": "object"},
+        },
+    }
+    user_visible_verification = [
+        "Review start/mid/end keyframes for high-risk generated video assets",
+        "Surface WARN verdicts and user-approved waivers before asset approval",
+    ]
+
+    def execute(self, inputs: dict[str, Any]) -> ToolResult:
+        started = time.time()
+        try:
+            generated_scene_ids = inputs.get("generated_scene_ids")
+            project_dir = inputs.get("project_dir")
+            if isinstance(project_dir, str) and project_dir.strip():
+                verdict = check_project(
+                    Path(project_dir),
+                    generated_scene_ids=generated_scene_ids,
+                )
+            else:
+                verdict = check_hallucination_contract(
+                    inputs["production_bible"],
+                    inputs["scene_plan"],
+                    inputs["asset_manifest"],
+                    inputs.get("decision_log"),
+                    generated_scene_ids=generated_scene_ids,
+                )
+        except Exception as exc:
+            return ToolResult(success=False, error=str(exc), duration_seconds=round(time.time() - started, 2))
+
+        success = verdict.get("status") != "FAIL"
+        return ToolResult(
+            success=success,
+            data=verdict,
+            error=json.dumps(verdict.get("issues", []), sort_keys=True) if not success else None,
+            duration_seconds=round(time.time() - started, 2),
+        )
 
 
 def _cli(argv: list[str]) -> int:

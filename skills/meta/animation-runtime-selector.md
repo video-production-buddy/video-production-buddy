@@ -42,7 +42,9 @@ Concretely, at the proposal stage:
 3. Wait for explicit user approval.
 4. Log the decision in `decision_log` with category
    `render_runtime_selection` and both runtimes in `options_considered`.
-5. Only then write `render_runtime` into `proposal_packet.production_plan`.
+5. Only then write `render_runtime` into `production_proposal.render_runtime`
+   for `ad-video` or the legacy proposal-packet runtime lock for older
+   pipelines.
 
 A `render_runtime_selection` decision with only one option considered
 when both were available is a CRITICAL reviewer finding.

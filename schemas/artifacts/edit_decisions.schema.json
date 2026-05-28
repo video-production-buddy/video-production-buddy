@@ -329,14 +329,15 @@
           "crop_regions": {
             "description": "Either the literal string 'from_scene_plan' or a variant-specific crop-region map copied from scene_plan.",
             "oneOf": [
-              { "type": "string" },
-              { "type": "object" }
+              { "type": "string", "const": "from_scene_plan" },
+              { "type": "object", "minProperties": 1 }
             ]
           },
           "subtitle_style_override": { "type": "object" },
           "include_scenes": {
             "type": "array",
-            "items": { "type": "string" }
+            "minItems": 1,
+            "items": { "type": "string", "minLength": 1 }
           },
           "total_duration_check": { "type": "string" }
         },
@@ -346,7 +347,7 @@
     "renderer_family": {
       "type": "string",
       "enum": ["explainer-data", "explainer-teacher", "cinematic-trailer", "documentary-montage", "product-reveal", "screen-demo", "presenter", "animation-first"],
-      "description": "Locked at proposal stage — creative grammar for this deliverable. Preserved from proposal_packet; edit MUST NOT change without a logged decision."
+      "description": "Locked at proposal stage — creative grammar for this deliverable. Preserved from production_proposal.render_runtime context for ad-video or the legacy proposal-packet runtime context for older pipelines; edit MUST NOT change without a logged decision."
     },
     "render_runtime": {
       "type": "string",

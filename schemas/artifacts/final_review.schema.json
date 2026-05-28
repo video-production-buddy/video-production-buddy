@@ -90,7 +90,7 @@
             },
             "runtime_swap_detected": {
               "type": "boolean",
-              "description": "True if the runtime that ran differs from the runtime locked in proposal_packet. An unapproved swap is a contract violation."
+              "description": "True if the runtime that ran differs from production_proposal.render_runtime for ad-video or the legacy proposal-packet runtime lock for older pipelines. An unapproved swap is a contract violation."
             },
             "runtime_swap_check": {
               "type": "string",
@@ -137,6 +137,25 @@
       "type": "array",
       "items": { "type": "string" },
       "description": "All issues found across all checks, summarized for the user"
+    },
+    "reviewed_outputs": {
+      "type": "array",
+      "description": "Per-output review evidence for multi-file renders. In ad-video, this is required for a passing final_review whenever render_report.outputs contains derivative outputs.",
+      "items": {
+        "type": "object",
+        "required": ["path", "variant", "duration_seconds", "resolution"],
+        "additionalProperties": false,
+        "properties": {
+          "path": { "type": "string" },
+          "variant": { "type": "string" },
+          "duration_seconds": { "type": "number", "minimum": 0 },
+          "resolution": { "type": "string" },
+          "issues": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
     },
     "recommended_action": {
       "type": "string",

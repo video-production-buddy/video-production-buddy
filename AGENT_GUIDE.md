@@ -452,7 +452,13 @@ print('HyperFrames note:', info.get('hyperframes_note'))
 | **Remotion** | React-based composition: still images → animated video, text cards, stat cards, charts, callouts, comparisons, transitions with spring physics, word-level caption burn, TalkingHead avatar | Node.js (`npx`) + `remotion-composer/` + `node_modules` |
 | **HyperFrames** | HTML/CSS/GSAP composition: kinetic typography, product promos, launch reels, website-to-video, registry-block-driven scenes, SVG character rigs | Node.js ≥ 22 + FFmpeg + `npx` (consumed via `npx hyperframes`) |
 
-`render_runtime` is **locked at proposal** (`proposal_packet.production_plan.render_runtime`) and **carried through edit_decisions unchanged**. `video_compose` routes based on this field; silent runtime swaps are forbidden. If the chosen runtime becomes unavailable at compose time, surface a structured blocker per "Escalate Blockers Explicitly" above. See `skills/core/hyperframes.md` for the Remotion-vs-HyperFrames decision matrix.
+`render_runtime` is **locked at proposal** (`production_proposal.render_runtime`
+for `ad-video`; the legacy proposal-packet runtime lock for older pipelines)
+and **carried through edit_decisions unchanged**.
+`video_compose` routes based on this field; silent runtime swaps are forbidden.
+If the chosen runtime becomes unavailable at compose time, surface a structured
+blocker per "Escalate Blockers Explicitly" above. See
+`skills/core/hyperframes.md` for the Remotion-vs-HyperFrames decision matrix.
 
 ### Critical Rule: Motion-Required Requests
 
@@ -661,6 +667,10 @@ Key contract points:
   The sample must include at least one product-visible scene when the product is
   visible anywhere in the ad. After the sample is approved, the asset stage still
   requires explicit `asset_review` and `music_review` approvals before compose.
+  A completed assets checkpoint must carry `production_proposal`,
+  `production_bible`, `script`, `scene_plan`, and `decision_log` alongside
+  `asset_manifest` and `product_identity_reference` so checkpoint validation can
+  rerun provider, product-identity, and hallucination gates before compose.
 - `assets` runs a Product Identity Reference sub-stage before the sample when
   product-visible scenes exist. It must produce `product_identity_reference`,
   use `reference_to_video` when supported, otherwise generate a scene keyframe

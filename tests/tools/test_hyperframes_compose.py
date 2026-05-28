@@ -508,6 +508,8 @@ def test_runtime_swap_detected_flips_when_proposal_packet_disagrees(tmp_path):
     assert "detected" in pp["runtime_swap_check"]
     # And the human-readable issues list mentions the swap.
     assert any("render_runtime changed" in i for i in pp.get("issues", []))
+    assert review["status"] == "revise"
+    assert review["recommended_action"] != "present_to_user"
 
 
 def test_runtime_swap_detected_stays_false_when_proposal_matches(tmp_path):
@@ -792,6 +794,116 @@ def test_run_final_review_includes_transcript_comparison_section(tmp_path):
     tc = review["checks"]["transcript_comparison"]
     assert any("not provided" in i for i in tc["issues"])
     validate_artifact("final_review", review)
+
+
+def test_run_final_review_payload_validates_for_ad_video_context(tmp_path):
+    import subprocess
+    from schemas.artifacts import validate_artifact
+
+    mp4 = tmp_path / "ad-video-review.mp4"
+    subprocess.run(
+        [
+            "ffmpeg", "-y",
+            "-f", "lavfi", "-i", "testsrc=size=640x360:rate=30:duration=2",
+            "-f", "lavfi", "-i", "sine=frequency=440:duration=2",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-shortest", str(mp4),
+        ],
+        capture_output=True, check=True, timeout=30,
+    )
+
+    review = VideoCompose()._run_final_review(
+        mp4,
+        edit_decisions={
+            "version": "1.0",
+            "renderer_family": "product-reveal",
+            "render_runtime": "ffmpeg",
+            "metadata": {
+                "proposal_render_runtime": "ffmpeg",
+                "delivery_promise": {
+                    "promise_type": "source_led",
+                    "motion_required": False,
+                    "source_required": False,
+                    "tone_mode": "corporate",
+                    "quality_floor": "presentable",
+                },
+            },
+            "subtitles": {"enabled": False},
+            "cuts": [
+                {
+                    "id": "c1",
+                    "source": str(mp4),
+                    "in_seconds": 0,
+                    "out_seconds": 2,
+                }
+            ],
+        },
+    )
+
+    assert review["status"] == "pass"
+    assert review["issues_found"] == []
+    assert review["checks"]["subtitle_check"] == {
+        "subtitles_expected": False,
+        "subtitles_present": False,
+        "coverage_ratio": 0.0,
+        "timing_drift_detected": False,
+        "issues": [],
+    }
+    assert any(
+        "transcript_comparison skipped" in issue
+        for issue in review["checks"]["transcript_comparison"]["issues"]
+    )
+    validate_artifact(
+        "final_review",
+        review,
+        pipeline_type="ad-video",
+        related_artifacts={
+            "production_proposal": {
+                "subtitles": {"mode": "off"},
+                "music_strategy": "generative_loose",
+            },
+        },
+    )
+
+
+def test_run_final_review_validates_without_delivery_promise_metadata(tmp_path):
+    import subprocess
+    from schemas.artifacts import validate_artifact
+
+    mp4 = tmp_path / "ad-video-no-promise.mp4"
+    subprocess.run(
+        [
+            "ffmpeg", "-y",
+            "-f", "lavfi", "-i", "testsrc=size=640x360:rate=30:duration=2",
+            "-f", "lavfi", "-i", "sine=frequency=440:duration=2",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-shortest", str(mp4),
+        ],
+        capture_output=True, check=True, timeout=30,
+    )
+
+    review = VideoCompose()._run_final_review(
+        mp4,
+        edit_decisions={
+            "version": "1.0",
+            "renderer_family": "product-reveal",
+            "render_runtime": "ffmpeg",
+            "metadata": {"proposal_render_runtime": "ffmpeg"},
+            "subtitles": {"enabled": False},
+            "cuts": [
+                {
+                    "id": "c1",
+                    "source": str(mp4),
+                    "in_seconds": 0,
+                    "out_seconds": 2,
+                }
+            ],
+        },
+    )
+
+    assert review["status"] == "pass"
+    assert "motion_ratio_actual" not in review["checks"]["promise_preservation"]
+    validate_artifact("final_review", review, pipeline_type="ad-video")
 
 
 def test_final_review_flags_audio_truncation_as_rerender_issue(tmp_path):
