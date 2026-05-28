@@ -42,7 +42,8 @@
               "capability_extension",
               "playbook_override",
               "visual_accuracy_check",
-              "hallucination_review_waiver"
+              "hallucination_review_waiver",
+              "trend_knowledge_conflict_resolution"
             ],
             "description": "What class of decision this is"
           },

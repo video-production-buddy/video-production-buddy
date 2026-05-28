@@ -4,9 +4,9 @@
 
 | Scene Type | Description | Typical Duration | motion_required |
 |-----------|-------------|-----------------|-----------------|
-| `hero_shot` | Product or subject as hero — dramatic lighting, slow reveal | 4–8s | false |
+| `hero_shot` | Product or subject as hero — dramatic lighting, slow reveal | 4–8s | true |
 | `lifestyle_moment` | Person using product in aspirational context | 5–10s | true |
-| `detail_close` | Extreme close-up on product feature or material quality | 2–5s | false |
+| `detail_close` | Extreme close-up on product feature or material quality | 2–5s | true |
 | `environment_wide` | Establishing or mood-setting wide shot | 3–6s | true |
 | `text_overlay` | Cinematic text over still or motion image | 3–5s | false |
 | `stat_lower_third` | Statistic as lower-third text over cinematic image | 4–6s | false |
@@ -56,10 +56,10 @@ directly when constructing generation prompts.
 
 | Scene Type | Required Assets |
 |-----------|----------------|
-| `hero_shot` | 1× AI-generated product image (Flux/DALL-E, cinematic prompt) |
+| `hero_shot` | 1× AI-generated video clip or approved product reference still for packshot-only end frames |
 | `lifestyle_moment` | 1× AI-generated video clip (Wan/Kling) OR 1× stock video |
-| `detail_close` | 1× AI-generated macro image |
-| `environment_wide` | 1× AI-generated video clip or wide image |
+| `detail_close` | 1× AI-generated macro video clip |
+| `environment_wide` | 1× AI-generated video clip or wide stock video |
 | `text_overlay` | 1× background image + text from script |
 | `stat_lower_third` | 1× background image + stat data |
 | `social_proof_quick` | Text only (from brand_context reference_files or fabricated from concept) |
@@ -92,7 +92,7 @@ color: {aligned to brand palette from playbook}
   {"id": "scene-4", "scene_type": "stat_lower_third", "beat": "build", "duration_seconds": 5, "core": false,
    "description": "'4 hours/week wasted' over productivity context", "motion_required": false},
   {"id": "scene-5", "scene_type": "hero_shot", "beat": "reveal", "duration_seconds": 6, "core": true,
-   "description": "Product hero shot — clean desk, Flowcut on screen, warm light", "motion_required": false},
+   "description": "Product hero reveal clip — clean desk, Flowcut on screen, warm light", "motion_required": true},
   {"id": "scene-6", "scene_type": "lifestyle_moment", "beat": "reveal", "duration_seconds": 10, "core": true,
    "description": "Person calmly finishing work, leaning back satisfied", "motion_required": true},
   {"id": "scene-7", "scene_type": "brand_landing", "beat": "cta_brand", "duration_seconds": 7, "core": true,

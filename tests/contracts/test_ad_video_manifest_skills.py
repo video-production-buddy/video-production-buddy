@@ -1130,6 +1130,16 @@ def test_remotion_product_components_do_not_render_synthetic_hardware_by_default
     assert "hasProductImage && productImage" in workflow_source
 
 
+def test_cinematic_scene_director_keeps_real_world_scenes_motion_required() -> None:
+    cinematic_scene = _read_skill("scene-director-cinematic.md")
+
+    assert "| `hero_shot` | Product or subject as hero — dramatic lighting, slow reveal | 4–8s | true |" in cinematic_scene
+    assert "| `detail_close` | Extreme close-up on product feature or material quality | 2–5s | true |" in cinematic_scene
+    assert "1× AI-generated video clip or approved product reference still for packshot-only end frames" in cinematic_scene
+    assert "1× AI-generated macro video clip" in cinematic_scene
+    assert "1× AI-generated video clip or wide stock video" in cinematic_scene
+
+
 def test_ad_video_contract_mentions_hallucination_flow() -> None:
     """Manifest and director skills must expose the truth-contract review flow."""
     manifest = _load_ad_video_manifest()

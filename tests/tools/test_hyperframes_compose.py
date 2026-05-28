@@ -866,6 +866,45 @@ def test_run_final_review_payload_validates_for_ad_video_context(tmp_path):
     )
 
 
+def test_run_final_review_does_not_mark_narration_as_music_when_strategy_none(tmp_path):
+    import subprocess
+
+    mp4 = tmp_path / "ad-video-no-music.mp4"
+    subprocess.run(
+        [
+            "ffmpeg", "-y",
+            "-f", "lavfi", "-i", "testsrc=size=640x360:rate=30:duration=2",
+            "-f", "lavfi", "-i", "sine=frequency=440:duration=2",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-shortest", str(mp4),
+        ],
+        capture_output=True, check=True, timeout=30,
+    )
+
+    review = VideoCompose()._run_final_review(
+        mp4,
+        edit_decisions={
+            "version": "1.0",
+            "renderer_family": "product-reveal",
+            "render_runtime": "ffmpeg",
+            "music_strategy": "none",
+            "metadata": {"proposal_render_runtime": "ffmpeg"},
+            "subtitles": {"enabled": False},
+            "cuts": [
+                {
+                    "id": "c1",
+                    "source": str(mp4),
+                    "in_seconds": 0,
+                    "out_seconds": 2,
+                }
+            ],
+        },
+    )
+
+    assert review["checks"]["audio_spotcheck"]["narration_present"] is True
+    assert review["checks"]["audio_spotcheck"]["music_present"] is False
+
+
 def test_run_final_review_validates_without_delivery_promise_metadata(tmp_path):
     import subprocess
     from schemas.artifacts import validate_artifact

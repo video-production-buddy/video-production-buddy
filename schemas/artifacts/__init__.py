@@ -457,6 +457,24 @@ def _validate_ad_video_scene_plan(data: dict[str, Any]) -> None:
                 "ad-video scene_plan scene "
                 f"{scene_id!r} must include product_reference_required"
             )
+        scene_kind = str(scene.get("type") or "").strip()
+        scene_type = str(scene.get("scene_type") or "").strip()
+        still_allowed = (
+            scene_kind == "text_card"
+            or scene.get("product_visibility") == "packshot"
+            or scene_type == "brand_landing"
+        )
+        if (
+            scene_kind in {"broll", "generated"}
+            and not still_allowed
+            and scene.get("motion_required") is not True
+        ):
+            raise jsonschema.ValidationError(
+                "ad-video scene_plan scene "
+                f"{scene_id!r} has type {scene_kind!r}; broll and generated "
+                "scenes must set motion_required=true unless they are text "
+                "cards, packshots, or brand landing frames"
+            )
         if animated and "scene_type" not in scene:
             raise jsonschema.ValidationError(
                 "ad-video animated scene_plan scene "
@@ -1890,7 +1908,13 @@ def _validate_ad_video_final_review_matches_production_proposal(
     if isinstance(music_strategy, str) and isinstance(audio_spotcheck, dict):
         music_present = audio_spotcheck.get("music_present")
         if isinstance(music_present, bool):
-            if music_strategy != "none" and not music_present:
+            normalized_music_strategy = music_strategy.strip().lower()
+            if normalized_music_strategy == "none" and music_present:
+                raise jsonschema.ValidationError(
+                    "ad-video final_review.checks.audio_spotcheck.music_present "
+                    "must be false when approved music_strategy is 'none'"
+                )
+            if normalized_music_strategy != "none" and not music_present:
                 raise jsonschema.ValidationError(
                     "ad-video final_review.checks.audio_spotcheck.music_present "
                     "must be true when approved music_strategy "

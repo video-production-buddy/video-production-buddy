@@ -1075,15 +1075,16 @@ class TestRenderToFinalReviewConsistency:
         proposal["music_strategy"] = "none"
         review = _valid_final_review()
 
-        validate_artifact(
-            "final_review",
-            review,
-            pipeline_type="ad-video",
-            related_artifacts={
-                "render_report": _valid_render_report(),
-                "production_proposal": proposal,
-            },
-        )
+        with pytest.raises(ValidationError, match="music_present"):
+            validate_artifact(
+                "final_review",
+                review,
+                pipeline_type="ad-video",
+                related_artifacts={
+                    "render_report": _valid_render_report(),
+                    "production_proposal": proposal,
+                },
+            )
 
         review["checks"]["audio_spotcheck"]["music_present"] = False
         validate_artifact(
@@ -1239,6 +1240,36 @@ class TestDecisionLogSemantics:
 
     def test_valid_decision_log_passes(self) -> None:
         validate_artifact("decision_log", _valid_decision_log())
+
+    def test_trend_knowledge_conflict_resolution_category_passes(self) -> None:
+        log = _valid_decision_log()
+        log["decisions"][0].update(
+            {
+                "stage": "bible",
+                "category": "trend_knowledge_conflict_resolution",
+                "subject": "Resolve trend and producer-knowledge conflict",
+                "options_considered": [
+                    {
+                        "option_id": "follow-producer-principle",
+                        "label": "Follow producer principle",
+                        "score": 1.0,
+                        "reason": "The selected trend contradicts a selected professional knowledge card.",
+                    },
+                    {
+                        "option_id": "keep-trend",
+                        "label": "Keep trend unchanged",
+                        "score": 0.2,
+                        "reason": "Would preserve the trend but violates the producer guardrail.",
+                    },
+                ],
+                "selected": "follow-producer-principle",
+                "reason": "User approved reframing the trend to follow the producer guardrail.",
+                "user_visible": True,
+                "user_approved": True,
+            }
+        )
+
+        validate_artifact("decision_log", log)
 
 
 # ---------------------------------------------------------------------------
@@ -2145,6 +2176,50 @@ class TestScenePlanProductVisibility:
         }
         with pytest.raises(ValidationError, match="product_reference_required"):
             validate_artifact("scene_plan", plan, pipeline_type="ad-video")
+
+    def test_generated_non_packshot_scene_requires_motion(self) -> None:
+        plan = {
+            "version": "1.0",
+            "style_mode": "cinematic",
+            "scenes": [
+                {
+                    "id": "scene-1",
+                    "type": "generated",
+                    "description": "A product interaction scene",
+                    "start_seconds": 0,
+                    "end_seconds": 5,
+                    "product_visibility": "hero",
+                    "product_reference_required": True,
+                    "core": True,
+                    "motion_required": False,
+                },
+            ],
+        }
+
+        with pytest.raises(ValidationError, match="motion_required"):
+            validate_artifact("scene_plan", plan, pipeline_type="ad-video")
+
+    def test_packshot_scene_may_be_still(self) -> None:
+        plan = {
+            "version": "1.0",
+            "style_mode": "cinematic",
+            "scenes": [
+                {
+                    "id": "scene-1",
+                    "type": "generated",
+                    "scene_type": "brand_landing",
+                    "description": "Approved product packshot end card",
+                    "start_seconds": 0,
+                    "end_seconds": 5,
+                    "product_visibility": "packshot",
+                    "product_reference_required": True,
+                    "core": True,
+                    "motion_required": False,
+                },
+            ],
+        }
+
+        validate_artifact("scene_plan", plan, pipeline_type="ad-video")
 
 
 # ---------------------------------------------------------------------------

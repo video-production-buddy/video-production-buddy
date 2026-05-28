@@ -715,6 +715,10 @@ def test_ad_video_scene_plan_requires_product_metadata_without_style_mode() -> N
         validate_artifact("scene_plan", scene_plan, pipeline_type="ad-video")
 
     scene_plan["scenes"][0]["product_reference_required"] = False
+    with pytest.raises(Exception, match="motion_required"):
+        validate_artifact("scene_plan", scene_plan, pipeline_type="ad-video")
+
+    scene_plan["scenes"][0]["motion_required"] = True
     validate_artifact("scene_plan", scene_plan, pipeline_type="ad-video")
 
 

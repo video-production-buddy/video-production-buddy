@@ -1869,6 +1869,9 @@ class VideoCompose(BaseTool):
             "mix_intelligible": True,
             "issues": [],
         }
+        music_strategy = ""
+        if isinstance(edit_decisions, dict):
+            music_strategy = str(edit_decisions.get("music_strategy") or "").strip().lower()
         if technical_probe.get("has_audio") and duration > 0:
             try:
                 # Use ffmpeg volumedetect to check audio levels
@@ -1904,8 +1907,9 @@ class VideoCompose(BaseTool):
                     # Assume narration present if mean volume is reasonable
                     if mean_vol > -40:
                         audio_spotcheck["narration_present"] = True
-                    # Assume music present if audio exists (conservative)
-                    if mean_vol > -50:
+                    # Without separated stems this is only evidence of music
+                    # when the edit actually approved a music bed.
+                    if music_strategy != "none" and mean_vol > -50:
                         audio_spotcheck["music_present"] = True
 
                 if max_vol is not None and max_vol > -0.5:
