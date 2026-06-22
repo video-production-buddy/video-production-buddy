@@ -10,8 +10,11 @@ Scores are normalized 0-1. Higher is better.
 from __future__ import annotations
 
 from dataclasses import dataclass, asdict, field
+import math
 import re
 from typing import Any
+
+from tools.status_utils import safe_tool_info, safe_tool_status
 
 
 # ---------------------------------------------------------------------------
@@ -34,33 +37,51 @@ class ProviderScore:
 
     @property
     def weighted_score(self) -> float:
+        task_fit = _score_value(self.task_fit, 0.0)
+        output_quality = _score_value(self.output_quality, 0.0)
+        control = _score_value(self.control, 0.0)
+        reliability = _score_value(self.reliability, 0.0)
+        cost_efficiency = _score_value(self.cost_efficiency, 0.0)
+        latency = _score_value(self.latency, 0.0)
+        continuity = _score_value(self.continuity, 0.0)
         return (
-            self.task_fit * 0.30
-            + self.output_quality * 0.20
-            + self.control * 0.15
-            + self.reliability * 0.15
-            + self.cost_efficiency * 0.10
-            + self.latency * 0.05
-            + self.continuity * 0.05
+            task_fit * 0.30
+            + output_quality * 0.20
+            + control * 0.15
+            + reliability * 0.15
+            + cost_efficiency * 0.10
+            + latency * 0.05
+            + continuity * 0.05
         )
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
+        for key in (
+            "task_fit",
+            "output_quality",
+            "control",
+            "reliability",
+            "cost_efficiency",
+            "latency",
+            "continuity",
+        ):
+            d[key] = _score_value(d.get(key), 0.0)
         d["weighted_score"] = self.weighted_score
         return d
 
     def explain(self) -> str:
         """Human-readable explanation of this score."""
-        parts = [f"{self.tool_name} ({self.provider}): {self.weighted_score:.2f}"]
+        payload = self.to_dict()
+        parts = [f"{self.tool_name} ({self.provider}): {payload['weighted_score']:.2f}"]
         top = sorted(
             [
-                ("task_fit", self.task_fit, 0.30),
-                ("output_quality", self.output_quality, 0.20),
-                ("control", self.control, 0.15),
-                ("reliability", self.reliability, 0.15),
-                ("cost_efficiency", self.cost_efficiency, 0.10),
-                ("latency", self.latency, 0.05),
-                ("continuity", self.continuity, 0.05),
+                ("task_fit", payload["task_fit"], 0.30),
+                ("output_quality", payload["output_quality"], 0.20),
+                ("control", payload["control"], 0.15),
+                ("reliability", payload["reliability"], 0.15),
+                ("cost_efficiency", payload["cost_efficiency"], 0.10),
+                ("latency", payload["latency"], 0.05),
+                ("continuity", payload["continuity"], 0.05),
             ],
             key=lambda x: x[1] * x[2],
             reverse=True,
@@ -90,19 +111,38 @@ class ProductionPathScore:
 
     @property
     def weighted_score(self) -> float:
+        delivery_fit = _score_value(self.delivery_fit, 0.0)
+        quality_fit = _score_value(self.quality_fit, 0.0)
+        capability_confidence = _score_value(self.capability_confidence, 0.0)
+        fallback_integrity = _score_value(self.fallback_integrity, 0.0)
+        budget_fit = _score_value(self.budget_fit, 0.0)
+        speed_fit = _score_value(self.speed_fit, 0.0)
+        controllability = _score_value(self.controllability, 0.0)
+        consistency_fit = _score_value(self.consistency_fit, 0.0)
         return (
-            self.delivery_fit * 0.25
-            + self.quality_fit * 0.20
-            + self.capability_confidence * 0.15
-            + self.fallback_integrity * 0.10
-            + self.budget_fit * 0.10
-            + self.speed_fit * 0.08
-            + self.controllability * 0.07
-            + self.consistency_fit * 0.05
+            delivery_fit * 0.25
+            + quality_fit * 0.20
+            + capability_confidence * 0.15
+            + fallback_integrity * 0.10
+            + budget_fit * 0.10
+            + speed_fit * 0.08
+            + controllability * 0.07
+            + consistency_fit * 0.05
         )
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
+        for key in (
+            "delivery_fit",
+            "quality_fit",
+            "capability_confidence",
+            "fallback_integrity",
+            "budget_fit",
+            "speed_fit",
+            "controllability",
+            "consistency_fit",
+        ):
+            d[key] = _score_value(d.get(key), 0.0)
         d["weighted_score"] = self.weighted_score
         return d
 
@@ -288,6 +328,23 @@ def _compute_cost_efficiency(
     return 0.3
 
 
+def _finite_float(value: Any) -> float | None:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if not math.isfinite(parsed):
+        return None
+    return parsed
+
+
+def _score_value(value: Any, default: float) -> float:
+    parsed = _finite_float(value)
+    if parsed is None:
+        return default
+    return min(1.0, max(0.0, parsed))
+
+
 def _compute_continuity(
     provider: str,
     locked_providers: set[str],
@@ -398,12 +455,12 @@ def score_provider(tool, task_context: dict[str, Any]) -> ProviderScore:
             - asset_type (str): "image", "video", "audio", "music", "voice"
     """
     task_context = normalize_task_context(task_context)
-    info = tool.get_info()
+    info = safe_tool_info(tool)
     # .value on the ToolStatus enum returns "available" / "degraded" / "unavailable".
     # str() on the enum returns "ToolStatus.AVAILABLE", which never matches the
     # lowercase branches below — older code had every available tool scoring 0.0
     # on reliability.
-    status = tool.get_status().value
+    status = safe_tool_status(tool).value
 
     best_for = set(info.get("best_for", []))
     intent = task_context.get("intent", "")
@@ -413,14 +470,17 @@ def score_provider(tool, task_context: dict[str, Any]) -> ProviderScore:
 
     # Reliability: uses historical success rate if available, else availability status.
     hist_success = info.get("historical_success_rate")  # 0.0-1.0 if tracked
+    reliability: float | None = None
     if hist_success is not None:
-        reliability = float(hist_success)
-    elif status == "available":
+        reliability = _score_value(hist_success, default=-1.0)
+        if reliability < 0:
+            reliability = None
+    if reliability is None and status == "available":
         # Stable tools get higher baseline than experimental ones
         reliability = 0.95 if info.get("stability") == "production" else 0.8
-    elif status == "degraded":
+    elif reliability is None and status == "degraded":
         reliability = 0.4
-    else:
+    elif reliability is None:
         reliability = 0.0
 
     # Control: from supports dict
@@ -431,12 +491,16 @@ def score_provider(tool, task_context: dict[str, Any]) -> ProviderScore:
         estimated_cost = tool.estimate_cost(task_context)
     except Exception:
         estimated_cost = 0.0
+    estimated_cost = _finite_float(estimated_cost)
+    if estimated_cost is None:
+        estimated_cost = 0.0
+    budget_remaining = _finite_float(task_context.get("budget_remaining_usd"))
     cost_efficiency = _compute_cost_efficiency(
-        estimated_cost, task_context.get("budget_remaining_usd")
+        estimated_cost, budget_remaining
     )
 
     # Latency: uses measured p50 latency if available, else runtime class heuristic.
-    measured_p50 = info.get("latency_p50_seconds")  # historical median
+    measured_p50 = _finite_float(info.get("latency_p50_seconds"))  # historical median
     if measured_p50 is not None:
         # Map measured latency to a 0-1 score (sub-second is best, >60s is worst)
         if measured_p50 <= 1.0:
@@ -467,9 +531,12 @@ def score_provider(tool, task_context: dict[str, Any]) -> ProviderScore:
     # Output quality: uses measured quality score if available (e.g. from
     # user ratings or automated eval), else falls back to stability + tier.
     measured_quality = info.get("quality_score")  # 0.0-1.0 if tracked
+    output_quality: float | None = None
     if measured_quality is not None:
-        output_quality = float(measured_quality)
-    else:
+        output_quality = _score_value(measured_quality, default=-1.0)
+        if output_quality < 0:
+            output_quality = None
+    if output_quality is None:
         stability = info.get("stability", "experimental")
         tier = info.get("tier", "")
         quality_map = {"production": 0.9, "beta": 0.7, "experimental": 0.4}
@@ -565,11 +632,12 @@ def format_ranking(rankings: list[ProviderScore], top_n: int = 5) -> str:
     """Format a ranking list for user presentation."""
     lines = []
     for i, r in enumerate(rankings[:top_n], 1):
+        payload = r.to_dict()
         lines.append(
             f"  {i}. {r.tool_name} ({r.provider}) — "
-            f"score: {r.weighted_score:.2f} "
-            f"[fit={r.task_fit:.1f} quality={r.output_quality:.1f} "
-            f"control={r.control:.1f} reliable={r.reliability:.1f} "
-            f"cost={r.cost_efficiency:.1f}]"
+            f"score: {payload['weighted_score']:.2f} "
+            f"[fit={payload['task_fit']:.1f} quality={payload['output_quality']:.1f} "
+            f"control={payload['control']:.1f} reliable={payload['reliability']:.1f} "
+            f"cost={payload['cost_efficiency']:.1f}]"
         )
     return "\n".join(lines)

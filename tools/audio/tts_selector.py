@@ -10,6 +10,13 @@ from __future__ import annotations
 from typing import Any
 
 from tools.base_tool import BaseTool, ToolResult, ToolRuntime, ToolStability, ToolTier, ToolStatus
+from tools.status_utils import (
+    is_tool_available,
+    safe_tool_info,
+    safe_tool_provider,
+    safe_tool_status,
+)
+from tools.output_paths import require_explicit_output_path
 
 
 class TTSSelector(BaseTool):
@@ -24,7 +31,7 @@ class TTSSelector(BaseTool):
         "Routes to discovered TTS providers. Use provider_menu_summary() to see "
         "which local/API voices are configured and each provider's setup steps."
     )
-    agent_skills: list[str] = []
+    agent_skills = ["text-to-speech", "elevenlabs", "doubao-tts"]
 
     capabilities = [
         "text_to_speech",
@@ -39,6 +46,7 @@ class TTSSelector(BaseTool):
         "preflight tool selection",
         "user-facing recommendation flows",
     ]
+    side_effects = ["delegates generated speech audio write to output_path"]
     idempotency_key_fields = [
         "text",
         "voice_id",
@@ -47,6 +55,8 @@ class TTSSelector(BaseTool):
         "similarity_boost",
         "style",
         "output_format",
+        "instructions",
+        "speed",
         "output_path",
         "preferred_provider",
         "allowed_providers",
@@ -82,6 +92,16 @@ class TTSSelector(BaseTool):
                 "type": "string",
                 "description": "Audio output format (e.g. mp3_44100_128). Passed through to provider.",
             },
+            "instructions": {
+                "type": "string",
+                "description": "Optional delivery instructions passed through to providers that support them.",
+            },
+            "speed": {
+                "type": "number",
+                "minimum": 0.25,
+                "maximum": 4.0,
+                "description": "Speech speed multiplier passed through to providers that support it.",
+            },
             "preferred_provider": {
                 "type": "string",
                 "description": "Provider name or 'auto'. Valid values are discovered at runtime from the registry.",
@@ -99,6 +119,61 @@ class TTSSelector(BaseTool):
             },
             "output_path": {"type": "string"},
         },
+        "anyOf": [
+            {"required": ["output_path"]},
+            {"properties": {"operation": {"const": "rank"}}, "required": ["operation"]},
+        ],
+    }
+    output_schema = {
+        "type": "object",
+        "properties": {
+            "output": {"type": "string"},
+            "output_path": {"type": "string"},
+            "selected_tool": {"type": "string"},
+            "selected_provider": {"type": "string"},
+            "selection_reason": {"type": "string"},
+            "provider_score": {"type": "object"},
+            "selected_tool_agent_skills": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+            "required_agent_skills": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+            "selected_tool_usage_location": {"type": ["string", "null"]},
+            "selected_tool_best_for": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+            "alternatives_considered": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+            "rankings": {
+                "type": "array",
+                "items": {"type": "object"},
+            },
+            "explanation": {"type": "string"},
+            "normalized_task_context": {"type": "object"},
+        },
+        "anyOf": [
+            {
+                "required": [
+                    "selected_tool",
+                    "selected_provider",
+                    "selection_reason",
+                    "alternatives_considered",
+                ],
+            },
+            {
+                "required": [
+                    "rankings",
+                    "explanation",
+                    "normalized_task_context",
+                ],
+            },
+        ],
     }
 
     def _providers(self) -> list[BaseTool]:
@@ -118,12 +193,14 @@ class TTSSelector(BaseTool):
         """Built at runtime from each provider's best_for field."""
         matrix = {}
         for tool in self._providers():
-            strength = ", ".join(tool.best_for) if tool.best_for else tool.name
-            matrix[tool.provider] = {"tool": tool.name, "strength": strength}
+            info = safe_tool_info(tool)
+            best_for = info.get("best_for") or []
+            strength = ", ".join(best_for) if best_for else str(info.get("name", tool.name))
+            matrix[safe_tool_provider(tool)] = {"tool": tool.name, "strength": strength}
         return matrix
 
     def get_status(self) -> ToolStatus:
-        if any(tool.get_status() == ToolStatus.AVAILABLE for tool in self._providers()):
+        if any(is_tool_available(tool) for tool in self._providers()):
             return ToolStatus.AVAILABLE
         return ToolStatus.UNAVAILABLE
 
@@ -136,6 +213,13 @@ class TTSSelector(BaseTool):
 
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
         from lib.scoring import rank_providers
+
+        if inputs.get("operation") != "rank":
+            _, output_error = require_explicit_output_path(
+                inputs, self.name, artifact_label="generated speech audio"
+            )
+            if output_error:
+                return output_error
 
         task_context = self._prepare_task_context(inputs)
         candidates = self._providers()
@@ -158,17 +242,24 @@ class TTSSelector(BaseTool):
         if tool is None:
             return ToolResult(success=False, error="No TTS provider available.")
 
+        _, output_error = require_explicit_output_path(
+            inputs, self.name, artifact_label="generated speech audio"
+        )
+        if output_error:
+            return output_error
+
         result = tool.execute(self._provider_inputs(inputs, tool))
         if result.success:
             result.data.setdefault("selected_tool", tool.name)
-            result.data["selected_provider"] = tool.provider
-            result.data["selection_reason"] = score.explain() if score else f"Selected {tool.provider} ({tool.name})"
+            selected_provider = safe_tool_provider(tool)
+            result.data["selected_provider"] = selected_provider
+            result.data["selection_reason"] = score.explain() if score else f"Selected {selected_provider} ({tool.name})"
             if score:
                 result.data["provider_score"] = score.to_dict()
             result.data.update(self._tool_context_payload(tool))
             result.data["alternatives_considered"] = [
                 t.name for t in candidates
-                if t.name != tool.name and t.get_status().value == "available"
+                if t.name != tool.name and is_tool_available(t)
             ]
         return result
 
@@ -188,7 +279,7 @@ class TTSSelector(BaseTool):
 
         available_by_name: dict[str, BaseTool] = {}
         for tool in candidates:
-            if tool.get_status() == ToolStatus.AVAILABLE:
+            if is_tool_available(tool):
                 available_by_name[tool.name] = tool
 
         if preferred != "auto":
@@ -238,7 +329,7 @@ class TTSSelector(BaseTool):
 
     @staticmethod
     def _tool_context_payload(tool: BaseTool) -> dict[str, Any]:
-        info = tool.get_info()
+        info = safe_tool_info(tool)
         return {
             "selected_tool_agent_skills": info.get("agent_skills", []),
             "required_agent_skills": info.get("agent_skills", []),
@@ -253,11 +344,11 @@ class TTSSelector(BaseTool):
             item = score.to_dict()
             tool = tool_by_name.get(score.tool_name)
             if tool:
-                info = tool.get_info()
+                info = safe_tool_info(tool)
                 item["agent_skills"] = info.get("agent_skills", [])
                 item["usage_location"] = info.get("usage_location")
                 item["best_for"] = info.get("best_for", [])
-                item["status"] = tool.get_status().value
+                item["status"] = safe_tool_status(tool).value
             serialized.append(item)
         return serialized
 
@@ -271,7 +362,7 @@ def _allowed_candidates(
         return candidates
     return [
         tool for tool in candidates
-        if tool.provider in allowed or tool.name in allowed
+        if safe_tool_provider(tool) in allowed or tool.name in allowed
     ]
 
 

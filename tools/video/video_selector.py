@@ -10,6 +10,13 @@ from __future__ import annotations
 import os
 
 from tools.base_tool import BaseTool, ToolResult, ToolRuntime, ToolStability, ToolStatus, ToolTier
+from tools.status_utils import (
+    is_tool_available,
+    safe_tool_info,
+    safe_tool_provider,
+    safe_tool_status,
+)
+from tools.output_paths import require_explicit_output_path
 
 
 class VideoSelector(BaseTool):
@@ -41,6 +48,7 @@ class VideoSelector(BaseTool):
         "user-facing recommendation flows",
         "switching between cloud, local, and stock video tools",
     ]
+    side_effects = ["delegates generated or sourced video write to output_path"]
     idempotency_key_fields = [
         "prompt",
         "preferred_provider",
@@ -120,6 +128,61 @@ class VideoSelector(BaseTool):
             },
             "output_path": {"type": "string"},
         },
+        "anyOf": [
+            {"required": ["output_path"]},
+            {"properties": {"operation": {"const": "rank"}}, "required": ["operation"]},
+        ],
+    }
+    output_schema = {
+        "type": "object",
+        "properties": {
+            "output": {"type": "string"},
+            "output_path": {"type": "string"},
+            "selected_tool": {"type": "string"},
+            "selected_provider": {"type": "string"},
+            "selection_reason": {"type": "string"},
+            "provider_score": {"type": "object"},
+            "selected_tool_agent_skills": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+            "required_agent_skills": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+            "selected_tool_usage_location": {"type": ["string", "null"]},
+            "selected_tool_best_for": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+            "alternatives_considered": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+            "rankings": {
+                "type": "array",
+                "items": {"type": "object"},
+            },
+            "explanation": {"type": "string"},
+            "normalized_task_context": {"type": "object"},
+        },
+        "anyOf": [
+            {
+                "required": [
+                    "selected_tool",
+                    "selected_provider",
+                    "selection_reason",
+                    "alternatives_considered",
+                ],
+            },
+            {
+                "required": [
+                    "rankings",
+                    "explanation",
+                    "normalized_task_context",
+                ],
+            },
+        ],
     }
 
     def _providers(self) -> list[BaseTool]:
@@ -139,12 +202,14 @@ class VideoSelector(BaseTool):
         """Built at runtime from each provider's best_for field."""
         matrix = {}
         for tool in self._providers():
-            strength = ", ".join(tool.best_for) if tool.best_for else tool.name
-            matrix[tool.provider] = {"tool": tool.name, "strength": strength}
+            info = safe_tool_info(tool)
+            best_for = info.get("best_for") or []
+            strength = ", ".join(best_for) if best_for else str(info.get("name", tool.name))
+            matrix[safe_tool_provider(tool)] = {"tool": tool.name, "strength": strength}
         return matrix
 
     def get_status(self) -> ToolStatus:
-        if any(tool.get_status() == ToolStatus.AVAILABLE for tool in self._providers()):
+        if any(is_tool_available(tool) for tool in self._providers()):
             return ToolStatus.AVAILABLE
         return ToolStatus.UNAVAILABLE
 
@@ -164,6 +229,13 @@ class VideoSelector(BaseTool):
 
     def execute(self, inputs: dict[str, object]) -> ToolResult:
         from lib.scoring import rank_providers
+
+        if inputs.get("operation") != "rank":
+            _, output_error = require_explicit_output_path(
+                inputs, self.name, artifact_label="generated video"
+            )
+            if output_error:
+                return output_error
 
         task_context = self._prepare_task_context(inputs)
         requested_operation = self._requested_generation_operation(inputs)
@@ -191,6 +263,12 @@ class VideoSelector(BaseTool):
                     error=f"No {requested_operation} video provider available.",
                 )
             return ToolResult(success=False, error="No video generation provider available.")
+
+        _, output_error = require_explicit_output_path(
+            inputs, self.name, artifact_label="generated video"
+        )
+        if output_error:
+            return output_error
 
         # Adapt input keys: stock tools use 'query' while generators use 'prompt'
         adapted = dict(inputs)
@@ -231,14 +309,15 @@ class VideoSelector(BaseTool):
         result = tool.execute(adapted)
         if result.success:
             result.data.setdefault("selected_tool", tool.name)
-            result.data["selected_provider"] = tool.provider
-            result.data["selection_reason"] = score.explain() if score else f"Selected {tool.provider} ({tool.name})"
+            selected_provider = safe_tool_provider(tool)
+            result.data["selected_provider"] = selected_provider
+            result.data["selection_reason"] = score.explain() if score else f"Selected {selected_provider} ({tool.name})"
             if score:
                 result.data["provider_score"] = score.to_dict()
             result.data.update(self._tool_context_payload(tool))
             result.data["alternatives_considered"] = [
                 t.name for t in candidates
-                if t.name != tool.name and t.get_status().value == "available"
+                if t.name != tool.name and is_tool_available(t)
             ]
         return result
 
@@ -278,7 +357,7 @@ class VideoSelector(BaseTool):
         # scorer's per-tool ranking.
         available_by_name: dict[str, BaseTool] = {}
         for tool in candidates:
-            if tool.get_status() == ToolStatus.AVAILABLE:
+            if is_tool_available(tool):
                 available_by_name[tool.name] = tool
 
         # If a preferred provider is explicitly requested and available,
@@ -310,7 +389,7 @@ class VideoSelector(BaseTool):
 
     @staticmethod
     def _tool_context_payload(tool: BaseTool) -> dict[str, object]:
-        info = tool.get_info()
+        info = safe_tool_info(tool)
         return {
             "selected_tool_agent_skills": info.get("agent_skills", []),
             "required_agent_skills": info.get("agent_skills", []),
@@ -325,12 +404,12 @@ class VideoSelector(BaseTool):
             item = score.to_dict()
             tool = tool_by_name.get(score.tool_name)
             if tool:
-                info = tool.get_info()
+                info = safe_tool_info(tool)
                 item["agent_skills"] = info.get("agent_skills", [])
                 item["usage_location"] = info.get("usage_location")
                 item["best_for"] = info.get("best_for", [])
                 item["supports"] = info.get("supports", {})
-                item["status"] = tool.get_status().value
+                item["status"] = safe_tool_status(tool).value
             serialized.append(item)
         return serialized
 
@@ -386,5 +465,5 @@ def _allowed_candidates(
         return candidates
     return [
         tool for tool in candidates
-        if tool.provider in allowed or tool.name in allowed
+        if safe_tool_provider(tool) in allowed or tool.name in allowed
     ]
