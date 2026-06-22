@@ -19,6 +19,7 @@ from tools.base_tool import (
     ToolStatus,
     ToolTier,
 )
+from tools.output_paths import require_explicit_output_path
 
 
 class OpenAITTS(BaseTool):
@@ -63,7 +64,7 @@ class OpenAITTS(BaseTool):
 
     input_schema = {
         "type": "object",
-        "required": ["text"],
+        "required": ["text", "output_path"],
         "properties": {
             "text": {"type": "string"},
             "voice": {
@@ -95,6 +96,29 @@ class OpenAITTS(BaseTool):
             "output_path": {"type": "string"},
         },
     }
+    output_schema = {
+        "type": "object",
+        "required": [
+            "provider",
+            "model",
+            "voice",
+            "format",
+            "text_length",
+            "audio_duration_seconds",
+            "output",
+            "output_path",
+        ],
+        "properties": {
+            "provider": {"type": "string", "const": "openai"},
+            "model": {"type": "string"},
+            "voice": {"type": "string"},
+            "format": {"type": "string", "enum": ["mp3", "wav", "pcm"]},
+            "text_length": {"type": "integer", "minimum": 0},
+            "audio_duration_seconds": {"type": ["number", "null"]},
+            "output": {"type": "string"},
+            "output_path": {"type": "string"},
+        },
+    }
 
     resource_profile = ResourceProfile(
         cpu_cores=1, ram_mb=256, vram_mb=0, disk_mb=50, network_required=True
@@ -110,7 +134,7 @@ class OpenAITTS(BaseTool):
         "speed",
     ]
     side_effects = ["writes audio file to output_path", "calls OpenAI API"]
-    user_visible_verification = ["Listen to generated audio for intelligibility and tone"]
+    user_visible_verification = ["Inspect transcript alignment, duration, and waveform metrics for intelligibility and tone"]
 
     def get_status(self) -> ToolStatus:
         if os.environ.get("OPENAI_API_KEY"):
@@ -121,6 +145,13 @@ class OpenAITTS(BaseTool):
         return round(len(inputs.get("text", "")) * 0.000015, 4)
 
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
+        output_path, output_error = require_explicit_output_path(
+            inputs, self.name, artifact_label="generated speech audio"
+        )
+        if output_error:
+            return output_error
+        assert output_path is not None
+
         if not os.environ.get("OPENAI_API_KEY"):
             return ToolResult(success=False, error="No OpenAI API key. " + self.install_instructions)
 
@@ -132,6 +163,8 @@ class OpenAITTS(BaseTool):
 
         result.duration_seconds = round(time.time() - start, 2)
         result.cost_usd = self.estimate_cost(inputs)
+        if result.success:
+            result.data.setdefault("output_path", str(output_path))
         return result
 
     def _generate(self, inputs: dict[str, Any]) -> ToolResult:
@@ -144,7 +177,7 @@ class OpenAITTS(BaseTool):
         model = inputs.get("model", "gpt-4o-mini-tts")
         voice = inputs.get("voice", "alloy")
         fmt = inputs.get("format", "mp3")
-        output_path = Path(inputs.get("output_path", f"openai_tts.{fmt}"))
+        output_path = Path(inputs["output_path"])
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         kwargs: dict[str, Any] = {

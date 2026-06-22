@@ -1,7 +1,11 @@
-"""Wan video generation and editing via Alibaba Cloud Bailian / DashScope API.
+"""Alibaba Cloud Bailian / DashScope video generation and editing.
 
-Supports Wan 2.7 (i2v, r2v, videoedit — Bailian China), Wan 2.6 (t2v, i2v-flash),
-and legacy Wan 2.1. All use the async task pattern: submit → poll → download.
+Supports HappyHorse 1.0 (current flagship — native joint audio+video generation
+for t2v/i2v/r2v/video-edit), Wan 2.7 (t2v/i2v/r2v/videoedit — also with native
+audio sync), Wan 2.6 (t2v, i2v-flash), and legacy Wan 2.1. All models share the
+same async task pattern: submit → poll → download, and only differ by the
+`model` field. HappyHorse and Wan 2.7 use `resolution`+`ratio` (not `size`) and
+the `input.media[]` multimodal input shape; Wan 2.6/2.1 use `size` + `img_url`.
 
 Endpoint (all models): /api/v1/services/aigc/video-generation/video-synthesis
 Task polling:          /api/v1/tasks/{task_id}
@@ -27,14 +31,70 @@ from tools.base_tool import (
     ToolStatus,
     ToolTier,
 )
+from tools.output_paths import require_explicit_output_path
 
 _API_BASE = "https://dashscope.aliyuncs.com/api/v1"
 _VIDEO_GEN_URL = f"{_API_BASE}/services/aigc/video-generation/video-synthesis"
 _TASK_URL = f"{_API_BASE}/tasks/{{task_id}}"
 
+# Models that use the new unified multimodal API shape: `input.media[]` for
+# conditioning and `resolution`+`ratio` parameters (no legacy `size` field).
+_NEW_API_VARIANTS = ("wan2.7-", "happyhorse-")
+
+
+def _uses_new_api(variant: str) -> bool:
+    return variant.startswith(_NEW_API_VARIANTS)
+
+
 # ── Model registry ─────────────────────────────────────────────────────────────
 _MODELS: dict[str, dict[str, Any]] = {
-    # ── Wan 2.7 (Bailian China mainland, latest) ──────────────────────────────
+    # ── HappyHorse 1.0 (current flagship, native audio+video joint generation) ─
+    "happyhorse-1.0-t2v": {
+        "name": "HappyHorse 1.0 Text-to-Video",
+        "operation": "text_to_video",
+        "quality": "highest",
+        "speed": "medium",
+        "cost_per_5s": 0.30,
+        "max_duration": 10,
+        "native_audio": True,
+    },
+    "happyhorse-1.0-i2v": {
+        "name": "HappyHorse 1.0 Image-to-Video",
+        "operation": "image_to_video",
+        "quality": "highest",
+        "speed": "medium",
+        "cost_per_5s": 0.32,
+        "max_duration": 10,
+        "native_audio": True,
+    },
+    "happyhorse-1.0-r2v": {
+        "name": "HappyHorse 1.0 Reference-to-Video",
+        "operation": "reference_to_video",
+        "quality": "highest",
+        "speed": "medium",
+        "cost_per_5s": 0.34,
+        "max_duration": 10,
+        "native_audio": True,
+    },
+    "happyhorse-1.0-video-edit": {
+        "name": "HappyHorse 1.0 Video Edit",
+        "operation": "video_editing",
+        "quality": "highest",
+        "speed": "medium",
+        "cost_per_5s": 0.36,
+        "max_duration": 10,
+        "native_audio": True,
+    },
+    # ── Wan 2.7 (Bailian, native audio sync) ───────────────────────────────────
+    "wan2.7-t2v": {
+        "name": "Wan 2.7 Text-to-Video",
+        "operation": "text_to_video",
+        "quality": "highest",
+        "speed": "medium",
+        "cost_per_5s": 0.24,
+        "max_duration": 15,
+        "native_audio": True,
+    },
     "wan2.7-i2v": {
         "name": "Wan 2.7 Image-to-Video",
         "operation": "image_to_video",
@@ -42,6 +102,7 @@ _MODELS: dict[str, dict[str, Any]] = {
         "speed": "medium",
         "cost_per_5s": 0.22,
         "max_duration": 10,
+        "native_audio": True,
     },
     "wan2.7-r2v": {
         "name": "Wan 2.7 Reference-to-Video",
@@ -111,12 +172,12 @@ _MODELS: dict[str, dict[str, Any]] = {
     },
 }
 
-# Best model per operation (prefer Wan 2.7/2.6 where available)
+# Best model per operation (prefer HappyHorse 1.0 flagship, fall back to Wan 2.7).
 _OP_DEFAULTS: dict[str, str] = {
-    "text_to_video": "wan2.6-t2v",
-    "image_to_video": "wan2.7-i2v",
-    "reference_to_video": "wan2.7-r2v",
-    "video_editing": "wan2.7-videoedit",
+    "text_to_video": "happyhorse-1.0-t2v",
+    "image_to_video": "happyhorse-1.0-i2v",
+    "reference_to_video": "happyhorse-1.0-r2v",
+    "video_editing": "happyhorse-1.0-video-edit",
 }
 
 # Resolution presets (480P / 720P / 1080P) — accepted by 2.5/2.6 models.
@@ -162,10 +223,11 @@ class WanVideoAPI(BaseTool):
         "local_gpu": False,
     }
     best_for = [
+        "HappyHorse 1.0 flagship — native joint audio+video generation (t2v/i2v/r2v/edit)",
+        "text-to-video with native audio sync (happyhorse-1.0-t2v, wan2.7-t2v)",
         "Wan 2.7 i2v/r2v/videoedit on Bailian without a local GPU",
-        "video editing via natural-language instruction (wan2.7-videoedit)",
-        "reference-guided video generation (wan2.7-r2v)",
-        "Wan 2.6 t2v for 1080P long clips (up to 15s)",
+        "video editing via natural-language instruction (happyhorse-1.0-video-edit, wan2.7-videoedit)",
+        "reference-guided video generation keeping character identity (happyhorse-1.0-r2v, wan2.7-r2v)",
         "Chinese-language prompt video generation",
     ]
     not_good_for = [
@@ -176,7 +238,7 @@ class WanVideoAPI(BaseTool):
 
     input_schema = {
         "type": "object",
-        "required": ["prompt"],
+        "required": ["prompt", "output_path"],
         "allOf": [
             {
                 "if": {
@@ -250,10 +312,10 @@ class WanVideoAPI(BaseTool):
                 ],
                 "default": "text_to_video",
                 "description": (
-                    "text_to_video: prompt → clip. "
-                    "image_to_video: still image → clip (wan2.7-i2v/wan2.6-i2v-flash). "
-                    "reference_to_video: reference images/video → new clip (wan2.7-r2v). "
-                    "video_editing: edit existing video by instruction (wan2.7-videoedit)."
+                    "text_to_video: prompt → clip (default happyhorse-1.0-t2v). "
+                    "image_to_video: still image → clip (default happyhorse-1.0-i2v). "
+                    "reference_to_video: reference images/video → new clip (default happyhorse-1.0-r2v). "
+                    "video_editing: edit existing video by instruction (default happyhorse-1.0-video-edit)."
                 ),
             },
             "model_variant": {
@@ -270,22 +332,23 @@ class WanVideoAPI(BaseTool):
             },
             "aspect_ratio": {
                 "type": "string",
-                "enum": ["16:9", "9:16", "1:1"],
+                "enum": ["16:9", "9:16", "1:1", "4:3", "3:4"],
                 "description": (
-                    "Convenience param. When set, the tool resolves to the matching `size` "
-                    "value (16:9->1920*1080, 9:16->1080*1920, 1:1->960*960) and clears any "
-                    "`resolution` preset so the API honors the aspect ratio. Use this for "
-                    "vertical TikTok / Reels output instead of `resolution: 1080P`, which "
-                    "produces landscape on wan2.6-t2v."
+                    "Output shape. For HappyHorse/Wan 2.7 this is passed as the API "
+                    "`ratio` field (default 16:9). For legacy Wan 2.6/2.1 it resolves to the "
+                    "matching `size` string and clears any resolution preset so the API "
+                    "honors the aspect ratio. Use this for vertical TikTok / Reels output "
+                    "instead of relying on the resolution tier."
                 ),
             },
             "resolution": {
                 "type": "string",
                 "enum": _RESOLUTION_PRESETS,
                 "description": (
-                    "Resolution preset for wan2.5/2.6 models (480P/720P/1080P). "
-                    "NOTE: the API treats this as a *landscape* preset for t2v; pass "
-                    "`aspect_ratio` (or `size`) for non-landscape output."
+                    "Resolution tier. For HappyHorse/Wan 2.7 this is the `resolution` field "
+                    "(default 1080P) combined with `ratio`. For legacy Wan 2.6/2.1 it is a "
+                    "*landscape* preset — pass `aspect_ratio` (or `size`) for non-landscape "
+                    "output."
                 ),
             },
             "size": {
@@ -348,6 +411,41 @@ class WanVideoAPI(BaseTool):
             "output_path": {"type": "string"},
         },
     }
+    output_schema = {
+        "type": "object",
+        "required": [
+            "provider",
+            "model",
+            "model_name",
+            "prompt",
+            "operation",
+            "duration",
+            "output",
+            "output_path",
+            "format",
+            "file_size_bytes",
+        ],
+        "properties": {
+            "provider": {"type": "string", "const": "bailian"},
+            "model": {"type": "string"},
+            "model_name": {"type": "string"},
+            "prompt": {"type": "string"},
+            "operation": {
+                "type": "string",
+                "enum": ["text_to_video", "image_to_video", "reference_to_video", "video_editing"],
+            },
+            "duration": {"type": "integer", "minimum": 0},
+            "output": {"type": "string"},
+            "output_path": {"type": "string"},
+            "format": {"type": "string", "const": "mp4"},
+            "file_size_bytes": {"type": "integer", "minimum": 0},
+            "duration_seconds": {"type": "number", "minimum": 0},
+            "file_size_mb": {"type": "number", "minimum": 0},
+            "video_width": {"type": "integer", "minimum": 0},
+            "video_height": {"type": "integer", "minimum": 0},
+            "video_codec": {"type": "string"},
+        },
+    }
 
     resource_profile = ResourceProfile(
         cpu_cores=1, ram_mb=512, vram_mb=0, disk_mb=500, network_required=True
@@ -374,7 +472,7 @@ class WanVideoAPI(BaseTool):
         "output_path",
     ]
     side_effects = ["writes video file to output_path", "calls Bailian/DashScope API"]
-    user_visible_verification = ["Watch generated clip for motion coherence and visual quality"]
+    user_visible_verification = ["Inspect sampled frames for motion coherence and visual quality"]
 
     def _get_api_key(self) -> str | None:
         return os.environ.get("DASHSCOPE_API_KEY")
@@ -386,28 +484,18 @@ class WanVideoAPI(BaseTool):
 
     def estimate_cost(self, inputs: dict[str, Any]) -> float:
         operation = inputs.get("operation", "text_to_video")
-        variant = inputs.get("model_variant") or _OP_DEFAULTS.get(operation, "wan2.6-t2v")
+        variant = inputs.get("model_variant") or _OP_DEFAULTS.get(operation, "happyhorse-1.0-t2v")
         duration = int(inputs.get("duration", 5))
-        base = _MODELS.get(variant, _MODELS["wan2.6-t2v"])["cost_per_5s"]
+        base = _MODELS.get(variant, _MODELS["happyhorse-1.0-t2v"])["cost_per_5s"]
         return round(base * (duration / 5), 4)
 
     def estimate_runtime(self, inputs: dict[str, Any]) -> float:
         operation = inputs.get("operation", "text_to_video")
-        variant = inputs.get("model_variant") or _OP_DEFAULTS.get(operation, "wan2.6-t2v")
+        variant = inputs.get("model_variant") or _OP_DEFAULTS.get(operation, "happyhorse-1.0-t2v")
         speed = _MODELS.get(variant, {}).get("speed", "medium")
         return {"fast": 60.0, "medium": 120.0, "slow": 240.0}.get(speed, 120.0)
 
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
-        api_key = self._get_api_key()
-        if not api_key:
-            return ToolResult(
-                success=False,
-                error="DASHSCOPE_API_KEY not set. " + self.install_instructions,
-            )
-
-        import requests
-
-        start = time.time()
         operation = inputs.get("operation", "text_to_video")
         if operation not in _OP_DEFAULTS:
             return ToolResult(
@@ -437,7 +525,24 @@ class WanVideoAPI(BaseTool):
                     "or omit model_variant to use the operation default."
                 ),
             )
+        output_path, output_error = require_explicit_output_path(
+            inputs,
+            self.name,
+            artifact_label="generated video",
+        )
+        if output_error:
+            return output_error
 
+        api_key = self._get_api_key()
+        if not api_key:
+            return ToolResult(
+                success=False,
+                error="DASHSCOPE_API_KEY not set. " + self.install_instructions,
+            )
+
+        import requests
+
+        start = time.time()
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
@@ -451,8 +556,9 @@ class WanVideoAPI(BaseTool):
             inp["audio_url"] = inputs["audio_url"]
 
         # ── Operation-specific input assembly ──────────────────────────────
-        # wan2.7-* uses input.media:[{url, type}]; wan2.6/2.1 use img_url/video/ref_images
-        use_media_api = variant.startswith("wan2.7-")
+        # HappyHorse 1.0 and Wan 2.7 use input.media:[{url, type}]; wan2.6/2.1 use
+        # img_url/video/ref_images.
+        use_media_api = _uses_new_api(variant)
 
         if operation == "image_to_video":
             err = self._attach_image(inputs, inp, use_media_api)
@@ -474,22 +580,30 @@ class WanVideoAPI(BaseTool):
             "duration": inputs.get("duration", 5),
             "prompt_extend": inputs.get("prompt_extend", True),
         }
-        # aspect_ratio convenience: takes precedence over resolution+size, derives the
-        # explicit `size` string, and clears any resolution preset so the API honors
-        # the aspect ratio (resolution presets force landscape on wan2.6-t2v).
-        aspect_ratio = inputs.get("aspect_ratio")
-        if aspect_ratio:
-            _AR_TO_SIZE = {
-                "16:9": "1920*1080",
-                "9:16": "1080*1920",
-                "1:1": "960*960",
-            }
-            params["size"] = _AR_TO_SIZE[aspect_ratio]
-        elif inputs.get("resolution"):
-            # wan2.5/2.6 accept resolution presets (landscape only)
-            params["resolution"] = inputs["resolution"]
+        # HappyHorse 1.0 and Wan 2.7 dropped the `size` field: they use the
+        # `resolution` tier (480P/720P/1080P) + `ratio` (16:9/9:16/1:1/4:3/3:4)
+        # pair instead. Legacy Wan 2.6/2.1 still use the explicit `size` string.
+        if _uses_new_api(variant):
+            ratio = inputs.get("aspect_ratio") or "16:9"
+            params["ratio"] = ratio
+            params["resolution"] = inputs.get("resolution") or "1080P"
         else:
-            params["size"] = inputs.get("size", "1280*720")
+            # aspect_ratio convenience: derives the explicit `size` string and
+            # clears any resolution preset so the API honors the aspect ratio
+            # (resolution presets force landscape on wan2.6-t2v).
+            aspect_ratio = inputs.get("aspect_ratio")
+            if aspect_ratio:
+                _AR_TO_SIZE = {
+                    "16:9": "1920*1080",
+                    "9:16": "1080*1920",
+                    "1:1": "960*960",
+                }
+                params["size"] = _AR_TO_SIZE[aspect_ratio]
+            elif inputs.get("resolution"):
+                # wan2.5/2.6 accept resolution presets (landscape only)
+                params["resolution"] = inputs["resolution"]
+            else:
+                params["size"] = inputs.get("size", "1280*720")
         if inputs.get("seed") is not None:
             params["seed"] = inputs["seed"]
 
@@ -511,7 +625,6 @@ class WanVideoAPI(BaseTool):
             video_resp = requests.get(video_url, timeout=300)
             video_resp.raise_for_status()
 
-            output_path = Path(inputs.get("output_path", "wan_api_output.mp4"))
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_bytes(video_resp.content)
 

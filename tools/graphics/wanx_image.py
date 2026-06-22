@@ -29,6 +29,7 @@ from tools.base_tool import (
     ToolStatus,
     ToolTier,
 )
+from tools.output_paths import require_explicit_output_path
 
 _API_BASE = "https://dashscope.aliyuncs.com/api/v1"
 # wanx2.x models: text2image/image-synthesis
@@ -49,6 +50,17 @@ _MODELS: dict[str, dict[str, Any]] = {
         "supports_editing": True,
         "supports_ref": True,
         "api_style": "wan27",  # messages format, different endpoint + result path
+    },
+    # ── Wan 2.7 image (general/accelerated variant, same messages API) ─────────
+    "wan2.7-image": {
+        "name": "Wan 2.7 Image",
+        "quality": "high",
+        "speed": "fast",
+        "cost_per_image": 0.010,
+        "max_n": 4,
+        "supports_editing": True,
+        "supports_ref": True,
+        "api_style": "wan27",
     },
     # ── Wanxiang 2.1 (confirmed available, /text2image/image-synthesis) ───────
     "wanx2.1-t2i-turbo": {
@@ -188,7 +200,7 @@ class WanxImage(BaseTool):
 
     input_schema = {
         "type": "object",
-        "required": ["prompt"],
+        "required": ["prompt", "output_path"],
         "allOf": [
             {
                 "if": {
@@ -242,7 +254,7 @@ class WanxImage(BaseTool):
                 "type": "string",
                 "enum": list(_MODELS.keys()),
                 "default": "wan2.7-image-pro",
-                "description": "wan2.7-image-pro: highest quality (default). wanx2.1-t2i-turbo: fastest/cheapest.",
+                "description": "wan2.7-image-pro: highest quality (default). wan2.7-image: faster general variant. wanx2.1-t2i-turbo: fastest/cheapest.",
             },
             "size": {
                 "type": "string",
@@ -295,6 +307,44 @@ class WanxImage(BaseTool):
             },
         },
     }
+    output_schema = {
+        "type": "object",
+        "required": [
+            "provider",
+            "model",
+            "model_name",
+            "operation",
+            "prompt",
+            "size",
+            "n",
+            "output",
+            "output_path",
+            "outputs",
+            "seed",
+        ],
+        "properties": {
+            "provider": {"type": "string", "const": "bailian"},
+            "model": {"type": "string"},
+            "model_name": {"type": "string"},
+            "operation": {
+                "type": "string",
+                "enum": [
+                    "text_to_image",
+                    "text_to_image_set",
+                    "image_editing",
+                    "image_to_image_set",
+                    "multi_image_reference",
+                ],
+            },
+            "prompt": {"type": "string"},
+            "size": {"type": "string"},
+            "n": {"type": "integer", "minimum": 1},
+            "output": {"type": "string"},
+            "output_path": {"type": "string"},
+            "outputs": {"type": "array", "items": {"type": "string"}},
+            "seed": {"type": ["integer", "string", "null"]},
+        },
+    }
 
     resource_profile = ResourceProfile(
         cpu_cores=1, ram_mb=256, vram_mb=0, disk_mb=100, network_required=True
@@ -340,6 +390,14 @@ class WanxImage(BaseTool):
             return ToolResult(success=False, error=f"Unsupported operation '{operation}'.")
         if model not in _MODELS:
             return ToolResult(success=False, error=f"Unsupported model '{model}'.")
+
+        validated_output_path, output_error = require_explicit_output_path(
+            inputs,
+            self.name,
+            artifact_label="generated image",
+        )
+        if output_error:
+            return output_error
 
         api_key = self._get_api_key()
         if not api_key:
@@ -404,7 +462,11 @@ class WanxImage(BaseTool):
                     error=f"Wanxiang image task {task_status.lower()}",
                 )
 
-            output_paths = self._download_images(results, inputs.get("output_path"), model)
+            output_paths = self._download_images(
+                results,
+                str(validated_output_path),
+                model,
+            )
 
         except Exception as exc:
             return ToolResult(success=False, error=f"Wanxiang image generation failed: {exc}")
@@ -423,6 +485,7 @@ class WanxImage(BaseTool):
                 "size": inputs.get("size", "1024*1024"),
                 "n": n,
                 "output": primary,
+                "output_path": primary,
                 "outputs": output_paths,
                 "seed": seed_out,
             },
@@ -608,13 +671,13 @@ class WanxImage(BaseTool):
     def _download_images(
         self,
         results: list[dict[str, Any]],
-        output_path_hint: str | None,
+        output_path_hint: str,
         model: str,
     ) -> list[str]:
         import requests
 
         paths: list[str] = []
-        base = Path(output_path_hint or f"wanx_{model}_output.png")
+        base = Path(output_path_hint)
         stem = base.stem
         suffix = base.suffix or ".png"
         parent = base.parent
