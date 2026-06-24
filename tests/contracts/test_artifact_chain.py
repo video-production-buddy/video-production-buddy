@@ -15,12 +15,11 @@ Also tests the mechanical compliance_manifest generation rules:
   - default-heuristic confidence → failure_action=flag
   - research-grounded/pattern-inferred → failure_action=revise
 
-Run: python3 tests/contracts/test_artifact_chain.py
+Run: VPB_ALLOW_BROWSER_OPEN=0 PYTHONDONTWRITEBYTECODE=1 python -m pytest -p no:cacheprovider tests/contracts/test_artifact_chain.py -q
 """
 
 import json
 import sys
-import traceback
 from pathlib import Path
 
 import pytest
@@ -1207,71 +1206,3 @@ def test_deliverables_primary_aspect_ratio_matches_platform():
         assert aspect == "16:9", (
             f"Platform '{platform}' should default to 16:9 primary, got {aspect!r}"
         )
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Standalone runner
-# ─────────────────────────────────────────────────────────────────────────────
-
-if __name__ == "__main__":
-    if not HAS_JSONSCHEMA:
-        print("WARNING: jsonschema not installed — schema validation tests will fail.")
-        print("Install with: pip install jsonschema\n")
-
-    tests = [
-        # intake_brief
-        test_intake_brief_rich_validates,
-        test_intake_brief_thin_validates,
-        test_intake_brief_completeness_values,
-        test_intake_brief_rejects_more_than_3_questions,
-        test_intake_brief_rejects_invalid_platform,
-        test_intake_brief_rejects_invalid_completeness,
-        test_intake_brief_requires_product_and_platform,
-        # intelligence_brief
-        test_intelligence_brief_validates,
-        test_intelligence_brief_rejects_empty_rejected_approaches,
-        test_intelligence_brief_rejects_invalid_confidence_tier,
-        test_intelligence_brief_confidence_tiers_are_valid,
-        test_intelligence_brief_has_minimum_required_counts,
-        test_intelligence_brief_requires_platform_trends_minItems,
-        # production_bible schema
-        test_production_bible_validates,
-        test_production_bible_null_cta_passes_schema,
-        test_production_bible_pipeline_must_be_ad_video,
-        test_production_bible_brand_name_in_final_frame_must_be_true,
-        test_production_bible_beat_name_accepts_arc_specific_names,
-        test_production_bible_rejects_invalid_evaluation_method,
-        test_production_bible_rejects_invalid_failure_action,
-        test_production_bible_requires_approval_flags,
-        # Internal consistency
-        test_all_beat_ids_referenced_in_checkpoints_exist,
-        test_key_visual_moments_reference_valid_beats,
-        test_editing_rhythm_references_valid_beats,
-        # Compliance manifest generation rules
-        test_structural_check_types_have_structural_evaluation_method,
-        test_content_check_type_has_semantic_evaluation_method,
-        test_default_heuristic_maps_to_flag,
-        test_research_grounded_maps_to_revise,
-        test_pattern_inferred_maps_to_revise,
-        test_compliance_manifest_covers_all_downstream_stages,
-        test_compliance_manifest_has_both_structural_and_semantic,
-        test_all_checkpoints_have_required_fields,
-        # Cross-artifact contracts
-        test_approved_bible_has_non_null_cta,
-        test_bible_inherits_rejected_approaches_from_intelligence,
-        test_bible_beat_durations_sum_to_target,
-        test_bible_intensity_values_are_normalized,
-        test_deliverables_primary_aspect_ratio_matches_platform,
-    ]
-    passed = failed = 0
-    for t in tests:
-        try:
-            t()
-            print(f"[PASS] {t.__name__}")
-            passed += 1
-        except Exception as e:
-            print(f"[FAIL] {t.__name__}: {e}")
-            traceback.print_exc()
-            failed += 1
-    print(f"\n{passed}/{passed + failed} tests passed")
-    import sys; sys.exit(0 if failed == 0 else 1)

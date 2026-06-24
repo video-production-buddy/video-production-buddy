@@ -1,0 +1,1 @@
+"""Pipeline manifest package data."""

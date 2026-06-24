@@ -1,6 +1,6 @@
 # Video Production Buddy Architecture
 
-> Last updated: 2026-06-02 | Derived from code exploration, not prior documentation.
+> Last updated: 2026-06-16 | Derived from code exploration, not prior documentation.
 
 Video Production Buddy is an **agent-orchestrated video production platform**. An LLM coding assistant (Claude Code, Cursor, Copilot, etc.) acts as the orchestrator — reading pipeline manifests, following skill instructions, calling Python tools, and checkpointing state. There is no runtime Python orchestrator; the agent _is_ the control plane.
 
@@ -56,13 +56,14 @@ Video Production Buddy/
 │   ├── interaction/         # GenUI local form tool for dense human gates
 │   ├── publishers/         # (Reserved)
 │   ├── subtitle/           # SRT/VTT generation from timestamps
+│   ├── text/               # Optional billed LLM chat providers for ad-hoc text sub-tasks
 │   ├── validation/         # Cross-artifact governance validators
 │   └── video/              # Video generation providers, composition runtimes, stitching, trimming
 │
 ├── pipeline_defs/          # YAML pipeline manifests
 ├── knowledge/              # Curated ad-video professional knowledge cards
 ├── schemas/                # JSON Schema definitions for validation
-│   ├── artifacts/          # 28 artifact schemas (brief -> publish_log plus governance artifacts)
+│   ├── artifacts/          # 34 artifact schemas (brief -> publish_log plus governance artifacts)
 │   ├── checkpoints/        # Checkpoint state schema
 │   ├── pipelines/          # Pipeline manifest schema
 │   ├── styles/             # Style playbook schema
@@ -99,9 +100,20 @@ There is **no Python orchestrator**. The LLM agent:
 
 Python provides **tools and persistence only**. All intelligence lives in skill instructions (Markdown) and pipeline manifests (YAML).
 
-### 2. No LLM API Key in Runtime
+### 2. No Runtime LLM Orchestrator
 
-Video Production Buddy does not call LLM APIs at runtime. The coding assistant running in the user's IDE _is_ the LLM. Tools that need generation (images, video, TTS) call domain-specific APIs directly (ElevenLabs, fal.ai, HeyGen, etc.), not general-purpose LLM endpoints.
+The coding assistant running in the user's IDE _is_ the LLM control plane.
+Video Production Buddy does not autonomously route stages through a Python LLM
+orchestrator, and pipeline manifests must not auto-wire general chat models into
+stage tool lists. Most generation tools call domain-specific APIs directly
+(ElevenLabs, fal.ai, HeyGen, etc.).
+
+`tools/text/` is the explicit exception: it contains optional billed chat
+provider tools (`qwen_chat`, `minimax_chat`) for standalone ad-hoc text
+sub-tasks such as script polishing, translation, and summarization. Before using
+those tools, the agent must announce the provider/model, surface cost or billing
+implications, get user approval, and log any resulting governance decision when
+the output changes canonical artifacts.
 
 ### 3. Dual-Provider Support
 
@@ -151,6 +163,12 @@ routing/session lifecycle state and is never written by the browser.
 ---
 
 ## The Tool System
+
+Canonical capability packages are `tools/analysis/`, `tools/audio/`,
+`tools/avatar/`, `tools/capture/`, `tools/character/`, `tools/compliance/`,
+`tools/enhancement/`, `tools/graphics/`, `tools/interaction/`,
+`tools/publishers/`, `tools/subtitle/`, `tools/text/`, `tools/validation/`,
+and `tools/video/`.
 
 ### BaseTool Contract
 
@@ -213,11 +231,12 @@ Representative capability families:
 | Capability | Examples |
 |------------|----------|
 | Analysis and transcription | `transcriber`, `qwen_asr`, `scene_detect`, `frame_sampler`, `video_analyzer`, `video_understand`, `visual_qa`, `audio_probe` |
-| TTS and audio | `tts_selector`, `elevenlabs_tts`, `google_tts`, `openai_tts`, `doubao_tts`, `cosyvoice_tts`, `piper_tts`, `audio_mixer`, `audio_enhance` |
+| TTS and audio | `tts_selector`, `cosyvoice_tts`, `doubao_tts`, `elevenlabs_tts`, `google_tts`, `minimax_tts`, `openai_tts`, `piper_tts`, `audio_mixer`, `audio_enhance` |
 | Music | `music_gen`, `minimax_music`, `suno_music`, plus search helpers such as `pixabay_music` |
 | Image generation and graphics | `image_selector`, `flux_image`, `grok_image`, `google_imagen`, `openai_image`, `recraft_image`, `wanx_image`, `local_diffusion`, stock image tools, `code_snippet`, `diagram_gen`, `math_animate` |
 | Video generation | `video_selector`, `wan_video_api`, `seedance_video`, `grok_video`, `heygen_video`, `higgsfield_video`, `veo_video`, `kling_video`, `runway_video`, `minimax_video`, local GPU tools, and stock video tools |
 | Video post-production | `video_compose`, `hyperframes_compose`, `video_stitch`, `video_trimmer`, `auto_reframe`, green-screen tools, silence cutting, showcase cards |
+| Text generation | `qwen_chat`, `minimax_chat` for optional ad-hoc script polishing, translation, summarization, and other explicitly routed billed text sub-tasks |
 | Subtitles and captions | `subtitle_gen`, `remotion_caption_burn`, and the `tools.audio.subtitle_aligner` forced-alignment utility |
 | Validation and compliance | `provider_consistency_check`, `scene_fidelity_check`, `runtime_consistency_check`, `hallucination_contract_check`, `product_identity_consistency_check`, `sample_product_visibility_check`, `compliance_check` |
 | Interaction and planning support | `genui_interaction`, `genui_session`, `genui_surface`, `ad_knowledge_retriever`, source/clip acquisition tools, screen capture selectors, character-animation tools |
@@ -421,7 +440,7 @@ Checkpoints persist pipeline state as JSON in the project's `projects/` director
 
 **Functions:** `write_checkpoint()`, `read_checkpoint()`, `get_latest_checkpoint()`, `get_completed_stages()`, `get_next_stage()`
 
-### Artifact Schemas (30 types, all JSON-schema validated)
+### Artifact Schemas (34 types, all JSON-schema validated)
 
 | Artifact | Stage | Contains |
 |----------|-------|----------|
@@ -512,7 +531,7 @@ Layer 1: tools/ + pipeline_defs/  Executable capabilities + orchestration defini
 
 Each tool's `agent_skills[]` field links Layer 1 to Layers 2 and 3. For example:
 - `video_compose.agent_skills = ["remotion-best-practices", "remotion", "ffmpeg"]`
-- `tts_selector.agent_skills = ["text-to-speech", "elevenlabs", "openai-docs"]`
+- `tts_selector.agent_skills = ["text-to-speech", "elevenlabs", "doubao-tts"]`
 
 Layer 3 component dependencies are declared in `.agents/components.yaml`, pinned
 in `.agents/components.lock.json`, and materialized with
@@ -567,8 +586,8 @@ All config is validated via Pydantic models in `lib/config_model.py`.
 | `ELEVENLABS_API_KEY` | elevenlabs_tts, music_gen | TTS, music, sound effects |
 | `OPENAI_API_KEY` | openai_tts, openai_image | TTS fallback, DALL-E 3 |
 | `XAI_API_KEY` | grok_image, grok_video | Grok image editing/generation, Grok video generation |
-| `FAL_KEY` / `FAL_AI_API_KEY` | flux_image, recraft_image, seedance_video, kling_video, veo_video, minimax_video | fal.ai hosted image/video models |
-| `DASHSCOPE_API_KEY` | cosyvoice_tts, qwen_asr, wan_video_api, wanx_image | Alibaba Cloud Bailian / DashScope Qwen TTS/ASR and Wan/Wanxiang image/video generation |
+| `FAL_KEY` / `FAL_AI_API_KEY` | flux_image, recraft_image, seedance_video, kling_video, veo_video | fal.ai hosted image/video models |
+| `DASHSCOPE_API_KEY` | cosyvoice_tts, qwen_asr, wan_video_api, wanx_image, qwen_chat, qwen_vl | Alibaba Cloud Bailian / DashScope — Qwen3.7/CosyVoice TTS, Qwen ASR, HappyHorse/Wan video, Wanxiang image, Qwen LLM chat, Qwen-VL vision |
 | `DOUBAO_SPEECH_API_KEY` + `DOUBAO_SPEECH_VOICE_TYPE` | doubao_tts | Volcengine Doubao Speech TTS and default voice |
 | `HEYGEN_API_KEY` | heygen_video | Multi-provider video generation |
 | `PEXELS_API_KEY` | pexels_image, pexels_video | Stock media |
@@ -579,7 +598,7 @@ All config is validated via Pydantic models in `lib/config_model.py`.
 | `RUNWAY_API_KEY` / `RUNWAYML_API_SECRET` | runway_video | Runway direct video generation |
 | `REPLICATE_API_TOKEN` | seedance_replicate | Replicate-hosted Seedance video |
 | `HIGGSFIELD_API_KEY` + `HIGGSFIELD_API_SECRET` / `HIGGSFIELD_KEY` | higgsfield_video | Higgsfield multi-model video |
-| `MINIMAX_API_KEY` | minimax_music | MiniMax Music 2.6 and music-cover generation |
+| `MINIMAX_API_KEY` | minimax_music, minimax_video, minimax_tts, minimax_chat | MiniMax native platform — Music 2.6, Hailuo 2.3 video, Speech 2.8 TTS, MiniMax-M3 chat. Set `MINIMAX_API_BASE=https://api.minimax.io/v1` for the overseas host (default is the China-mainland `api.minimaxi.com`). |
 | `SUNO_API_KEY` | suno_music | Suno music generation |
 | `MODAL_LTX2_ENDPOINT_URL` | ltx_video_modal | Self-hosted LTX-2 |
 | `VIDEO_GEN_LOCAL_ENABLED` | local video tools | Enable local GPU generation |
@@ -687,7 +706,7 @@ tests/
 - ManimCE (math animations)
 - Mermaid CLI (diagram generation)
 
-**Python packages:** pyyaml, pydantic, jsonschema, python-dotenv (core); pytest, pytest-asyncio (dev); torch, torchvision, torchaudio (GPU)
+**Python packages:** pyyaml, pydantic, jsonschema, Pillow, requests, ag-ui-protocol (core); pytest, pytest-asyncio (dev); torch, torchvision, torchaudio (GPU)
 
 ---
 

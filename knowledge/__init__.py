@@ -1,0 +1,1 @@
+"""Curated knowledge package data."""
