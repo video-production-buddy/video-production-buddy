@@ -71,7 +71,31 @@ Equivalent direct CLI:
 python -m tools.validation.genui_evidence_check projects/<project-id> ad-video assets
 ```
 
-### Step 4: Human Approval (If Required)
+### Step 4: Intra-Stage Checkpointing (Resume Support)
+
+Long-running stages (like `assets` or `compose` loops) can fail midway due to API errors, rate limits, or session interruptions. To allow resuming from the exact point of failure (e.g., Scene 4):
+
+1. **Write partial progress**: Every time you successfully generate a significant item (e.g., one scene's assets, one clip), write an `in_progress` checkpoint.
+
+   `in_progress` checkpoints may omit the stage's canonical artifact, but any artifact stored under a known artifact name is still schema-validated. If the partial data is not yet a valid canonical artifact, store it under `metadata.partial_progress` instead of `artifacts`.
+   ```python
+   write_checkpoint(
+       pipeline_dir, project_name,
+       stage="assets",
+       status="in_progress",
+       artifacts={},  # no incomplete canonical artifact yet
+       metadata={
+           "partial_progress": {
+               "asset_manifest_draft": partial_manifest_dict,
+               "completed_scene_ids": completed_scene_ids,
+           }
+       },
+   )
+   ```
+   If the partial artifact already satisfies its schema (for example, an `asset_manifest` with `version: "1.0"` and valid `assets[]` entries), it may be stored in `artifacts` directly.
+2. **Resume from partial progress**: When starting a stage, ALWAYS check if an `in_progress` checkpoint exists for it. See Step 7 (Resume Protocol) for how to handle it.
+
+### Step 5: Human Approval (If Required)
 
 When `human_approval_default: true`:
 
@@ -108,7 +132,7 @@ When `human_approval_default: true`:
    - `compose` — Rarely. But human may want to preview.
    - `publish` — Always. Human must approve before anything goes public.
 
-### Step 5: Determine Next Stage
+### Step 6: Determine Next Stage
 
 After checkpoint is written and approved (if needed):
 
@@ -118,7 +142,7 @@ next_stage = get_next_stage(pipeline_dir, project_name)
 
 This reads all existing checkpoints and returns the next stage that needs to run, or `None` if the pipeline is complete.
 
-### Step 6: Resume Protocol
+### Step 7: Resume Protocol
 
 At the START of any pipeline run (not just after a stage), always check for existing progress:
 
@@ -128,8 +152,13 @@ next_stage = get_next_stage(pipeline_dir, project_name)
 
 If `next_stage` is not the first stage:
 1. Inform the human: "Found existing progress. Resuming from stage: [next_stage]"
-2. Load prior artifacts from checkpoints for context
-3. Continue from that stage
+2. **Check for partial progress**: Read the checkpoint for `next_stage`:
+   ```python
+   current_cp = read_checkpoint(pipeline_dir, project_name, next_stage)
+   ```
+   If `current_cp` exists and its status is `"in_progress"`, inform the human you are resuming from the middle of the stage.
+3. **Load artifacts**: Load prior artifacts from checkpoints for context. If resuming from `"in_progress"`, first load any schema-valid partial artifact from `current_cp["artifacts"]`. If the partial data is stored in `current_cp["metadata"]["partial_progress"]`, use that draft data and its completion markers (such as `completed_scene_ids`) to skip sub-tasks that are already done.
+4. **Continue**: Continue generation from the next successful step, appending to the partial artifact.
 
 If a checkpoint exists with status `"awaiting_human"`:
 1. Inform the human: "Stage [name] is awaiting your approval"

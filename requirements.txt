@@ -5,3 +5,4 @@ jsonschema>=4.20
 Pillow>=10.0
 requests>=2.31
 ag-ui-protocol==0.1.19
+google-auth>=2.0       # service-account auth for Google TTS + Imagen (Vertex AI)

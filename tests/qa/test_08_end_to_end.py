@@ -214,13 +214,13 @@ def _run_end_to_end_qa():
         "production_plan": {
             "pipeline": "animated-explainer",
             "playbook": "clean-professional",
-            "render_runtime": "remotion",
+            "render_runtime": "ffmpeg",
             "stages": [
                 {"stage": "script", "tools": [{"tool_name": "tts_selector", "role": "narration", "available": True}], "approach": "AI-written script with TTS narration"},
                 {"stage": "scene_plan", "tools": [], "approach": "5 scenes with motion graphics"},
                 {"stage": "assets", "tools": [{"tool_name": "image_selector", "role": "visuals", "available": True}], "approach": "AI-generated images"},
                 {"stage": "edit", "tools": [], "approach": "Automated edit decisions"},
-                {"stage": "compose", "tools": [{"tool_name": "video_compose", "role": "render", "available": True}], "approach": "Remotion render"},
+                {"stage": "compose", "tools": [{"tool_name": "video_compose", "role": "render", "available": True}], "approach": "FFmpeg fixture render"},
             ],
         },
         "cost_estimate": {
@@ -257,8 +257,9 @@ def _run_end_to_end_qa():
                     {
                         "option_id": "remotion",
                         "label": "Remotion",
-                        "score": 1.0,
-                        "reason": "Best fit for the approved animated-explainer scene stack",
+                        "score": 0.7,
+                        "reason": "Best fit for the full animated-explainer scene stack",
+                        "rejected_because": "fixture uses prebuilt local video clips and validates the FFmpeg compose path",
                     },
                     {
                         "option_id": "hyperframes",
@@ -270,13 +271,12 @@ def _run_end_to_end_qa():
                     {
                         "option_id": "ffmpeg",
                         "label": "FFmpeg",
-                        "score": 0.4,
-                        "reason": "Useful for local composition, but less representative of the approved explainer proposal",
-                        "rejected_because": "fixture proposal locks remotion",
+                        "score": 1.0,
+                        "reason": "Best fit for this local no-key fixture, which composes generated test clips and audio",
                     },
                 ],
-                "selected": "remotion",
-                "reason": "Matches the approved proposal runtime",
+                "selected": "ffmpeg",
+                "reason": "Matches the approved local fixture runtime",
                 "user_visible": True,
                 "user_approved": True,
                 "confidence": 1.0,
@@ -481,7 +481,7 @@ def _run_end_to_end_qa():
 
     edit_decisions = {
         "version": "1.0",
-        "render_runtime": "ffmpeg",
+        "render_runtime": proposal_packet["production_plan"]["render_runtime"],
         "cuts": [
             {
                 "id": f"cut_{scene['id']}",
@@ -563,11 +563,14 @@ def _run_end_to_end_qa():
     compose_result = composer.execute({
         "operation": "compose",
         "edit_decisions": {
+            "render_runtime": edit_decisions["render_runtime"],
             "cuts": [
                 {"source": c["source"], "in_seconds": c["in_seconds"], "out_seconds": c["out_seconds"], "speed": c.get("speed", 1.0)}
                 for c in edit_decisions["cuts"]
             ],
         },
+        "proposal_packet": proposal_packet,
+        "decision_log": decision_log,
         "audio_path": mix_output,
         "codec": "libx264",
         "crf": 23,

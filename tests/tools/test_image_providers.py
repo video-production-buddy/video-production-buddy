@@ -262,6 +262,19 @@ def test_api_image_generators_reject_non_project_output_path_before_credentials(
     assert "projects/<project-name>/" in (result.error or "")
 
 
+def test_google_imagen_service_account_file_is_advertised_available(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    key_file = tmp_path / "service-account.json"
+    key_file.write_text("{}", encoding="utf-8")
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", str(key_file))
+
+    assert GoogleImagen().get_status() == ToolStatus.AVAILABLE
+
+
 @pytest.mark.parametrize(
     ("tool", "env_var", "base"),
     [

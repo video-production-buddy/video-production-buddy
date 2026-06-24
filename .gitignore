@@ -45,6 +45,11 @@ music_library/
 .env.local
 *.env
 .youtube-token.json
+# Google service-account / Vertex AI keys — never commit
+gcp-*.json
+*-service-account.json
+service-account*.json
+service_account*.json
 
 # Stray media downloads (test/scratch clips left in repo root)
 pexels_video_*.mp4

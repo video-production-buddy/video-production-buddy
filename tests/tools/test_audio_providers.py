@@ -2193,6 +2193,19 @@ def test_google_tts_service_account_only_is_not_advertised_available(monkeypatch
     assert GoogleTTS().get_status() == ToolStatus.UNAVAILABLE
 
 
+def test_google_tts_service_account_file_is_advertised_available(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    key_file = tmp_path / "service-account.json"
+    key_file.write_text("{}", encoding="utf-8")
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", str(key_file))
+
+    assert GoogleTTS().get_status() == ToolStatus.AVAILABLE
+
+
 def test_piper_tts_status_requires_piper_binary_even_if_python_module_exists(monkeypatch):
     monkeypatch.setattr("tools.base_tool.shutil.which", lambda _cmd: None)
     real_import = builtins.__import__
