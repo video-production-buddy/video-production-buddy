@@ -14,7 +14,12 @@ from typing import Any, Optional
 
 import jsonschema
 
-from schemas.artifacts import ARTIFACT_NAMES, FORMAT_CHECKER, validate_artifact
+from schemas.artifacts import (
+    ARTIFACT_NAMES,
+    FORMAT_CHECKER,
+    load_strict_json_object,
+    validate_artifact,
+)
 
 # All known stages across all pipelines (used only for artifact name lookup).
 ALL_KNOWN_STAGES = frozenset([
@@ -116,6 +121,24 @@ def _manifest_required_outputs_for_stage(
         if artifact_name in ARTIFACT_NAMES
     ]
 
+
+def _manifest_genui_required_gates_for_stage(
+    stage: str,
+    pipeline_type: str | None,
+) -> list[dict[str, str]]:
+    if pipeline_type in (None, LEGACY_PIPELINE_TYPE):
+        return []
+    stage = _normalize_stage_for_pipeline(stage, pipeline_type)
+
+    from lib.pipeline_loader import (
+        get_genui_required_gates_for_checkpoint,
+        load_pipeline,
+    )
+
+    manifest = load_pipeline(pipeline_type)
+    return get_genui_required_gates_for_checkpoint(manifest, stage)
+
+
 # Additional artifacts that may be produced alongside canonical ones.
 # These are not stage-defining but are required by governance contracts.
 SUPPLEMENTARY_ARTIFACTS = {
@@ -187,8 +210,7 @@ class CheckpointValidationError(ValueError):
 
 @lru_cache(maxsize=1)
 def _load_checkpoint_schema() -> dict[str, Any]:
-    with open(CHECKPOINT_SCHEMA_PATH) as f:
-        return json.load(f)
+    return load_strict_json_object(CHECKPOINT_SCHEMA_PATH, context="checkpoint schema")
 
 
 def _decision_option_ids(decision: dict[str, Any]) -> set[str]:
@@ -200,6 +222,68 @@ def _decision_option_ids(decision: dict[str, Any]) -> set[str]:
         for option in options
         if isinstance(option, dict) and isinstance(option.get("option_id"), str)
     }
+
+
+def _effective_ad_video_music_strategy(artifacts: dict[str, Any] | None) -> str | None:
+    """Return the latest approved ad-video music strategy in checkpoint context."""
+    if not isinstance(artifacts, dict):
+        return None
+
+    production_proposal = artifacts.get("production_proposal")
+    strategy = (
+        production_proposal.get("music_strategy")
+        if isinstance(production_proposal, dict)
+        else None
+    )
+
+    decision_log = artifacts.get("decision_log")
+    decisions = decision_log.get("decisions") if isinstance(decision_log, dict) else None
+    if not isinstance(decisions, list):
+        return strategy if isinstance(strategy, str) else None
+
+    for decision in decisions:
+        if not isinstance(decision, dict):
+            continue
+        selected = decision.get("selected")
+        if (
+            decision.get("category") == "music_strategy_selection"
+            and decision.get("user_visible") is True
+            and decision.get("user_approved") is True
+            and isinstance(selected, str)
+            and selected in _decision_option_ids(decision)
+        ):
+            strategy = selected
+
+    return strategy if isinstance(strategy, str) else None
+
+
+def _ad_video_assets_music_review_required(artifacts: dict[str, Any] | None) -> bool:
+    """Whether the assets checkpoint needs music approval/evidence."""
+    return _effective_ad_video_music_strategy(artifacts) != "none"
+
+
+def filter_genui_required_gates_for_checkpoint(
+    gates: list[dict[str, str]],
+    *,
+    checkpoint_stage: str,
+    pipeline_type: str | None,
+    artifacts: dict[str, Any] | None = None,
+) -> list[dict[str, str]]:
+    """Apply artifact-aware exceptions to manifest-declared GenUI gates."""
+    if (
+        pipeline_type == "ad-video"
+        and checkpoint_stage == "assets"
+        and not _ad_video_assets_music_review_required(artifacts)
+    ):
+        return [
+            gate
+            for gate in gates
+            if not (
+                gate.get("stage") == "assets"
+                and gate.get("gate") == "music_review"
+            )
+        ]
+    return gates
 
 
 def _validate_artifacts_for_stage(
@@ -468,11 +552,12 @@ def _validate_ad_video_checkpoint_gate_state(checkpoint: dict[str, Any]) -> None
         return
 
     ep_state = _checkpoint_ep_state(checkpoint)
-    required_true_flags = (
-        "sample_approved",
-        "asset_review_approved",
-        "music_review_approved",
-    )
+    artifacts = checkpoint.get("artifacts")
+    required_true_flags = ["sample_approved", "asset_review_approved"]
+    if _ad_video_assets_music_review_required(
+        artifacts if isinstance(artifacts, dict) else None
+    ):
+        required_true_flags.append("music_review_approved")
     missing_or_false = [
         flag
         for flag in required_true_flags
@@ -485,7 +570,6 @@ def _validate_ad_video_checkpoint_gate_state(checkpoint: dict[str, Any]) -> None
             f"{missing_or_false}"
         )
 
-    artifacts = checkpoint.get("artifacts")
     reference = artifacts.get("product_identity_reference") if isinstance(artifacts, dict) else None
     if not isinstance(reference, dict):
         return
@@ -582,6 +666,67 @@ def _decision_log_path(pipeline_dir: Path, project_id: str) -> Path:
     return pipeline_dir / project_id / "decision_log.json"
 
 
+def _assert_strict_json_serializable(payload: Any, context: str) -> None:
+    try:
+        json.dumps(payload, allow_nan=False)
+    except (TypeError, ValueError) as exc:
+        raise CheckpointValidationError(
+            f"{context} must be strict JSON serializable: {exc}"
+        ) from exc
+
+
+def _load_checkpoint_object(path: Path, context: str) -> dict[str, Any]:
+    try:
+        return load_strict_json_object(path, context=context)
+    except ValueError as exc:
+        raise CheckpointValidationError(str(exc)) from exc
+
+
+def _validate_manifest_genui_evidence_for_checkpoint(
+    pipeline_dir: Path,
+    project_id: str,
+    *,
+    stage: str,
+    status: str,
+    pipeline_type: str | None,
+    artifacts: dict[str, Any] | None,
+) -> None:
+    if status != "completed":
+        return
+    gates = _manifest_genui_required_gates_for_stage(stage, pipeline_type)
+    gates = filter_genui_required_gates_for_checkpoint(
+        gates,
+        checkpoint_stage=stage,
+        pipeline_type=pipeline_type,
+        artifacts=artifacts,
+    )
+    if not gates:
+        return
+
+    from lib.genui.journal import genui_required_gate_evidence_report
+
+    report = genui_required_gate_evidence_report(
+        pipeline_dir / project_id,
+        project_id=project_id,
+        pipeline_type=pipeline_type or LEGACY_PIPELINE_TYPE,
+        required_gates=gates,
+    )
+    if report["ok"]:
+        return
+
+    missing = [
+        f"{issue.get('stage')}.{issue.get('gate')}"
+        for issue in report.get("issues", [])
+    ]
+    raise CheckpointValidationError(
+        f"Completed {pipeline_type or LEGACY_PIPELINE_TYPE} checkpoint "
+        f"{stage!r} requires GenUI evidence for gate(s): {missing}. "
+        "Run registry tool genui_evidence_check for details, or use "
+        "`python -m tools.validation.genui_evidence_check "
+        f"{pipeline_dir / project_id} {pipeline_type or LEGACY_PIPELINE_TYPE} {stage}`."
+    )
+
+
 def _merge_decision_log(
     pipeline_dir: Path, project_id: str, new_log: dict[str, Any]
 ) -> None:
@@ -593,8 +738,7 @@ def _merge_decision_log(
     """
     path = _decision_log_path(pipeline_dir, project_id)
     if path.exists():
-        with open(path) as f:
-            existing = json.load(f)
+        existing = _load_checkpoint_object(path, f"decision log {path}")
     else:
         existing = {
             "version": "1.0",
@@ -609,7 +753,7 @@ def _merge_decision_log(
 
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w") as f:
-        json.dump(existing, f, indent=2)
+        json.dump(existing, f, indent=2, allow_nan=False)
 
 
 def write_checkpoint(
@@ -667,6 +811,15 @@ def write_checkpoint(
     # Validate before any side effect such as merging decision_log.json. This
     # prevents rejected checkpoints from leaving a corrupted cumulative log.
     validate_checkpoint(checkpoint)
+    _validate_manifest_genui_evidence_for_checkpoint(
+        pipeline_dir,
+        project_id,
+        stage=stage,
+        status=status,
+        pipeline_type=pipeline_type,
+        artifacts=artifacts,
+    )
+    _assert_strict_json_serializable(checkpoint, "Checkpoint")
 
     # Merge decision_log: if this checkpoint carries new decisions,
     # append them to the project-level decision log file, then write the
@@ -692,7 +845,7 @@ def write_checkpoint(
     path = _checkpoint_path(pipeline_dir, project_id, stage)
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w") as f:
-        json.dump(checkpoint, f, indent=2)
+        json.dump(checkpoint, f, indent=2, allow_nan=False)
 
     return path
 
@@ -721,8 +874,7 @@ def read_checkpoint(
     path = next((candidate for candidate in candidate_paths if candidate.exists()), None)
     if path is None:
         return None
-    with open(path) as f:
-        checkpoint = json.load(f)
+    checkpoint = _load_checkpoint_object(path, f"checkpoint {path}")
     checkpoint_pipeline_type = checkpoint.get("pipeline_type") or pipeline_type
     if isinstance(checkpoint.get("stage"), str):
         checkpoint["stage"] = _normalize_stage_for_pipeline(
@@ -749,8 +901,10 @@ def get_latest_checkpoint(
     if not checkpoints:
         return None
 
-    with open(checkpoints[0]) as f:
-        checkpoint = json.load(f)
+    checkpoint = _load_checkpoint_object(
+        checkpoints[0],
+        f"checkpoint {checkpoints[0]}",
+    )
     pipeline_type = checkpoint.get("pipeline_type")
     if isinstance(checkpoint.get("stage"), str):
         checkpoint["stage"] = _normalize_stage_for_pipeline(

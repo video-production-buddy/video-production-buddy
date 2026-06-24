@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 from copy import deepcopy
 from pathlib import Path
 
@@ -34,6 +35,15 @@ from tests.contracts.conftest import (
     _truth_contract,
     ROOT,
 )
+
+
+@pytest.fixture
+def project_renders_dir(tmp_path: Path) -> Path:
+    project_dir = ROOT / "projects" / f"pytest-ad-video-manifest-{tmp_path.name}"
+    shutil.rmtree(project_dir, ignore_errors=True)
+    renders_dir = project_dir / "renders"
+    yield renders_dir
+    shutil.rmtree(project_dir, ignore_errors=True)
 
 
 def test_script_trend_alignment_requires_hook_build_source_refs() -> None:
@@ -591,6 +601,8 @@ def test_ad_video_review_gates_do_not_default_to_manual_file_opening() -> None:
     manifest_text = " ".join((ROOT / "pipeline_defs" / "ad-video.yaml").read_text().lower().replace("`", "").split())
 
     assert "please open and review the following files" not in text
+    assert "please open this file" not in text
+    assert "watch it now" not in text
     assert "present file paths only" not in text
     assert "manual folder opening" in text
     assert "fallback only" in text
@@ -598,8 +610,11 @@ def test_ad_video_review_gates_do_not_default_to_manual_file_opening() -> None:
     assert "/media/" in text
     assert "open and watch the file" not in manifest_text
     assert "list every asset file path" not in manifest_text
+    assert "music track file path communicated" not in manifest_text
     assert "user must explicitly approve visual quality" not in manifest_text
     assert "inline genui" in manifest_text
+    assert "inline genui audio" in manifest_text
+    assert "user-declined fallback" in manifest_text
 
 
 def test_ad_video_director_intros_name_manifest_required_inputs() -> None:
@@ -1085,7 +1100,10 @@ def test_proposal_director_does_not_teach_backwriting_locks_to_bible() -> None:
     assert "`production_proposal.render_runtime`" in proposal
 
 
-def test_video_compose_render_accepts_artifact_paths(tmp_path: Path) -> None:
+def test_video_compose_render_accepts_artifact_paths(
+    tmp_path: Path,
+    project_renders_dir: Path,
+) -> None:
     """The tool may receive path strings from older directors; it must coerce them."""
     edit_path = tmp_path / "edit_decisions.json"
     asset_path = tmp_path / "asset_manifest.json"
@@ -1100,7 +1118,7 @@ def test_video_compose_render_accepts_artifact_paths(tmp_path: Path) -> None:
             "operation": "render",
             "edit_decisions": str(edit_path),
             "asset_manifest": str(asset_path),
-            "output_path": str(tmp_path / "renders" / "artifact-path-render.mp4"),
+            "output_path": str(project_renders_dir / "artifact-path-render.mp4"),
         }
     )
 
@@ -1429,6 +1447,7 @@ def test_ad_video_validation_gates_are_registry_tools_and_manifest_visible() -> 
     from tools.tool_registry import registry
 
     expected_tools = {
+        "genui_evidence_check",
         "hallucination_contract_check",
         "product_identity_consistency_check",
         "runtime_consistency_check",
@@ -1448,6 +1467,7 @@ def test_ad_video_validation_gates_are_registry_tools_and_manifest_visible() -> 
     for sub_stage in asset_stage.get("sub_stages", []):
         asset_tools.update(sub_stage.get("tools_available", []))
     assert {
+        "genui_evidence_check",
         "hallucination_contract_check",
         "product_identity_consistency_check",
         "sample_product_visibility_check",
@@ -1459,6 +1479,104 @@ def test_ad_video_validation_gates_are_registry_tools_and_manifest_visible() -> 
         "runtime_consistency_check",
         "scene_fidelity_check",
     } <= _stage_tool_names(compose_stage)
+
+
+def test_ad_video_manifest_declares_genui_evidence_required_gates() -> None:
+    manifest = load_pipeline("ad-video")
+    asset_stage = next(stage for stage in manifest["stages"] if stage["name"] == "assets")
+    sub_stages = {
+        sub_stage["name"]: sub_stage
+        for sub_stage in asset_stage.get("sub_stages", [])
+    }
+
+    expected_gates = {
+        "product_reference": "product_reference",
+        "sample": "sample_review",
+        "asset_review": "asset_review",
+        "music_review": "music_review",
+    }
+    for sub_stage_name, evidence_gate in expected_gates.items():
+        sub_stage = sub_stages[sub_stage_name]
+        assert sub_stage.get("genui_evidence_required") is True
+        assert sub_stage.get("genui_evidence_gate") == evidence_gate
+
+
+def test_ad_video_music_review_gate_is_conditional_on_music_strategy() -> None:
+    manifest = load_pipeline("ad-video")
+    asset_stage = next(stage for stage in manifest["stages"] if stage["name"] == "assets")
+    music_review = next(
+        sub_stage
+        for sub_stage in asset_stage.get("sub_stages", [])
+        if sub_stage["name"] == "music_review"
+    )
+    manifest_text = " ".join(
+        [
+            music_review.get("description", ""),
+            *music_review.get("review_focus", []),
+            *asset_stage.get("review_focus", []),
+            *asset_stage.get("success_criteria", []),
+        ]
+    )
+    skill_text = _read_skill("asset-director.md")
+    checkpoint_text = (
+        ROOT / "skills" / "meta" / "checkpoint-protocol.md"
+    ).read_text(encoding="utf-8")
+
+    assert "effective music_strategy is not none" in manifest_text
+    assert "music_review_approved == true when effective music_strategy != none" in manifest_text
+    assert "skip this sub-stage" in manifest_text
+    assert "skip `music_review`" in skill_text
+    assert "skip `music_review`" in checkpoint_text
+
+
+def test_ad_video_asset_and_checkpoint_skills_require_genui_evidence_check() -> None:
+    asset_director = _read_skill("asset-director.md")
+    checkpoint_protocol = (
+        ROOT / "skills" / "meta" / "checkpoint-protocol.md"
+    ).read_text(encoding="utf-8")
+    combined = f"{asset_director}\n{checkpoint_protocol}"
+
+    for text in (asset_director, checkpoint_protocol):
+        assert "genui_evidence_check" in text
+        assert "make genui-evidence-check" in text
+        assert "python -m tools.validation.genui_evidence_check" in text
+        assert "PIPELINE=ad-video" in text
+        assert "STAGE=assets" in text
+
+    for gate in (
+        "product_reference",
+        "sample_review",
+        "asset_review",
+        "music_review",
+    ):
+        assert gate in combined
+    assert "effective music strategy is not `none`" in combined
+    assert "skip `music_review`" in combined
+
+
+def test_ad_video_executive_producer_g5_requires_genui_evidence_check() -> None:
+    ep = _read_skill("executive-producer.md")
+
+    assert "genui_evidence_check" in ep
+    assert "make genui-evidence-check" in ep
+    assert "PIPELINE=ad-video" in ep
+    assert "STAGE=assets" in ep
+    assert "genui_evidence_check PASS" in ep
+    for gate in (
+        "product_reference",
+        "sample_review",
+        "asset_review",
+        "music_review",
+    ):
+        assert gate in ep
+    assert "effective music_strategy is not `none`" in ep
+    assert "effective music_strategy != none" in ep
+
+    assert "Present asset file list for review" not in ep
+    assert "Present file path for user to listen" not in ep
+    assert "inline GenUI media review room" in ep
+    assert "inline GenUI audio review" in ep
+    assert "user-declined fallback" in ep
 
 
 def test_ad_video_proposal_produces_decision_log_for_locked_choices() -> None:

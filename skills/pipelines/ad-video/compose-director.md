@@ -235,7 +235,7 @@ result = mixer.execute({
     },
     "target_lufs": target_lufs,
     "target_total_duration_seconds": edit_decisions["total_duration_seconds"],
-    "output_path": "assets/audio/mixed_audio.mp3",
+    "output_path": "projects/<project-name>/assets/audio/mixed_audio.mp3",
 })
 if result.error:
     raise RuntimeError(f"audio_mixer failed: {result.error}")

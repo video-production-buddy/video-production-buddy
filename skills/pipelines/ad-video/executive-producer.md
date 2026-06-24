@@ -213,6 +213,9 @@ CHECK: Provider swap approval
 CHECK: Assets checkpoint context
 - Completed assets checkpoints must include `asset_manifest`, `product_identity_reference`, `production_proposal`, `production_bible`, `script`, `scene_plan`, and `decision_log`
 - Checkpoint validation re-runs `provider_consistency_check`, `product_identity_consistency_check`, and `hallucination_contract_check`; any FAIL sends assets back before compose
+- `genui_evidence_check` must PASS before completing the assets checkpoint:
+  `make genui-evidence-check PROJECT=projects/<project-id> PIPELINE=ad-video STAGE=assets`
+- GenUI evidence must cover `product_reference`, `sample_review`, `asset_review`, and `music_review` when the effective music_strategy is not `none`
 - If a swap happened silently (not logged as user_approved:true in decision_log): REVISE assets — "Provider swap was not user-approved. Regenerate with approved provider or surface to user."
 CHECK: Narration instruction handoff
 - Every narration asset used production_proposal.audio_contract.voice_model
@@ -220,10 +223,11 @@ CHECK: Narration instruction handoff
 - If model/instructions mismatch: REVISE assets before compose; do not accept audio where delivery instructions were ignored
 CHECK: Asset review gate
 - asset_review_approved must be true (user saw and approved individual asset files)
-- If skipped: REVISE assets — "User has not reviewed generated assets. Present asset file list for review."
+- If skipped: REVISE assets — "User has not reviewed generated assets. Present an inline GenUI media review room, or record an explicit GenUI failure/user-declined fallback before using CLI."
 CHECK: Music review gate
-- music_review_approved must be true (user listened to and approved the music track)
-- If skipped: REVISE assets — "User has not approved the music track. Present file path for user to listen."
+- When effective music_strategy != none, music_review_approved must be true (user listened to and approved the music track)
+- When effective music_strategy == none and no approved music_strategy_selection opted in, do not require music_review_approved or music_review evidence
+- If music is present but review was skipped: REVISE assets — "User has not approved the music track. Present inline GenUI audio review, or record an explicit GenUI failure/user-declined fallback before using CLI."
 CHECK: Narration duration feedback loop
 - For each TTS file: probe actual duration
 - Store in EP_STATE.narration_durations
@@ -305,7 +309,7 @@ Actual: {what was produced}
 | G2 | proposal.technical_proposal | User approval, style_mode locked, product reference strategy locked, derivatives locked | Wait for user |
 | G3 | script | Word count ±10%, four beats, brand name in CTA | Revise script |
 | G4 | scene_plan | Duration coverage, crop_regions if derivatives, core tagging, hallucination_checks for high-risk scenes | Revise scene_plan |
-| G5 | assets | product_identity_reference approved/waived, hallucination_contract_check PASS/WARN, sample_approved, asset_review_approved, music_review_approved, TTS required, budget | Send-back or revise |
+| G5 | assets | product_identity_reference approved/waived, hallucination_contract_check PASS/WARN, genui_evidence_check PASS, sample_approved, asset_review_approved, music_review_approved when effective music_strategy != none, TTS required, budget | Send-back or revise |
 | G6 | edit | Timeline complete, ducking -18 dB, subtitle opt-in captured (not required true) | Revise edit |
 | G7 | compose | Duration ±5%, one file per derivative | Revise compose |
 | G8 | publish | output_file_matrix non-empty, metadata complete | Revise publish |

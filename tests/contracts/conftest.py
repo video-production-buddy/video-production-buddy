@@ -455,6 +455,84 @@ def _approved_product_identity_reference(source_type: str = "generated") -> dict
     }
 
 
+def write_genui_required_gate_evidence(
+    project_dir: Path,
+    *,
+    project_id: str,
+    pipeline_type: str = "ad-video",
+    stage: str = "assets",
+    gates: tuple[str, ...] = (
+        "product_reference",
+        "sample_review",
+        "asset_review",
+        "music_review",
+    ),
+) -> None:
+    """Write schema-valid GenUI journal/response evidence for checkpoint tests."""
+    from lib.genui.journal import build_interaction_journal, write_interaction_journal
+
+    entries = []
+    for gate in gates:
+        session_id = f"{stage}-{gate}"
+        response_path = project_dir / "artifacts" / "ui" / session_id / "response.json"
+        response_path.parent.mkdir(parents=True, exist_ok=True)
+        response_path.write_text(
+            json.dumps(
+                {
+                    "contract": "genui_session_response",
+                    "response_id": f"resp-{session_id}",
+                    "session_id": session_id,
+                    "project_id": project_id,
+                    "pipeline_type": pipeline_type,
+                    "stage": stage,
+                    "gate": gate,
+                    "submitted_at": "2026-06-18T00:00:00+00:00",
+                    "action": "approve",
+                    "values": {"approved": True},
+                    "issues": [],
+                    "interaction_evidence": {
+                        "media_opened": [gate],
+                        "timeline_inspected": [gate],
+                        "seconds_watched": 1.0,
+                    },
+                    "validation": {"status": "valid", "errors": []},
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        entries.append(
+            {
+                "interaction_id": session_id,
+                "routing_decision_id": f"route-{session_id}",
+                "request_id": session_id,
+                "project_id": project_id,
+                "pipeline_type": pipeline_type,
+                "stage": stage,
+                "gate": gate,
+                "interaction_kind": "media_review",
+                "mode": "media_review_room",
+                "recommended_tool": "genui_session",
+                "linear_chat_sufficient": False,
+                "reasons": ["stage_policy_required", "media_review"],
+                "required_ui_primitives": ["media_player", "approval_attestation"],
+                "status": "submitted",
+                "session_id": session_id,
+                "session_contract": "genui_session",
+                "response_path": str(response_path),
+                "validation": {"status": "valid", "errors": []},
+            }
+        )
+
+    journal = build_interaction_journal(
+        project_id=project_id,
+        pipeline_type=pipeline_type,
+        entries=entries,
+    )
+    write_interaction_journal(project_dir, journal)
+
+
 def _product_visible_scene_plan() -> dict:
     return {
         "version": "1.0",

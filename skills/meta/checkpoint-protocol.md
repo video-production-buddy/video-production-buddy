@@ -44,13 +44,32 @@ write_checkpoint(
     stage_name,        # e.g., "idea"
     status,            # "completed" or "awaiting_human"
     artifacts,         # {"brief": {...}} — the stage's output
+    pipeline_type=<selected pipeline>,
 )
 ```
 
 The checkpoint utility will:
 - Validate the artifact against its schema
+- Enforce manifest-declared GenUI evidence gates for completed checkpoints
 - Write the checkpoint JSON to disk
 - Include timestamp and stage metadata
+
+For `ad-video` assets, completed checkpoints require GenUI evidence for
+`product_reference`, `sample_review`, `asset_review`, and `music_review` when
+the effective music strategy is not `none`. No-music projects skip `music_review`
+unless a visible approved `music_strategy_selection` opts into music before
+compose.
+Before writing or retrying that checkpoint, run:
+
+```bash
+make genui-evidence-check PROJECT=projects/<project-id> PIPELINE=ad-video STAGE=assets
+```
+
+Equivalent direct CLI:
+
+```bash
+python -m tools.validation.genui_evidence_check projects/<project-id> ad-video assets
+```
 
 ### Step 4: Human Approval (If Required)
 
@@ -82,7 +101,9 @@ When `human_approval_default: true`:
    - `idea` — Always. The creative direction defines everything downstream.
    - `script` — Always. The words are the foundation.
    - `scene_plan` — Usually. Visual choices are subjective.
-   - `assets` — Rarely. Automated quality checks are sufficient.
+   - `assets` — Rarely for generic pipelines. For `ad-video`, assets has
+     explicit product-reference, sample, asset-review, and music-review gates;
+     completed assets checkpoints must pass `genui_evidence_check`.
    - `edit` — Rarely. Technical assembly, not creative.
    - `compose` — Rarely. But human may want to preview.
    - `publish` — Always. Human must approve before anything goes public.

@@ -8,6 +8,7 @@ pipeline manifests + stage director skills + meta skills.
 
 import importlib
 import json
+import math
 import os
 import re
 import sys
@@ -46,8 +47,12 @@ from tools.base_tool import BaseTool, ToolResult, ToolTier, ToolStatus
 from tools.tool_registry import ToolRegistry
 from tools.cost_tracker import CostTracker, BudgetMode, BudgetExceededError, ApprovalRequiredError
 from schemas.artifacts import load_schema, validate_artifact, list_schemas
-from tests.contracts.conftest import _minimal_production_proposal
+from tests.contracts.conftest import (
+    _minimal_production_proposal,
+    write_genui_required_gate_evidence,
+)
 from lib.dotenv_loader import load_dotenv
+from lib.env_loader import load_env
 
 
 def test_makefile_lint_py_compile_targets_exist():
@@ -59,6 +64,101 @@ def test_makefile_lint_py_compile_targets_exist():
 
     missing = [path for path in compile_targets if not (PROJECT_ROOT / path).is_file()]
     assert missing == []
+
+
+def test_makefile_lint_covers_shared_tool_safety_helpers():
+    """`make lint` should compile shared helpers used by broad tool surfaces."""
+    makefile = PROJECT_ROOT / "Makefile"
+    body = makefile.read_text(encoding="utf-8")
+    compile_targets = set(re.findall(r"python -m py_compile ([^\s]+\.py)", body))
+
+    assert {
+        "tools/output_paths.py",
+        "tools/status_utils.py",
+    }.issubset(compile_targets)
+
+
+def test_makefile_lint_keeps_bytecode_cache_out_of_repo():
+    """`make lint` must not leave __pycache__ artifacts in the checkout."""
+    makefile = PROJECT_ROOT / "Makefile"
+    body = makefile.read_text(encoding="utf-8")
+    match = re.search(r"^lint:\n((?:\t.*\n)+)", body, flags=re.MULTILINE)
+    assert match, "Makefile should define a lint target"
+    lint_body = match.group(1)
+    assert "python -m py_compile" in lint_body
+    assert "PYTHONPYCACHEPREFIX" in lint_body
+    assert "mktemp -d" in lint_body
+    assert "rm -rf" in lint_body
+
+
+def test_makefile_project_python_utilities_do_not_write_repo_bytecode():
+    """Makefile Python utilities that import project code should not emit repo caches."""
+    makefile = PROJECT_ROOT / "Makefile"
+    lines = makefile.read_text(encoding="utf-8").splitlines()
+    project_python_markers = (
+        "from lib.",
+        "from schemas.",
+        "from tools.",
+        "import lib.",
+        "import schemas.",
+        "import tools.",
+        "render_demo.py",
+    )
+    offenders: list[str] = []
+
+    for lineno, line in enumerate(lines, start=1):
+        if not line.startswith("\t"):
+            continue
+        if "python" not in line:
+            continue
+        if not any(marker in line for marker in project_python_markers):
+            continue
+        if "PYTHONDONTWRITEBYTECODE=1" in line or "PYTHONPYCACHEPREFIX" in line:
+            continue
+        offenders.append(f"Makefile:{lineno}: {line.strip()}")
+
+    assert offenders == []
+
+
+def test_makefile_clean_removes_pytest_cache_artifacts():
+    """`make clean` should remove pytest cache alongside Python bytecode."""
+    makefile = PROJECT_ROOT / "Makefile"
+    body = makefile.read_text(encoding="utf-8")
+    match = re.search(r"^clean:\n((?:\t.*\n)+)", body, flags=re.MULTILINE)
+    assert match, "Makefile should define a clean target"
+    clean_body = match.group(1)
+
+    assert "__pycache__" in clean_body
+    assert "*.pyc" in clean_body
+    assert ".pytest_cache" in clean_body
+    assert "shutil.rmtree" in clean_body or "rm -rf" in clean_body
+
+
+def test_makefile_clean_prunes_large_generated_directories():
+    """`make clean` should not walk heavyweight generated workspaces."""
+    makefile = PROJECT_ROOT / "Makefile"
+    body = makefile.read_text(encoding="utf-8")
+    match = re.search(r"^clean:\n((?:\t.*\n)+)", body, flags=re.MULTILINE)
+    assert match, "Makefile should define a clean target"
+    clean_body = match.group(1)
+
+    assert "rglob" not in clean_body
+    assert "-prune" in clean_body
+    for path in ("./.git", "./node_modules", "./projects"):
+        assert path in clean_body
+
+
+def test_makefile_clean_avoids_find_delete_with_prune():
+    """GNU find treats -delete as -depth, which disables effective pruning."""
+    makefile = PROJECT_ROOT / "Makefile"
+    body = makefile.read_text(encoding="utf-8")
+    match = re.search(r"^clean:\n((?:\t.*\n)+)", body, flags=re.MULTILINE)
+    assert match, "Makefile should define a clean target"
+    clean_body = match.group(1)
+
+    assert "-prune" in clean_body
+    assert "-delete" not in clean_body
+    assert "rm -f" in clean_body
 
 
 def sample_artifact(name: str) -> dict:
@@ -500,6 +600,62 @@ def ad_video_assets_checkpoint_artifacts(product_identity_reference: dict) -> di
     }
 
 
+def ad_video_no_music_assets_checkpoint_artifacts(product_identity_reference: dict) -> dict:
+    artifacts = ad_video_assets_checkpoint_artifacts(product_identity_reference)
+    artifacts["production_proposal"]["music_strategy"] = "none"
+    artifacts["asset_manifest"] = ad_video_assets_manifest_with_narration_inventory()
+    artifacts["asset_manifest"]["assets"] = [
+        asset
+        for asset in artifacts["asset_manifest"]["assets"]
+        if asset.get("type") != "music"
+    ]
+    artifacts["asset_manifest"].pop("music_file", None)
+    artifacts["asset_manifest"]["costs"] = [
+        cost
+        for cost in artifacts["asset_manifest"]["costs"]
+        if cost.get("tool") != "minimax_music"
+    ]
+    for decision in artifacts["decision_log"]["decisions"]:
+        if decision.get("category") == "music_strategy_selection":
+            decision["selected"] = "none"
+            decision["options_considered"] = [
+                {
+                    "option_id": "none",
+                    "label": "No music",
+                    "score": 0.9,
+                    "reason": "The user approved no background music.",
+                }
+            ]
+            decision["reason"] = "Matches the locked no-music proposal strategy."
+    return artifacts
+
+
+def append_approved_music_strategy_change(
+    artifacts: dict,
+    selected_strategy: str = "generative_loose",
+) -> None:
+    artifacts["decision_log"]["decisions"].append(
+        {
+            "decision_id": f"d-music-change-{selected_strategy}",
+            "stage": "assets",
+            "category": "music_strategy_selection",
+            "subject": "Approve music strategy change during assets",
+            "options_considered": [
+                {
+                    "option_id": selected_strategy,
+                    "label": selected_strategy.replace("_", " ").title(),
+                    "score": 0.8,
+                    "reason": "User approved adding music after the no-music proposal.",
+                }
+            ],
+            "selected": selected_strategy,
+            "reason": "User approved adding music during asset generation.",
+            "user_visible": True,
+            "user_approved": True,
+        }
+    )
+
+
 def ad_video_scene_plan_for_edit() -> dict:
     return {
         "version": "1.0",
@@ -758,6 +914,38 @@ class TestConfig:
         assert os.environ["QUOTED_SECRET"] == "value # not a comment"
         assert "export FAL_KEY" not in os.environ
 
+    def test_shared_dotenv_loader_defaults_to_current_project_dir(self, tmp_path, monkeypatch):
+        env_path = tmp_path / ".env"
+        env_path.write_text(
+            "VPB_CURRENT_PROJECT_ENV=from-current-project\n"
+            "VPB_EXISTING_ENV=from-file\n",
+            encoding="utf-8",
+        )
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("VPB_CURRENT_PROJECT_ENV", raising=False)
+        monkeypatch.setenv("VPB_EXISTING_ENV", "already-set")
+
+        load_dotenv()
+
+        assert os.environ["VPB_CURRENT_PROJECT_ENV"] == "from-current-project"
+        assert os.environ["VPB_EXISTING_ENV"] == "already-set"
+
+    def test_legacy_env_loader_uses_shared_current_project_defaults(self, tmp_path, monkeypatch):
+        env_path = tmp_path / ".env"
+        env_path.write_text(
+            "VPB_LEGACY_CURRENT_PROJECT_ENV=from-current-project\n"
+            "VPB_LEGACY_EXISTING_ENV=from-file\n",
+            encoding="utf-8",
+        )
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("VPB_LEGACY_CURRENT_PROJECT_ENV", raising=False)
+        monkeypatch.setenv("VPB_LEGACY_EXISTING_ENV", "already-set")
+
+        load_env()
+
+        assert os.environ["VPB_LEGACY_CURRENT_PROJECT_ENV"] == "from-current-project"
+        assert os.environ["VPB_LEGACY_EXISTING_ENV"] == "already-set"
+
 
 # ---- Schemas ----
 
@@ -991,6 +1179,32 @@ class TestCheckpoint:
         assert cp["status"] == "completed"
         assert cp["artifacts"]["research_brief"]["topic"] == "Test Topic"
 
+    def test_read_checkpoint_rejects_non_strict_json(self, tmp_path):
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        research_brief = json.dumps(sample_artifact("research_brief"), allow_nan=False)
+        (project_dir / "checkpoint_research.json").write_text(
+            f"""
+{{
+  "version": "1.0",
+  "project_id": "proj",
+  "pipeline_type": "unknown",
+  "stage": "research",
+  "status": "completed",
+  "timestamp": "2026-06-14T00:00:00+00:00",
+  "cost_snapshot": {{
+    "total_spent_usd": NaN
+  }},
+  "artifacts": {{
+    "research_brief": {research_brief}
+  }}
+}}
+""".lstrip()
+        )
+
+        with pytest.raises(CheckpointValidationError, match="strict JSON"):
+            read_checkpoint(tmp_path, "proj", "research")
+
     def test_get_next_stage(self, tmp_path):
         assert get_next_stage(tmp_path, "proj") == "research"
         write_checkpoint(
@@ -1083,6 +1297,10 @@ class TestCheckpoint:
             "prohibited_variations": [],
         }
 
+        write_genui_required_gate_evidence(
+            tmp_path / "proj",
+            project_id="proj",
+        )
         path = write_checkpoint(
             tmp_path,
             "proj",
@@ -1206,6 +1424,10 @@ class TestCheckpoint:
                 },
             )
 
+        write_genui_required_gate_evidence(
+            tmp_path / "proj",
+            project_id="proj",
+        )
         path = write_checkpoint(
             tmp_path,
             "proj",
@@ -1223,6 +1445,113 @@ class TestCheckpoint:
         )
 
         assert path.exists()
+
+    def test_ad_video_assets_checkpoint_skips_music_gate_for_no_music_strategy(self, tmp_path):
+        product_identity_reference = {
+            "version": "1.0",
+            "reference_id": "pir-none",
+            "product_name": "Acme SaaS",
+            "source_type": "not_applicable",
+            "approval_status": "not_required",
+            "required_visual_features": [],
+            "prohibited_variations": [],
+        }
+        artifacts = ad_video_no_music_assets_checkpoint_artifacts(
+            product_identity_reference
+        )
+        write_genui_required_gate_evidence(
+            tmp_path / "proj",
+            project_id="proj",
+            gates=("product_reference", "sample_review", "asset_review"),
+        )
+
+        path = write_checkpoint(
+            tmp_path,
+            "proj",
+            "assets",
+            "completed",
+            artifacts,
+            pipeline_type="ad-video",
+            metadata={
+                "ep_state": {
+                    "sample_approved": True,
+                    "asset_review_approved": True,
+                }
+            },
+        )
+
+        assert path.exists()
+
+    def test_ad_video_assets_checkpoint_still_requires_music_evidence_when_music_locked(self, tmp_path):
+        product_identity_reference = {
+            "version": "1.0",
+            "reference_id": "pir-none",
+            "product_name": "Acme SaaS",
+            "source_type": "not_applicable",
+            "approval_status": "not_required",
+            "required_visual_features": [],
+            "prohibited_variations": [],
+        }
+        write_genui_required_gate_evidence(
+            tmp_path / "proj",
+            project_id="proj",
+            gates=("product_reference", "sample_review", "asset_review"),
+        )
+
+        with pytest.raises(CheckpointValidationError, match="music_review"):
+            write_checkpoint(
+                tmp_path,
+                "proj",
+                "assets",
+                "completed",
+                ad_video_assets_checkpoint_artifacts(product_identity_reference),
+                pipeline_type="ad-video",
+                metadata={
+                    "ep_state": {
+                        "sample_approved": True,
+                        "asset_review_approved": True,
+                        "music_review_approved": True,
+                    }
+                },
+            )
+
+    def test_ad_video_assets_checkpoint_requires_music_evidence_after_approved_music_opt_in(self, tmp_path):
+        product_identity_reference = {
+            "version": "1.0",
+            "reference_id": "pir-none",
+            "product_name": "Acme SaaS",
+            "source_type": "not_applicable",
+            "approval_status": "not_required",
+            "required_visual_features": [],
+            "prohibited_variations": [],
+        }
+        artifacts = ad_video_no_music_assets_checkpoint_artifacts(
+            product_identity_reference
+        )
+        artifacts["asset_manifest"] = ad_video_assets_manifest_with_narration_inventory()
+        append_approved_music_strategy_change(artifacts)
+        write_genui_required_gate_evidence(
+            tmp_path / "proj",
+            project_id="proj",
+            gates=("product_reference", "sample_review", "asset_review"),
+        )
+
+        with pytest.raises(CheckpointValidationError, match="music_review"):
+            write_checkpoint(
+                tmp_path,
+                "proj",
+                "assets",
+                "completed",
+                artifacts,
+                pipeline_type="ad-video",
+                metadata={
+                    "ep_state": {
+                        "sample_approved": True,
+                        "asset_review_approved": True,
+                        "music_review_approved": True,
+                    }
+                },
+            )
 
     def test_ad_video_assets_checkpoint_rejects_pending_product_reference(self, tmp_path):
         product_identity_reference = {
@@ -2153,6 +2482,70 @@ class TestCostTracker:
         t2 = CostTracker(cost_log_path=log_path)
         assert t2.budget_spent_usd == 0.08
 
+    def test_persistence_rejects_non_strict_json_on_load(self, tmp_path):
+        log_path = tmp_path / "cost_log.json"
+        log_path.write_text(
+            """
+{
+  "version": "1.0",
+  "budget_total_usd": 10.0,
+  "budget_reserved_usd": 0.0,
+  "budget_spent_usd": NaN,
+  "entries": [
+    {
+      "id": "cost-1",
+      "tool": "tool",
+      "operation": "op",
+      "status": "completed",
+      "estimated_usd": 0.1,
+      "reserved_usd": 0.0,
+      "actual_usd": NaN,
+      "timestamp": "2026-06-14T00:00:00+00:00"
+    }
+  ],
+  "metadata": {
+    "approved_tools": ["tool"]
+  }
+}
+""".lstrip()
+        )
+
+        with pytest.raises(ValueError, match="strict JSON"):
+            CostTracker(cost_log_path=log_path)
+
+    def test_persistence_rejects_non_finite_costs_before_writing(self, tmp_path):
+        log_path = tmp_path / "cost_log.json"
+        tracker = CostTracker(
+            budget_total_usd=10.0,
+            mode=BudgetMode.OBSERVE,
+            cost_log_path=log_path,
+        )
+
+        with pytest.raises(ValueError, match="strict JSON"):
+            tracker.estimate("tool", "op", math.nan)
+
+        assert not log_path.exists()
+
+    def test_reconcile_rejects_non_finite_actual_costs_before_mutation(self, tmp_path):
+        log_path = tmp_path / "cost_log.json"
+        tracker = CostTracker(
+            budget_total_usd=10.0,
+            mode=BudgetMode.OBSERVE,
+            cost_log_path=log_path,
+        )
+        entry_id = tracker.estimate("tool", "op", 0.10)
+        tracker.reserve(entry_id)
+
+        with pytest.raises(ValueError, match="strict JSON"):
+            tracker.reconcile(entry_id, math.nan)
+
+        entry = tracker.entries[0]
+        assert entry["status"] == "reserved"
+        assert entry["actual_usd"] == 0.0
+        assert json.loads(log_path.read_text(encoding="utf-8"))["entries"][0][
+            "status"
+        ] == "reserved"
+
     def test_paid_tool_approval_persists(self, tmp_path):
         log_path = tmp_path / "cost_log.json"
         t1 = CostTracker(
@@ -2294,12 +2687,15 @@ class TestAgentContextFiles:
             "sample approval",
             "asset_review",
             "music_review",
+            "`ad-video` assets do not auto-proceed",
+            "genui_evidence_check PASS",
         )
         missing = [fragment for fragment in required_fragments if fragment not in contents]
         assert not missing, (
             "AGENT_GUIDE.md is missing ad-video governance guidance: "
             f"{missing}"
         )
+        assert "Technical stages (`assets`, `edit`, `compose`) typically auto-proceed" not in contents
 
     def test_agent_guide_resume_call_passes_selected_pipeline(self):
         contents = (PROJECT_ROOT / "AGENT_GUIDE.md").read_text(encoding="utf-8")
@@ -2318,9 +2714,103 @@ class TestAgentContextFiles:
         )
 
     def test_platform_wrappers_reference_agent_guide(self):
-        for path in ("CLAUDE.md", "CODEX.md", "CURSOR.md", "COPILOT.md", "AGENTS.md"):
+        for path in ("CLAUDE.md", "CURSOR.md", "COPILOT.md", "AGENTS.md"):
             contents = (PROJECT_ROOT / path).read_text(encoding="utf-8")
             assert "AGENT_GUIDE.md" in contents
+
+    def test_project_profile_is_wired_into_agent_entrypoints(self):
+        profile_files = sorted(
+            path.relative_to(PROJECT_ROOT).as_posix()
+            for path in (PROJECT_ROOT / "project_profile").glob("*.md")
+        )
+        required_profile_files = {
+            "project_profile/README.md",
+            "project_profile/conventions.md",
+            "project_profile/agent_behavior.md",
+            "project_profile/developer_workflow.md",
+            "project_profile/brand.md",
+            "project_profile/provider_findings.md",
+            "project_profile/voice_and_subtitles.md",
+            "project_profile/model_defaults.md",
+            "project_profile/update_checklist.md",
+            "project_profile/migration_audit.md",
+        }
+        assert required_profile_files.issubset(set(profile_files))
+        for path in profile_files:
+            assert (PROJECT_ROOT / path).exists(), f"{path} should exist"
+
+        entrypoints = (
+            "AGENT_GUIDE.md",
+            "PROJECT_CONTEXT.md",
+            "AGENTS.md",
+            "CLAUDE.md",
+            "CURSOR.md",
+            "COPILOT.md",
+        )
+        for path in entrypoints:
+            contents = (PROJECT_ROOT / path).read_text(encoding="utf-8")
+            assert "project_profile/" in contents
+
+        profile_readme = (PROJECT_ROOT / "project_profile/README.md").read_text(
+            encoding="utf-8"
+        )
+        project_context = (PROJECT_ROOT / "PROJECT_CONTEXT.md").read_text(
+            encoding="utf-8"
+        )
+        assert "agent-side private memory" in profile_readme
+        assert "this profile wins" in profile_readme
+        for path in profile_files:
+            assert path.removeprefix("project_profile/") in profile_readme
+            assert path in project_context
+
+        agent_behavior = (PROJECT_ROOT / "project_profile/agent_behavior.md").read_text(
+            encoding="utf-8"
+        )
+        assert "stage -> artifact -> tool/check" in agent_behavior
+        assert "VPB_ALLOW_BROWSER_OPEN=0" in agent_behavior
+
+        developer_workflow = (
+            PROJECT_ROOT / "project_profile/developer_workflow.md"
+        ).read_text(encoding="utf-8")
+        assert "provider_menu_summary()" in developer_workflow
+        assert "git rm --cached -r" in developer_workflow
+        assert "tree equality" in developer_workflow
+
+        migration_audit = (
+            PROJECT_ROOT / "project_profile/migration_audit.md"
+        ).read_text(encoding="utf-8")
+        assert "Migrated From Codex-Side Memory" in migration_audit
+        assert "Intentionally Not Migrated" in migration_audit
+
+        provider_findings = (
+            PROJECT_ROOT / "project_profile/provider_findings.md"
+        ).read_text(encoding="utf-8")
+        assert "Last Verified" in provider_findings
+        assert "Verification Commands" in provider_findings
+
+        model_defaults = (
+            PROJECT_ROOT / "project_profile/model_defaults.md"
+        ).read_text(encoding="utf-8")
+        assert "Last Verified" in model_defaults
+        assert "Verification Commands" in model_defaults
+
+        update_checklist = (
+            PROJECT_ROOT / "project_profile/update_checklist.md"
+        ).read_text(encoding="utf-8")
+        assert "Belongs Here" in update_checklist
+        assert "Does Not Belong Here" in update_checklist
+
+    def test_project_context_names_current_platform_wrappers(self):
+        contents = (PROJECT_ROOT / "PROJECT_CONTEXT.md").read_text(encoding="utf-8")
+        for path in ("AGENTS.md", "CLAUDE.md", "CURSOR.md", "COPILOT.md"):
+            assert path in contents
+
+    def test_removed_legacy_platform_wrapper_stays_absent(self):
+        legacy_wrapper = "".join(("CO", "DEX", ".md"))
+        assert not (PROJECT_ROOT / legacy_wrapper).exists()
+        for path in ("CLAUDE.md", "CURSOR.md", "COPILOT.md", "AGENTS.md", "PROJECT_CONTEXT.md"):
+            contents = (PROJECT_ROOT / path).read_text(encoding="utf-8")
+            assert legacy_wrapper not in contents
 
 
 # ---- Media Profiles ----

@@ -107,6 +107,15 @@
           },
           "checkpoint_required": { "type": "boolean", "default": true },
           "human_approval_default": { "type": "boolean", "default": false },
+          "genui_evidence_required": {
+            "type": "boolean",
+            "default": false,
+            "description": "Whether completing this stage requires ui_interaction_journal evidence for a GenUI response or explicit GenUI fallback."
+          },
+          "genui_evidence_gate": {
+            "$ref": "#/$defs/stage_name",
+            "description": "Gate value expected in ui_interaction_journal for this GenUI evidence requirement. Defaults to the stage name."
+          },
           "success_criteria": {
             "type": "array",
             "items": { "type": "string" }
@@ -131,6 +140,15 @@
                 "fallback_tools": { "$ref": "#/$defs/tool_list" },
                 "human_approval_default": { "type": "boolean", "default": true },
                 "checkpoint_required": { "type": "boolean", "default": true },
+                "genui_evidence_required": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "Whether completing the parent checkpoint requires ui_interaction_journal evidence for this child gate."
+                },
+                "genui_evidence_gate": {
+                  "$ref": "#/$defs/stage_name",
+                  "description": "Gate value expected in ui_interaction_journal. Defaults to the sub-stage name."
+                },
                 "tools_available": { "$ref": "#/$defs/tool_list" },
                 "review_focus": { "type": "array", "items": { "type": "string" } },
                 "success_criteria": { "type": "array", "items": { "type": "string" } }

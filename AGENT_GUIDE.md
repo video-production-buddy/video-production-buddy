@@ -770,7 +770,8 @@ Key contract points:
 - `assets` always runs a sample approval sub-stage before full generation.
   The sample must include at least one product-visible scene when the product is
   visible anywhere in the ad. After the sample is approved, the asset stage still
-  requires explicit `asset_review` and `music_review` approvals before compose.
+  requires explicit `asset_review` before compose, plus `music_review` when the
+  effective approved music strategy is not `none`.
   A completed assets checkpoint must carry `production_proposal`,
   `production_bible`, `script`, `scene_plan`, and `decision_log` alongside
   `asset_manifest` and `product_identity_reference` so checkpoint validation can
@@ -782,7 +783,8 @@ Key contract points:
   product-visible video is allowed only with a user-approved `risk_accepted`
   waiver, and generated visual assets must record `product_identity_conditioning`.
 - Before sample approval and before full asset review, generated high-risk visual
-  assets must extract start/mid/end keyframes into `assets/keyframes/<scene_id>/`
+  assets must extract start/mid/end keyframes into
+  `projects/<project-id>/assets/keyframes/<scene_id>/`
   and record `asset_manifest.assets[].hallucination_review` with per-check
   PASS/WARN/FLAG/WAIVED verdicts. `hallucination_contract_check` FAIL blocks
   compose/publish. FLAG blocker verdicts require regeneration or rerouting.
@@ -835,7 +837,11 @@ The checkpoint protocol meta skill (`skills/meta/checkpoint-protocol.md`) teache
 
 - Read `human_approval_default` from the pipeline manifest per stage
 - Creative stages (`idea`, `script`, `scene_plan`) typically require approval
-- Technical stages (`assets`, `edit`, `compose`) typically auto-proceed
+- Technical stages (`assets`, `edit`, `compose`) may auto-proceed only when the
+  manifest and any child gates do not declare human approval or evidence gates.
+  `ad-video` assets do not auto-proceed: sample, asset, and music approvals plus
+  `genui_evidence_check PASS` are required before the completed assets
+  checkpoint can advance.
 - When approval is required: present artifact summary, review findings, and cost snapshot
 - Wait for human to approve, request revision, or abort
 

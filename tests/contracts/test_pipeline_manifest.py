@@ -12,12 +12,11 @@ Verifies:
   - compliance_check declared as optional_tool for script/scene_plan/edit
   - No stale artifact names (proposal_packet, brief, selected_idea)
 
-Run: python3 tests/contracts/test_pipeline_manifest.py
+Run: VPB_ALLOW_BROWSER_OPEN=0 PYTHONDONTWRITEBYTECODE=1 python -m pytest -p no:cacheprovider tests/contracts/test_pipeline_manifest.py -q
 """
 
 import json
 import sys
-import traceback
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
@@ -33,6 +32,14 @@ except ImportError:
 ROOT = Path(__file__).resolve().parent.parent.parent
 MANIFEST_PATH = ROOT / "pipeline_defs" / "ad-video.yaml"
 MANIFEST_SCHEMA_PATH = ROOT / "schemas" / "pipelines" / "pipeline_manifest.schema.json"
+BILLED_TEXT_CHAT_TOOLS = {"qwen_chat", "minimax_chat"}
+PIPELINE_TOOL_FIELDS = (
+    "required_tools",
+    "optional_tools",
+    "preferred_tools",
+    "fallback_tools",
+    "tools_available",
+)
 
 EXPECTED_STAGE_ORDER = [
     "research", "proposal", "script", "scene_plan", "assets", "edit", "compose", "publish",
@@ -87,6 +94,16 @@ def checkpoint_units(m: dict) -> list[tuple[str, dict]]:
         else:
             units.append((s["name"], s))
     return units
+
+
+def iter_manifest_dicts(node):
+    if isinstance(node, dict):
+        yield node
+        for value in node.values():
+            yield from iter_manifest_dicts(value)
+    elif isinstance(node, list):
+        for item in node:
+            yield from iter_manifest_dicts(item)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -369,6 +386,26 @@ def test_compliance_check_available_to_edit():
     assert "compliance_check" in stage(m, "edit").get("optional_tools", [])
 
 
+def test_pipeline_manifests_do_not_auto_wire_billed_text_chat_tools():
+    """Billed chat tools must remain explicit ad-hoc tools, not stage defaults."""
+    violations: list[str] = []
+    for manifest_path in sorted((ROOT / "pipeline_defs").glob("*.yaml")):
+        manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+        for node in iter_manifest_dicts(manifest):
+            node_name = node.get("name", "<unnamed>")
+            for field in PIPELINE_TOOL_FIELDS:
+                values = node.get(field)
+                if not isinstance(values, list):
+                    continue
+                found = sorted(BILLED_TEXT_CHAT_TOOLS.intersection(map(str, values)))
+                if found:
+                    violations.append(
+                        f"{manifest_path.name}:{node_name}:{field}:{','.join(found)}"
+                    )
+
+    assert violations == []
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Required skills list
 # ─────────────────────────────────────────────────────────────────────────────
@@ -411,67 +448,3 @@ def test_bible_review_focus_includes_both_approval_flags():
     focus_text = " ".join(unit(m, "proposal.bible").get("review_focus", []))
     assert "strategic_approved" in focus_text
     assert "execution_approved" in focus_text
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Standalone runner
-# ─────────────────────────────────────────────────────────────────────────────
-
-if __name__ == "__main__":
-    tests = [
-        test_manifest_parses_without_error,
-        test_manifest_has_required_top_level_fields,
-        test_manifest_validates_against_json_schema,
-        test_has_exactly_8_generic_top_level_stages,
-        test_stage_order_is_correct,
-        test_no_duplicate_stage_names,
-        test_checkpoint_gate_order_preserves_ad_video_governance,
-        test_artifact_dependency_graph_complete,
-        test_intake_produces_intake_brief,
-        test_brief_enrichment_requires_intake_brief,
-        test_brief_enrichment_produces_enriched_brief,
-        test_brief_enrichment_requires_human_approval,
-        test_brief_enrichment_review_focus_includes_user_approved,
-        test_brief_enrichment_review_focus_includes_hypothesis_flags,
-        test_intelligence_requires_intake_brief,
-        test_intelligence_requires_enriched_brief,
-        test_bible_requires_intake_brief_and_intelligence_brief,
-        test_bible_produces_production_bible,
-        test_idea_requires_production_bible,
-        test_idea_produces_idea_options,
-        test_proposal_requires_idea_options,
-        test_proposal_produces_production_proposal,
-        test_script_requires_production_bible,
-        test_script_requires_idea_options,
-        test_scene_plan_requires_production_bible,
-        test_edit_requires_production_bible,
-        test_no_stage_requires_proposal_packet,
-        test_no_stage_requires_selected_idea,
-        test_no_stage_produces_brief,
-        test_bible_requires_human_approval,
-        test_idea_requires_human_approval,
-        test_idea_checkpoint_required_is_true_not_false,
-        test_intake_runs_without_human_approval,
-        test_intelligence_runs_without_human_approval,
-        test_proposal_requires_human_approval,
-        test_compliance_check_available_to_script,
-        test_compliance_check_available_to_scene_plan,
-        test_compliance_check_available_to_edit,
-        test_required_skills_include_pre_production_directors,
-        test_idea_review_focus_does_not_mention_old_brief_fields,
-        test_idea_review_focus_references_bible_constraints,
-        test_bible_review_focus_includes_cta_check,
-        test_bible_review_focus_includes_both_approval_flags,
-    ]
-    passed = failed = 0
-    for t in tests:
-        try:
-            t()
-            print(f"[PASS] {t.__name__}")
-            passed += 1
-        except Exception as e:
-            print(f"[FAIL] {t.__name__}: {e}")
-            traceback.print_exc()
-            failed += 1
-    print(f"\n{passed}/{passed + failed} tests passed")
-    import sys; sys.exit(0 if failed == 0 else 1)

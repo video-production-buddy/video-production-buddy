@@ -325,6 +325,7 @@ stages:
       - frame_sampler
     tools_available:
       - ad_video_planning_chain_check
+      - genui_evidence_check
       - provider_consistency_check
       - product_identity_consistency_check
       - hallucination_contract_check
@@ -344,6 +345,8 @@ stages:
           2-4 concept reference candidates for approval, record an external URL reference, or stop for an explicit risk_accepted
           waiver. No product-visible video clip may be generated before product_identity_reference is approved or waived.
         human_approval_default: true
+        genui_evidence_required: true
+        genui_evidence_gate: product_reference
         review_focus:
           - ad_video_planning_chain_check passes before any asset generation
           - product_identity_reference artifact exists and validates
@@ -357,6 +360,8 @@ stages:
         description: Generate 10–15s preview clip from first 2–3 scenes. Always runs. Present the sample as inline GenUI media
           via genui_interaction/genui_session; manual file-path review is fallback only when the local browser path fails.
         human_approval_default: true
+        genui_evidence_required: true
+        genui_evidence_gate: sample_review
         tools_available:
           - genui_interaction
           - genui_session
@@ -388,6 +393,8 @@ stages:
         description: Present all generated stills, keyframes, and video clips to the user in an inline GenUI media review
           room before compose. Manual folder/file review is fallback only when GenUI is unavailable or declined.
         human_approval_default: true
+        genui_evidence_required: true
+        genui_evidence_gate: asset_review
         review_focus:
           - All generated image, video, sample, product-reference, and keyframe assets are visible as inline GenUI media
           - ui_session_response records review evidence for hero scenes and motion-required clips
@@ -396,17 +403,22 @@ stages:
           - genui_interaction
           - genui_session
       - name: music_review
-        description: Present the generated music track as inline GenUI audio before mixing. Do NOT proceed to compose until
-          ui_session_response shows the user listened and approved.
+        description: When the effective music_strategy is not none, present the generated music track as inline GenUI
+          audio before mixing. Do NOT proceed to compose with music until ui_session_response shows the user listened
+          and approved. If music_strategy is none and no approved opt-in adds music, skip this sub-stage and omit the
+          music_review evidence requirement.
         human_approval_default: true
+        genui_evidence_required: true
+        genui_evidence_gate: music_review
         tools_available:
           - genui_interaction
           - genui_session
         review_focus:
-          - Music track file path communicated
-          - User has listened to the full track
-          - Music arc confirmed matches brief direction specified in production_plan.music_source.mood_direction
-          - music_review_approved == true
+          - When effective music_strategy != none, the music track is playable inline in GenUI, or explicit GenUI
+            failure/user-declined fallback is documented
+          - When effective music_strategy != none, the user has listened to the full track
+          - When effective music_strategy != none, music arc confirmed matches the approved music direction
+          - music_review_approved == true when effective music_strategy != none
     review_focus:
       - product_reference sub-stage completed before sample generation
       - provider_consistency_check passes before compose to catch missing or unauditable narration, silent TTS/image/video/music
@@ -420,10 +432,11 @@ stages:
       - no text-only generation for product-visible scenes unless risk_accepted is user-approved
       - sample_approved == true before full generation proceeds
       - asset_review_approved == true before compose begins
-      - music_review_approved == true before compose begins
+      - music_review_approved == true before compose begins when effective music_strategy != none
       - TTS files present for all sections
       - Narration model/instructions match production_proposal.audio_contract
       - Budget not exceeded
+      - genui_evidence_check PASS before completing the assets checkpoint
       - Completed assets checkpoint includes production_proposal, production_bible, script, scene_plan, and decision_log so
         checkpoint validation can rerun provider_consistency_check, product_identity_consistency_check, and hallucination_contract_check
         before compose
@@ -435,7 +448,7 @@ stages:
       - No blocker hallucination_review FLAG reaches compose
       - sample_approved == true
       - asset_review_approved == true
-      - music_review_approved == true
+      - music_review_approved == true when effective music_strategy != none
       - When production_proposal.subtitles.mode != "off", ASS subtitle file present in asset_manifest
   - name: edit
     skill: pipelines/ad-video/edit-director

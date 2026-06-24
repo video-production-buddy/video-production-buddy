@@ -78,6 +78,7 @@ When `result.cost_usd == 0.0` on a tool you expected to be paid: log a `cost_cap
 ```python
 from tools.audio.cosyvoice_tts import CosyVoiceTTS
 from tools.audio.openai_tts import OpenAITTS
+from tools.audio.minimax_tts import MinimaxTTS
 from tools.graphics.wanx_image import WanxImage
 from tools.video.wan_video_api import WanVideoAPI
 from tools.audio.minimax_music import MinimaxMusic
@@ -114,7 +115,7 @@ if voice_provider == "qwen3":
         "speed": speed,
         "instructions": instructions,
         "format": "mp3",
-        "output_path": f"assets/audio/{section['id']}_narration.mp3",
+        "output_path": f"projects/<project-name>/assets/audio/{section['id']}_narration.mp3",
     })
 elif voice_provider == "openai":
     tts = OpenAITTS()
@@ -125,7 +126,24 @@ elif voice_provider == "openai":
         "speed": speed,
         "instructions": instructions,
         "format": "mp3",
-        "output_path": f"assets/audio/{section['id']}_narration.mp3",
+        "output_path": f"projects/<project-name>/assets/audio/{section['id']}_narration.mp3",
+    })
+elif voice_provider == "minimax":
+    # MiniMax speech-2.8-hd is NOT free-form-instruction-capable; delivery is
+    # controlled via voice_id choice + pitch + speed. Use this branch when
+    # qwen3 male voices render feminine in Mandarin and OpenAI is unavailable
+    # (user-approved provider substitution — see decision_log voice_selection).
+    # Records source_tool="minimax_tts" in the narration asset entry.
+    tts = MinimaxTTS()
+    pitch = section.get("tts_directive", {}).get("pitch", -2)
+    result = tts.execute({
+        "text": section["text"],
+        "voice": audio_contract["voice_id"],  # e.g. "male-qn-badao"
+        "model": model,  # speech-2.8-hd
+        "speed": speed,
+        "pitch": pitch,
+        "format": "mp3",
+        "output_path": f"projects/<project-name>/assets/audio/{section['id']}_narration.mp3",
     })
 else:
     raise RuntimeError(f"Unsupported instruction-capable TTS provider: {voice_provider}")
@@ -187,7 +205,7 @@ result = img.execute({
     "negative_prompt": playbook["asset_generation"]["image_negative_prompt"],
     "size": "1920*1080",
     "model": "wan2.7-image-pro",
-    "output_path": f"assets/images/{scene_id}_img.png",
+    "output_path": f"projects/<project-name>/assets/images/{scene_id}_img.png",
 })
 if result.error:
     raise RuntimeError(f"Image gen failed for {scene_id}: {result.error}")
@@ -201,7 +219,7 @@ result = vid.execute({
     "model_variant": "wan2.6-t2v",
     "duration": str(int(scene["duration_seconds"])),
     "resolution": "1080P",
-    "output_path": f"assets/video/{scene_id}_video.mp4",
+    "output_path": f"projects/<project-name>/assets/video/{scene_id}_video.mp4",
 })
 if result.error:
     raise RuntimeError(f"Video gen failed for {scene_id}: {result.error}")
@@ -213,7 +231,7 @@ result = stock.execute({
     "orientation": "landscape",
     "size": "large",
     "preferred_quality": "hd",
-    "output_path": f"assets/video/{scene_id}_stock.mp4",
+    "output_path": f"projects/<project-name>/assets/video/{scene_id}_stock.mp4",
 })
 
 # Music — one call for the full track
@@ -224,7 +242,7 @@ result = music.execute({
     "model": "music-2.6",
     "format": "mp3",
     "sample_rate": 44100,
-    "output_path": "assets/music/background_music.mp3",
+    "output_path": "projects/<project-name>/assets/music/background_music.mp3",
 })
 if result.error:
     raise RuntimeError(f"Music gen failed: {result.error}")
@@ -366,16 +384,12 @@ ApprovalChecklist, and trace fields in compact CLI form.
 
 Fallback CLI path:
 
-**Message 1 — announce the file path ONLY:**
+**Message 1 — announce the file path without launching anything:**
 
-> "Sample preview ready at: `renders/sample_preview.mp4`
-> Please open this file and watch it now. I'll wait."
+> "Sample preview is available at: `renders/sample_preview.mp4`
+> I will not open or play it automatically. Review it in your preferred method when convenient; then reply **Approve** to proceed to full generation, or **Reject: [feedback]** to adjust the approach before I generate any more assets."
 
-   Do NOT describe what is in the clip. Do NOT ask for approval in this message. The user must engage with the actual video, not a text description of it.
-
-**Message 2 — request decision (after user has had time to open the file):**
-
-> "Once you've watched the sample: reply **Approve** to proceed to full generation, or **Reject: [feedback]** to adjust the approach before I generate any more assets."
+   Do NOT describe what is in the clip. Do NOT ask the user to open folders or launch a player. The user controls whether and when to review the actual video.
 
 If **approved**: set `EP_STATE.sample_approved = true`. Proceed to full generation.
 If **rejected**: set `EP_STATE.sample_approved = false`. Return the user's feedback to the EP.
@@ -576,7 +590,7 @@ result = music.execute({
     "model": "music-2.6",
     "format": "mp3",
     "sample_rate": 44100,
-    "output_path": "assets/music/background_music.mp3",
+    "output_path": "projects/<project-name>/assets/music/background_music.mp3",
 })
 ```
 
@@ -614,7 +628,7 @@ sing?"), not about catching known blocker hallucinations the agent should have f
    ]:
        scene_id = asset["scene_id"]
        duration = asset.get("duration_seconds", 5)
-       output_dir = Path(f"assets/keyframes/{scene_id}")
+       output_dir = Path("projects") / project_id / "assets" / "keyframes" / scene_id
        output_dir.mkdir(parents=True, exist_ok=True)
 
        result = sampler.execute({
@@ -648,9 +662,9 @@ sing?"), not about catching known blocker hallucinations the agent should have f
    {
      "status": "PASS",
      "keyframe_paths": [
-       "assets/keyframes/scene-1/start.png",
-       "assets/keyframes/scene-1/mid.png",
-       "assets/keyframes/scene-1/end.png"
+       "projects/<project-id>/assets/keyframes/scene-1/start.png",
+       "projects/<project-id>/assets/keyframes/scene-1/mid.png",
+       "projects/<project-id>/assets/keyframes/scene-1/end.png"
      ],
      "check_verdicts": [
        {
@@ -739,10 +753,18 @@ ApprovalChecklist, and trace fields in compact CLI form. If any asset is
 flagged, regenerate the specified asset, re-present that updated asset in GenUI,
 and wait for approval before proceeding.
 
-### Step 6: Music Review Gate (REQUIRED before compose)
+### Step 6: Music Review Gate (required when music is approved)
 
-After music is generated, present it for approval. This is an audio review gate,
-so use `genui_interaction` by default and serve a GenUI v7 session.
+If the effective `production_proposal.music_strategy` is `"none"` and no visible
+approved `music_strategy_selection` decision opts into another strategy, do not
+generate music, do not create `asset_manifest.music_file` or a music asset, and
+do not set `music_review_approved`. In that no-music case, the completed assets
+checkpoint and `genui_evidence_check` skip `music_review`.
+
+When music is generated, present it for approval. This is an audio review gate,
+so use `genui_interaction` by default and serve a GenUI v7 session. If the user
+later approves a `music_strategy_selection` change away from `"none"`, run this
+gate before compose.
 
 Build an `interaction_request` that produces a `ui_session_config` with:
 
@@ -776,7 +798,8 @@ Fallback CLI path: two messages.
 **Message 2 — request decision:**
 > "Does the music match the brief direction ([e.g., cicada intro → guzheng+electronic → calm outro])? Reply **Approve** or **Reject: [feedback]**."
 
-If rejected: regenerate with adjusted prompt or try a different music provider. Do NOT mix any music into the render without explicit music_review_approved.
+If rejected: regenerate with adjusted prompt or try a different music provider.
+Do NOT mix any music into the render without explicit `music_review_approved`.
 
 ## Asset Manifest Format
 
@@ -844,6 +867,13 @@ The EP will read `asset_manifest.total_cost_usd` and update `EP_STATE.budget_spe
 ## Validation Before Submitting
 
 - [ ] `sample_approved == true` in EP_STATE
+- [ ] `genui_evidence_check` passes before completing the assets checkpoint:
+      `make genui-evidence-check PROJECT=projects/<project-id> PIPELINE=ad-video STAGE=assets`
+      or `python -m tools.validation.genui_evidence_check
+      projects/<project-id> ad-video assets`. This verifies
+      `ui_interaction_journal` evidence for `product_reference`,
+      `sample_review`, `asset_review`, and `music_review` when the effective
+      music strategy is not `none`.
 - [ ] TTS file present for every `script.sections[]` item
 - [ ] Every narration file also has an `assets[]` entry with `type="narration"`,
       `source_tool`, and `model` so `provider_consistency_check` can verify the
