@@ -12,6 +12,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from schemas.artifacts import load_strict_json_object
 from tools.base_tool import (
     BaseTool,
     Determinism,
@@ -27,6 +28,7 @@ from tools.base_tool import (
 EXPECTED_TTS_TOOLS = {
     "qwen3": "cosyvoice_tts",
     "openai": "openai_tts",
+    "minimax": "minimax_tts",
 }
 
 VISUAL_ASSET_TYPES = {"image", "video", "animation"}
@@ -53,8 +55,7 @@ def _load_artifact(project_dir: Path, name: str) -> dict[str, Any]:
     path = project_dir / "artifacts" / name
     if not path.exists():
         raise FileNotFoundError(f"missing artifact: {path}")
-    with open(path, encoding="utf-8") as f:
-        return json.load(f)
+    return load_strict_json_object(path, context=f"artifact {path}")
 
 
 def _load_decision_log(project_dir: Path) -> dict[str, Any] | None:
@@ -63,8 +64,7 @@ def _load_decision_log(project_dir: Path) -> dict[str, Any] | None:
         project_dir / "artifacts" / "decision_log.json",
     ):
         if path.exists():
-            with open(path, encoding="utf-8") as f:
-                return json.load(f)
+            return load_strict_json_object(path, context=f"decision log {path}")
     return None
 
 
@@ -805,6 +805,13 @@ class ProviderConsistencyCheck(BaseTool):
     determinism = Determinism.DETERMINISTIC
     runtime = ToolRuntime.LOCAL
     resource_profile = ResourceProfile(cpu_cores=1, ram_mb=64, disk_mb=1, network_required=False)
+    idempotency_key_fields = [
+        "project_dir",
+        "production_proposal",
+        "asset_manifest",
+        "decision_log",
+        "script",
+    ]
     capabilities = [
         "validate_asset_provider_locks",
         "detect_silent_tts_provider_swap",
@@ -897,7 +904,7 @@ class ProviderConsistencyCheck(BaseTool):
         return ToolResult(
             success=success,
             data=verdict,
-            error=json.dumps(verdict.get("issues", []), sort_keys=True) if not success else None,
+            error=json.dumps(verdict.get("issues", []), sort_keys=True, allow_nan=False) if not success else None,
             duration_seconds=round(time.time() - started, 2),
         )
 
@@ -915,7 +922,7 @@ def _cli(argv: list[str]) -> int:
         print(f"error: project dir not found: {project_dir}", file=sys.stderr)
         return 2
     verdict = check_project(project_dir)
-    print(json.dumps(verdict, indent=2))
+    print(json.dumps(verdict, indent=2, allow_nan=False))
     return 0 if verdict["status"] == "PASS" else 1
 
 

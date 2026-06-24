@@ -248,6 +248,7 @@ def _probe_image(path: Path) -> dict[str, Any]:
         with Image.open(path) as img:
             w, h = img.size
             image_format = img.format or "unknown"
+            img.verify()
         result["technical_probe"] = {
             "resolution": f"{w}x{h}",
             "file_size_bytes": path.stat().st_size,

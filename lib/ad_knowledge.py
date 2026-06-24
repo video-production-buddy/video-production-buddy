@@ -18,6 +18,8 @@ from typing import Any, Protocol
 
 import jsonschema
 
+from schemas.artifacts import load_strict_json_object
+
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CARD_DIR = ROOT / "knowledge" / "ad-video"
@@ -57,13 +59,18 @@ class EmbeddingScorer(Protocol):
 
 
 def _load_card_schema() -> dict[str, Any]:
-    with open(CARD_SCHEMA_PATH, encoding="utf-8") as f:
-        return json.load(f)
+    return load_strict_json_object(CARD_SCHEMA_PATH, context="ad knowledge card schema")
 
 
 def _content_hash(card: dict[str, Any]) -> str:
     payload = {key: value for key, value in card.items() if key != "content_hash"}
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    encoded = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+        allow_nan=False,
+    )
     return "sha256:" + hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
@@ -75,8 +82,7 @@ def load_ad_knowledge_cards(card_dir: Path | str | None = None) -> list[dict[str
     seen_ids: set[str] = set()
 
     for path in sorted(directory.glob("*.json")):
-        with open(path, encoding="utf-8") as f:
-            card = json.load(f)
+        card = load_strict_json_object(path, context=f"ad knowledge card {path.name}")
         jsonschema.validate(instance=card, schema=schema)
         expected_hash = _content_hash(card)
         if card.get("content_hash") != expected_hash:

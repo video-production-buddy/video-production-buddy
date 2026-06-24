@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -147,6 +148,19 @@ def test_review_source_media_refuses_corrupt_raster_image(tmp_path: Path) -> Non
     """Raster product/reference images need a real image probe, not file-size fallback."""
     image_path = tmp_path / "product_hero.png"
     image_path.write_bytes(b"not a valid png")
+
+    with pytest.raises(RuntimeError, match="product_hero.png"):
+        review_source_media([image_path], {}, tool_registry=_EmptyRegistry())
+
+
+def test_review_source_media_refuses_truncated_raster_image(tmp_path: Path) -> None:
+    """Header-readable but truncated rasters must not count as reviewed media."""
+    image_module = pytest.importorskip("PIL.Image")
+    image_path = tmp_path / "product_hero.png"
+    image = image_module.new("RGB", (16, 16), "red")
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    image_path.write_bytes(buffer.getvalue()[:50])
 
     with pytest.raises(RuntimeError, match="product_hero.png"):
         review_source_media([image_path], {}, tool_registry=_EmptyRegistry())

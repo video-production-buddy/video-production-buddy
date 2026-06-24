@@ -14,6 +14,7 @@ Covers gaps not exercised by existing test suites:
 from __future__ import annotations
 
 import json
+import math
 from copy import deepcopy
 from pathlib import Path
 
@@ -54,6 +55,7 @@ from tests.contracts.conftest import (
     _hallucination_check,
     _load_scene_type_registry,
     _product_visible_scene_plan,
+    write_genui_required_gate_evidence,
 )
 from tests.contracts.test_phase0_contracts import (
     ad_video_assets_checkpoint_context,
@@ -67,8 +69,26 @@ from tests.contracts.test_phase0_contracts import (
 
 
 class TestUserRequestEdgeCases:
+    def _project_dir(self, tmp_path: Path, project_id: str) -> Path:
+        return tmp_path / "projects" / project_id
+
+    def test_record_rejects_project_dir_outside_projects_before_side_effects(
+        self, tmp_path: Path
+    ) -> None:
+        project_dir = tmp_path / "rogue-project"
+
+        with pytest.raises(ValueError, match="projects/<project-name>"):
+            record_user_request(
+                project_dir,
+                "Make a 60-second launch ad.",
+                project_id="rogue-project",
+            )
+
+        assert not (project_dir / "artifacts" / "user_request.json").exists()
+        assert not (project_dir / "USER_PROMPT.md").exists()
+
     def test_record_creates_artifact_and_mirror(self, tmp_path: Path) -> None:
-        project_dir = tmp_path / "my-project"
+        project_dir = self._project_dir(tmp_path, "my-project")
         record_user_request(
             project_dir,
             "Make a 60-second MacBook Pro ad for YouTube.",
@@ -86,7 +106,7 @@ class TestUserRequestEdgeCases:
         assert "MacBook Pro ad" in mirror.read_text()
 
     def test_record_is_idempotent(self, tmp_path: Path) -> None:
-        project_dir = tmp_path / "idem"
+        project_dir = self._project_dir(tmp_path, "idem")
         path1 = record_user_request(project_dir, "First prompt", project_id="idem")
         path2 = record_user_request(project_dir, "Second prompt", project_id="idem")
 
@@ -97,7 +117,7 @@ class TestUserRequestEdgeCases:
     def test_record_idempotent_call_restores_missing_mirror(
         self, tmp_path: Path
     ) -> None:
-        project_dir = tmp_path / "idem-mirror"
+        project_dir = self._project_dir(tmp_path, "idem-mirror")
         path = record_user_request(
             project_dir, "Original prompt", project_id="idem-mirror"
         )
@@ -114,7 +134,7 @@ class TestUserRequestEdgeCases:
         assert "Changed prompt" not in mirror.read_text()
 
     def test_record_overwrite(self, tmp_path: Path) -> None:
-        project_dir = tmp_path / "overwrite"
+        project_dir = self._project_dir(tmp_path, "overwrite")
         record_user_request(project_dir, "Original", project_id="overwrite")
         path = record_user_request(
             project_dir, "Replaced", project_id="overwrite", overwrite=True
@@ -148,8 +168,50 @@ class TestUserRequestEdgeCases:
                 project_id="different-project",
             )
 
+    def test_record_rejects_non_finite_metadata_before_side_effects(
+        self, tmp_path: Path
+    ) -> None:
+        project_dir = self._project_dir(tmp_path, "strict-json")
+
+        with pytest.raises(ValueError, match="strict JSON"):
+            record_user_request(
+                project_dir,
+                "Prompt",
+                project_id="strict-json",
+                metadata={"routing_confidence": math.nan},
+            )
+
+        assert not (project_dir / "artifacts" / "user_request.json").exists()
+        assert not (project_dir / "USER_PROMPT.md").exists()
+
+    def test_read_rejects_non_strict_json_payload(self, tmp_path: Path) -> None:
+        project_dir = self._project_dir(tmp_path, "strict-read")
+        artifact = project_dir / "artifacts" / "user_request.json"
+        artifact.parent.mkdir(parents=True)
+        artifact.write_text(
+            """
+{
+  "version": "1.0",
+  "project_id": "strict-read",
+  "created_at": "2026-06-14T00:00:00+00:00",
+  "prompt": "Prompt",
+  "prompt_turns": [],
+  "references": [],
+  "pipeline_hint": null,
+  "session_id": null,
+  "language": null,
+  "metadata": {
+    "routing_confidence": NaN
+  }
+}
+""".lstrip()
+        )
+
+        with pytest.raises(ValueError, match="strict JSON"):
+            read_user_request(project_dir)
+
     def test_append_turn(self, tmp_path: Path) -> None:
-        project_dir = tmp_path / "turns"
+        project_dir = self._project_dir(tmp_path, "turns")
         record_user_request(
             project_dir, "Initial prompt", project_id="turns"
         )
@@ -162,13 +224,13 @@ class TestUserRequestEdgeCases:
         assert data["prompt_turns"][1]["note"] == "Language change"
 
     def test_append_turn_rejects_empty(self, tmp_path: Path) -> None:
-        project_dir = tmp_path / "turns-bad"
+        project_dir = self._project_dir(tmp_path, "turns-bad")
         record_user_request(project_dir, "Prompt", project_id="turns-bad")
         with pytest.raises(ValueError, match="non-empty"):
             append_turn(project_dir, "")
 
     def test_add_reference(self, tmp_path: Path) -> None:
-        project_dir = tmp_path / "refs"
+        project_dir = self._project_dir(tmp_path, "refs")
         record_user_request(
             project_dir,
             "Make a video",
@@ -201,7 +263,7 @@ class TestUserRequestEdgeCases:
             read_user_request(tmp_path / "nonexistent")
 
     def test_mirror_includes_pipeline_hint(self, tmp_path: Path) -> None:
-        project_dir = tmp_path / "hinted"
+        project_dir = self._project_dir(tmp_path, "hinted")
         record_user_request(
             project_dir,
             "Make an ad",
@@ -882,8 +944,38 @@ class TestCheckpointAssetsEPState:
                 metadata={"ep_state": {}},
             )
 
+    def test_assets_completed_checkpoint_requires_genui_gate_evidence(
+        self, tmp_path: Path
+    ) -> None:
+        artifacts = self._valid_assets_artifacts()
+
+        with pytest.raises(CheckpointValidationError, match="GenUI evidence") as exc_info:
+            write_checkpoint(
+                tmp_path,
+                "ep-test-no-genui",
+                "assets",
+                "completed",
+                artifacts,
+                pipeline_type="ad-video",
+                metadata={
+                    "ep_state": {
+                        "sample_approved": True,
+                        "asset_review_approved": True,
+                        "music_review_approved": True,
+                    }
+                },
+            )
+        message = str(exc_info.value)
+        assert "genui_evidence_check" in message
+        assert "python -m tools.validation.genui_evidence_check" in message
+        assert "ad-video assets" in message
+
     def test_assets_checkpoint_passes_with_all_flags(self, tmp_path: Path) -> None:
         artifacts = self._valid_assets_artifacts()
+        write_genui_required_gate_evidence(
+            tmp_path / "ep-test-ok",
+            project_id="ep-test-ok",
+        )
         write_checkpoint(
             tmp_path,
             "ep-test-ok",
@@ -936,6 +1028,10 @@ class TestCheckpointAssetsEPState:
                 "decision_id": "d-001",
             },
         }
+        write_genui_required_gate_evidence(
+            tmp_path / "ep-risk-ok",
+            project_id="ep-risk-ok",
+        )
         write_checkpoint(
             tmp_path,
             "ep-risk-ok",

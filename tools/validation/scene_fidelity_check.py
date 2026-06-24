@@ -27,6 +27,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from schemas.artifacts import load_strict_json_object
 from tools.base_tool import (
     BaseTool,
     Determinism,
@@ -50,8 +51,7 @@ MEDIA_CUT_EXTENSIONS = VIDEO_CUT_EXTENSIONS | {".png", ".jpg", ".jpeg", ".webp"}
 
 def load_registry(registry_path: Path | None = None) -> dict[str, Any]:
     path = registry_path or REGISTRY_PATH_DEFAULT
-    with open(path, encoding="utf-8") as f:
-        return json.load(f)
+    return load_strict_json_object(path, context=f"scene type registry {path}")
 
 
 def _scene_iter(plan: dict[str, Any]):
@@ -486,6 +486,14 @@ class SceneFidelityCheck(BaseTool):
     determinism = Determinism.DETERMINISTIC
     runtime = ToolRuntime.LOCAL
     resource_profile = ResourceProfile(cpu_cores=1, ram_mb=64, disk_mb=1, network_required=False)
+    idempotency_key_fields = [
+        "plan",
+        "scene_plan",
+        "edit_decisions",
+        "asset_manifest",
+        "production_bible",
+        "registry_path",
+    ]
     capabilities = [
         "validate_scene_type_registry_contract",
         "validate_required_scene_props",
@@ -561,7 +569,7 @@ class SceneFidelityCheck(BaseTool):
         return ToolResult(
             success=ok,
             data=data,
-            error=json.dumps(issues, sort_keys=True) if not ok else None,
+            error=json.dumps(issues, sort_keys=True, allow_nan=False) if not ok else None,
             duration_seconds=round(time.time() - started, 2),
         )
 
@@ -572,20 +580,19 @@ def main(argv: list[str]) -> int:
         return 2
 
     plan_path = Path(argv[1])
-    with open(plan_path, encoding="utf-8") as f:
-        plan = json.load(f)
+    plan = load_strict_json_object(plan_path, context=f"scene plan {plan_path}")
 
     registry = load_registry()
     report = check_plan(plan, registry)
 
     if len(argv) >= 3:
-        with open(argv[2], encoding="utf-8") as f:
-            bible = json.load(f)
+        bible_path = Path(argv[2])
+        bible = load_strict_json_object(bible_path, context=f"production bible {bible_path}")
         kvm_report = check_kvm_coverage(bible, plan)
         report["kvm_coverage"] = kvm_report
         report["ok"] = report["ok"] and kvm_report["ok"]
 
-    print(json.dumps(report, indent=2))
+    print(json.dumps(report, indent=2, allow_nan=False))
     return 0 if report["ok"] else 1
 
 

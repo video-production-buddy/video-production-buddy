@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import time
+from pathlib import Path
 from typing import Any
 
 from lib.ad_knowledge import retrieve_ad_knowledge
@@ -16,6 +18,24 @@ from tools.base_tool import (
     ToolStability,
     ToolTier,
 )
+
+
+def _professional_knowledge_output_schema() -> dict[str, Any]:
+    schema_path = (
+        Path(__file__).resolve().parents[2]
+        / "schemas"
+        / "artifacts"
+        / "intelligence_brief.schema.json"
+    )
+    with schema_path.open("r", encoding="utf-8") as f:
+        intelligence_schema = json.load(f)
+    schema = intelligence_schema["properties"]["professional_knowledge"]
+    required = list(schema.get("required", []))
+    if "warnings" not in required:
+        required.append("warnings")
+    schema["required"] = required
+    schema["description"] = "ToolResult.data payload for AdKnowledgeRetriever."
+    return schema
 
 
 class AdKnowledgeRetriever(BaseTool):
@@ -69,27 +89,17 @@ class AdKnowledgeRetriever(BaseTool):
             "top_k": {"type": "integer", "minimum": 1, "maximum": 20, "default": 6},
         },
     }
-    output_schema = {
-        "type": "object",
-        "required": [
-            "retrieval_backend",
-            "cards_used",
-            "application_recommendations",
-            "contraindications",
-            "gaps",
-            "warnings",
-        ],
-        "additionalProperties": False,
-        "properties": {
-            "retrieval_backend": {"type": "string", "enum": ["bm25", "embedding", "hybrid"]},
-            "cards_used": {"type": "array"},
-            "application_recommendations": {"type": "array"},
-            "contraindications": {"type": "array"},
-            "gaps": {"type": "array"},
-            "warnings": {"type": "array"},
-        },
-    }
+    output_schema = _professional_knowledge_output_schema()
     resource_profile = ResourceProfile(cpu_cores=1, ram_mb=128, disk_mb=1, network_required=False)
+    idempotency_key_fields = [
+        "product_category",
+        "platform",
+        "audience",
+        "objectives",
+        "validation_targets",
+        "backend",
+        "top_k",
+    ]
     user_visible_verification = [
         "Inspect cards_used[].source_ref values and thread selected refs into script/scene_plan",
     ]

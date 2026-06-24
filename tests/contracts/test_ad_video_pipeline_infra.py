@@ -9,6 +9,7 @@ Covers gaps not exercised by existing test suites:
 from __future__ import annotations
 
 import json
+import math
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -28,6 +29,7 @@ from lib.pipeline_loader import (
     ExtensionNotPermitted,
     check_extension_permitted,
     get_checkpoint_stage_order,
+    get_genui_required_gates_for_checkpoint,
     get_permitted_extensions,
     get_reference_input_config,
     get_required_tools,
@@ -111,6 +113,16 @@ class TestPipelineLoaderManifest:
     def test_get_stage_sub_stages_unknown_stage_returns_empty(self) -> None:
         manifest = load_pipeline("ad-video")
         assert get_stage_sub_stages(manifest, "nonexistent_stage") == []
+
+    def test_get_genui_required_gates_for_assets_checkpoint(self) -> None:
+        manifest = load_pipeline("ad-video")
+
+        assert get_genui_required_gates_for_checkpoint(manifest, "assets") == [
+            {"stage": "assets", "gate": "product_reference"},
+            {"stage": "assets", "gate": "sample_review"},
+            {"stage": "assets", "gate": "asset_review"},
+            {"stage": "assets", "gate": "music_review"},
+        ]
 
     def test_get_stage_skill_returns_path(self) -> None:
         manifest = load_pipeline("ad-video")
@@ -707,6 +719,30 @@ class TestCheckpointWriteReadRoundtrip:
             )
 
         assert not (tmp_path / "test-proj" / "decision_log.json").exists()
+
+    def test_non_finite_checkpoint_payload_is_rejected_before_side_effects(
+        self, tmp_path: Path
+    ) -> None:
+        artifacts = {
+            "production_proposal": _minimal_ad_video_proposal_with_decisions(),
+            "decision_log": _decision_log_with_approved_runtime_and_product_ref(),
+        }
+
+        with pytest.raises(CheckpointValidationError, match="strict JSON"):
+            write_checkpoint(
+                tmp_path,
+                "test-proj",
+                "proposal.technical_proposal",
+                "completed",
+                artifacts,
+                pipeline_type="ad-video",
+                cost_snapshot={"total_usd": math.nan},
+            )
+
+        assert not (tmp_path / "test-proj" / "decision_log.json").exists()
+        assert not (
+            tmp_path / "test-proj" / "checkpoint_proposal.technical_proposal.json"
+        ).exists()
 
     def test_invalid_stage_rejected(self, tmp_path: Path) -> None:
         with pytest.raises(ValueError, match="Invalid stage"):

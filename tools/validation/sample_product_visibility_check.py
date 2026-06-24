@@ -5,9 +5,9 @@ sample sub-stage rule states the sample MUST include at least one scene where
 the advertised product (or another brand-mandatory element) is visible — even
 if the creative concept hides the product until a late-stage reveal.
 
-This validator enforces that rule by substring-matching the bible's
-brand_constraints.mandatory_elements against the selected scenes'
-description / non-negated visual_constraint / scene_type fields.
+This validator enforces that rule by token-boundary keyword matching the bible's
+brand_constraints.mandatory_elements against the selected scenes' description,
+non-negated visual_constraint, and scene_type fields.
 
 Used by:
   - asset-director.md sample sub-stage (call before assembling the sample
@@ -30,6 +30,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from schemas.artifacts import load_strict_json_object
 from tools.base_tool import (
     BaseTool,
     Determinism,
@@ -75,8 +76,7 @@ def _load_artifact(project_dir: Path, name: str) -> dict[str, Any]:
     path = project_dir / "artifacts" / name
     if not path.exists():
         raise FileNotFoundError(f"missing artifact: {path}")
-    with open(path, encoding="utf-8") as f:
-        return json.load(f)
+    return load_strict_json_object(path, context=f"artifact {path}")
 
 
 def _extract_keywords(element: str) -> list[str]:
@@ -85,7 +85,7 @@ def _extract_keywords(element: str) -> list[str]:
     Mandatory elements are written as natural-language declarations like
     'OPPO wordmark in final frame' or 'Hasselblad orange dot visible on the
     device'. We extract the proper nouns and topical keywords (skipping a
-    small stopword list) for substring matching against scene descriptions.
+    small stopword list) for token-boundary matching against scene descriptions.
     """
     # Drop bracketed/quoted noise like 'Tagline "For everyone who sees."'.
     cleaned = re.sub(r"['\"][^'\"]*['\"]", " ", element)
@@ -264,7 +264,7 @@ def check_sample_visibility(
         issues.append(
             "No full keyword match for any mandatory element in the selected sample "
             "scenes — only partial overlaps. The sample may technically include the "
-            "product but the substring check is not confident. Asset-director should "
+            "product but the keyword match is not confident. Asset-director should "
             "either pick a scene with stronger product visibility or proceed with "
             "documented uncertainty."
         )
@@ -305,6 +305,13 @@ class SampleProductVisibilityCheck(BaseTool):
     determinism = Determinism.DETERMINISTIC
     runtime = ToolRuntime.LOCAL
     resource_profile = ResourceProfile(cpu_cores=1, ram_mb=64, disk_mb=1, network_required=False)
+    idempotency_key_fields = [
+        "project_dir",
+        "production_bible",
+        "bible",
+        "scene_plan",
+        "selected_scene_ids",
+    ]
     capabilities = [
         "validate_ad_video_sample_product_visibility",
         "validate_brand_mandatory_element_in_sample",
@@ -381,7 +388,7 @@ class SampleProductVisibilityCheck(BaseTool):
         return ToolResult(
             success=success,
             data=verdict,
-            error=json.dumps(verdict.get("issues", []), sort_keys=True) if not success else None,
+            error=json.dumps(verdict.get("issues", []), sort_keys=True, allow_nan=False) if not success else None,
             duration_seconds=round(time.time() - started, 2),
         )
 
@@ -400,7 +407,7 @@ def _cli(argv: list[str]) -> int:
         print(f"error: project dir not found: {project_dir}", file=sys.stderr)
         return 2
     verdict = check_project(project_dir, selected)
-    print(json.dumps(verdict, indent=2))
+    print(json.dumps(verdict, indent=2, allow_nan=False))
     return 0 if verdict["status"] != "FAIL" else 1
 
 

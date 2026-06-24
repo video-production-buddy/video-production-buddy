@@ -19,6 +19,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from schemas.artifacts import load_strict_json_object
 from tools.base_tool import (
     BaseTool,
     Determinism,
@@ -55,8 +56,7 @@ def _load_artifact(project_dir: Path, name: str) -> dict[str, Any]:
     path = project_dir / "artifacts" / name
     if not path.exists():
         raise FileNotFoundError(f"missing artifact: {path}")
-    with open(path, encoding="utf-8") as f:
-        return json.load(f)
+    return load_strict_json_object(path, context=f"artifact {path}")
 
 
 def _load_decision_log(project_dir: Path) -> dict[str, Any] | None:
@@ -65,8 +65,7 @@ def _load_decision_log(project_dir: Path) -> dict[str, Any] | None:
         project_dir / "artifacts" / "decision_log.json",
     ):
         if path.exists():
-            with open(path, encoding="utf-8") as f:
-                return json.load(f)
+            return load_strict_json_object(path, context=f"decision log {path}")
     return None
 
 
@@ -454,6 +453,14 @@ class ProductIdentityConsistencyCheck(BaseTool):
     determinism = Determinism.DETERMINISTIC
     runtime = ToolRuntime.LOCAL
     resource_profile = ResourceProfile(cpu_cores=1, ram_mb=128, disk_mb=1, network_required=False)
+    idempotency_key_fields = [
+        "project_dir",
+        "product_identity_reference",
+        "scene_plan",
+        "asset_manifest",
+        "decision_log",
+        "generated_scene_ids",
+    ]
     capabilities = [
         "validate_product_identity_reference",
         "validate_product_visible_asset_conditioning",
@@ -515,7 +522,7 @@ class ProductIdentityConsistencyCheck(BaseTool):
         return ToolResult(
             success=success,
             data=verdict,
-            error=json.dumps(verdict.get("issues", []), sort_keys=True) if not success else None,
+            error=json.dumps(verdict.get("issues", []), sort_keys=True, allow_nan=False) if not success else None,
             duration_seconds=round(time.time() - started, 2),
         )
 
@@ -534,7 +541,7 @@ def _cli(argv: list[str]) -> int:
         return 2
     generated_scene_ids = argv[2:] or None
     verdict = check_project(project_dir, generated_scene_ids)
-    print(json.dumps(verdict, indent=2))
+    print(json.dumps(verdict, indent=2, allow_nan=False))
     return 0 if verdict["status"] != "FAIL" else 1
 
 

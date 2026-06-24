@@ -76,6 +76,17 @@ def test_ad_video_knowledge_card_content_hash_detects_tampering(tmp_path) -> Non
         load_ad_knowledge_cards(tmp_path)
 
 
+def test_ad_video_knowledge_card_loader_rejects_non_strict_json(tmp_path) -> None:
+    from lib.ad_knowledge import load_ad_knowledge_cards
+
+    card = deepcopy(load_ad_knowledge_cards()[0])
+    card["summary"] = float("nan")
+    (tmp_path / "non_strict.json").write_text(json.dumps(card), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="strict JSON"):
+        load_ad_knowledge_cards(tmp_path)
+
+
 def test_bm25_retrieval_returns_relevant_cards_with_stable_source_refs() -> None:
     from lib.ad_knowledge import retrieve_ad_knowledge
     from tests.contracts.test_artifact_chain import INTELLIGENCE_BRIEF_VALID
@@ -272,6 +283,59 @@ def test_ad_video_intelligence_rejects_research_grounded_contradiction_without_c
 
     with pytest.raises(Exception, match="challenge_evidence"):
         validate_artifact("intelligence_brief", brief, pipeline_type="ad-video")
+
+
+@pytest.mark.parametrize(
+    "challenge_evidence",
+    [
+        "The report contradicts this audience hypothesis.",
+        "A study says this positioning is wrong.",
+        "Industry reports show this visual approach is uncommon.",
+    ],
+)
+def test_ad_video_intelligence_rejects_generic_research_grounded_challenge_evidence(
+    challenge_evidence: str,
+) -> None:
+    from tests.contracts.test_artifact_chain import INTELLIGENCE_BRIEF_VALID
+
+    brief = deepcopy(INTELLIGENCE_BRIEF_VALID)
+    brief["dimension_verdicts"] = [
+        {
+            "dimension": "arc_type",
+            "confidence": "research-grounded",
+            "verdict": "CONTRADICTED",
+            "challenge_evidence": challenge_evidence,
+        }
+    ]
+
+    with pytest.raises(Exception, match="challenge_evidence"):
+        validate_artifact("intelligence_brief", brief, pipeline_type="ad-video")
+
+
+@pytest.mark.parametrize(
+    "challenge_evidence",
+    [
+        "Nielsen Q3 2025 report contradicts this audience hypothesis.",
+        "See https://example.com/category-study for the contradictory evidence.",
+        "A category report cites 42% lower completion for this hook pattern.",
+    ],
+)
+def test_ad_video_intelligence_accepts_specific_research_grounded_challenge_evidence(
+    challenge_evidence: str,
+) -> None:
+    from tests.contracts.test_artifact_chain import INTELLIGENCE_BRIEF_VALID
+
+    brief = deepcopy(INTELLIGENCE_BRIEF_VALID)
+    brief["dimension_verdicts"] = [
+        {
+            "dimension": "arc_type",
+            "confidence": "research-grounded",
+            "verdict": "CONTRADICTED",
+            "challenge_evidence": challenge_evidence,
+        }
+    ]
+
+    validate_artifact("intelligence_brief", brief, pipeline_type="ad-video")
 
 
 def test_ad_video_intelligence_rejects_default_heuristic_contradiction() -> None:

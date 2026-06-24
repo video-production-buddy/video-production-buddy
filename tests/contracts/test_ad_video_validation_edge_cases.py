@@ -1481,6 +1481,24 @@ class TestSampleVisibilityEdgeCases:
 
 
 class TestValidationToolWrappers:
+    @pytest.mark.parametrize(
+        "tool",
+        [
+            lambda: _provider_consistency_module().ProviderConsistencyCheck(),
+            HallucinationContractCheck,
+            ProductIdentityConsistencyCheck,
+            RuntimeConsistencyCheck,
+            SampleProductVisibilityCheck,
+        ],
+    )
+    def test_project_scoped_validation_tools_key_by_project_dir(self, tool) -> None:
+        validator = tool()
+        base = {"project_dir": "projects/ad-a", "selected_scene_ids": ["s1"]}
+
+        assert validator.idempotency_key(base) != validator.idempotency_key(
+            {**base, "project_dir": "projects/ad-b"}
+        )
+
     def test_hallucination_tool_maps_fail_verdict_to_failed_result(self) -> None:
         result = HallucinationContractCheck().execute(
             {
@@ -1587,6 +1605,24 @@ class TestValidationToolWrappers:
 
         assert result.success is True
         assert result.data["status"] == "PASS"
+
+    def test_runtime_consistency_project_mode_rejects_non_strict_json(
+        self, tmp_path
+    ) -> None:
+        project_dir = tmp_path / "runtime-strict"
+        artifacts_dir = project_dir / "artifacts"
+        artifacts_dir.mkdir(parents=True)
+        (artifacts_dir / "production_proposal.json").write_text(
+            '{"render_runtime": NaN}\n'
+        )
+        (artifacts_dir / "edit_decisions.json").write_text(
+            '{"render_runtime": "remotion"}\n'
+        )
+
+        result = RuntimeConsistencyCheck().execute({"project_dir": str(project_dir)})
+
+        assert result.success is False
+        assert "strict JSON" in (result.error or "")
 
     def test_runtime_consistency_tool_schema_requires_proposal_with_edit_decisions(self) -> None:
         import jsonschema

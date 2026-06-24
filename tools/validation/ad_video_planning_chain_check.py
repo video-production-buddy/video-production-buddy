@@ -10,7 +10,7 @@ from typing import Any
 from lib.conflict_detection import check_trend_knowledge_conflicts
 from lib.knowledge_alignment import check_ad_video_planning_knowledge_alignment
 from lib.trend_alignment import check_ad_video_planning_trend_alignment
-from schemas.artifacts import validate_artifact
+from schemas.artifacts import load_strict_json_object, validate_artifact
 from tools.base_tool import (
     BaseTool,
     Determinism,
@@ -34,6 +34,14 @@ class AdVideoPlanningChainCheck(BaseTool):
     determinism = Determinism.DETERMINISTIC
     runtime = ToolRuntime.LOCAL
     resource_profile = ResourceProfile(cpu_cores=1, ram_mb=128, disk_mb=1, network_required=False)
+    idempotency_key_fields = [
+        "production_bible",
+        "script",
+        "scene_plan",
+        "production_bible_path",
+        "script_path",
+        "scene_plan_path",
+    ]
 
     capabilities = [
         "validate_ad_video_planning_chain",
@@ -91,8 +99,7 @@ class AdVideoPlanningChainCheck(BaseTool):
         path_value = inputs.get(f"{key}_path")
         if not isinstance(path_value, str) or not path_value.strip():
             raise ValueError(f"Missing {key} or {key}_path")
-        with open(Path(path_value), encoding="utf-8") as f:
-            loaded = json.load(f)
+        loaded = load_strict_json_object(Path(path_value), context=f"{key}_path")
         if not isinstance(loaded, dict):
             raise ValueError(f"{key}_path must contain a JSON object")
         return loaded
@@ -137,7 +144,7 @@ class AdVideoPlanningChainCheck(BaseTool):
                 return ToolResult(
                     success=False,
                     data=data,
-                    error=json.dumps(issues, sort_keys=True),
+                    error=json.dumps(issues, sort_keys=True, allow_nan=False),
                     duration_seconds=time.time() - started,
                 )
             return ToolResult(
