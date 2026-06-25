@@ -1,4 +1,7 @@
 {
+  "demo": {
+    "description": "Startup-style pitch built only from Remotion components"
+  },
   "theme": "flat-motion-graphics",
   "cuts": [
     {

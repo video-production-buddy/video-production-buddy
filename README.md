@@ -176,6 +176,7 @@ make hyperframes-doctor
 ```
 
 Docker warnings from the HyperFrames doctor are okay for local rendering; the important signal is that the command exits successfully and reports the runtime as available.
+If it prints `FAIL` or exits nonzero, treat HyperFrames as unavailable on that machine and use the Remotion or FFmpeg paths until the Node/FFmpeg/npx issue is fixed.
 
 Then render the checked-in zero-key demo suite:
 
@@ -183,7 +184,7 @@ Then render the checked-in zero-key demo suite:
 make demo
 ```
 
-The demo path uses local Remotion components and should not require cloud API keys. It renders multiple demo videos, so allow several minutes on a normal laptop. Generated demo renders are written under `projects/demos/renders/`.
+The demo path uses local Remotion components and should not require cloud API keys. The first Remotion render may download Chrome Headless Shell, so allow several minutes on a normal laptop. Generated demo renders are written under `projects/demos/renders/`; the command exits nonzero if Remotion finishes without creating the expected MP4.
 
 ### Add API Keys
 
@@ -362,7 +363,12 @@ This repository is meant to be operated by an AI coding assistant. If you are an
 
 ## Testing
 
+`make setup` installs runtime dependencies. Install development dependencies before running tests:
+
 ```bash
+# Test dependencies
+make install-dev
+
 # Contract tests
 make test-contracts
 

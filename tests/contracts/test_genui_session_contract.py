@@ -669,6 +669,151 @@ def test_genui_browser_open_is_suppressed_during_pytest(monkeypatch):
     assert opened_urls == []
 
 
+def test_genui_server_readiness_uses_spec_probe_with_load_tolerant_timeout(monkeypatch):
+    from tools.interaction import genui_runtime
+    from tools.interaction.genui_runtime import LocalGenUIServerRuntime
+
+    class FakeProcess:
+        returncode = None
+
+        def poll(self):
+            return None
+
+    class FakeResponse:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    observed: dict[str, object] = {}
+    now = {"value": 0.0}
+
+    def fake_monotonic():
+        now["value"] += 0.01
+        return now["value"]
+
+    def fake_urlopen(url: str, timeout: float):
+        observed["url"] = url
+        observed["timeout"] = timeout
+        if timeout < 1.0:
+            raise TimeoutError("readiness probe timed out before server response")
+        return FakeResponse()
+
+    monkeypatch.setattr(genui_runtime.time, "monotonic", fake_monotonic)
+    monkeypatch.setattr(genui_runtime.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(genui_runtime.urllib.request, "urlopen", fake_urlopen)
+
+    LocalGenUIServerRuntime()._wait_until_ready(
+        FakeProcess(),
+        "127.0.0.1",
+        8123,
+        timeout_seconds=0.1,
+    )
+
+    assert observed["url"] == "http://127.0.0.1:8123/spec.json"
+    assert observed["timeout"] >= 1.0
+
+
+def test_genui_server_readiness_reports_startup_stderr():
+    from tools.interaction.genui_runtime import LocalGenUIServerRuntime
+
+    class FakeStderr:
+        def read(self):
+            return "Traceback omitted\nRuntimeError: invalid view spec\n"
+
+    class FailedProcess:
+        returncode = 2
+        stderr = FakeStderr()
+
+        def poll(self):
+            return self.returncode
+
+    with pytest.raises(RuntimeError, match="invalid view spec"):
+        LocalGenUIServerRuntime()._wait_until_ready(
+            FailedProcess(),
+            "127.0.0.1",
+            8123,
+            timeout_seconds=0.1,
+        )
+
+
+def test_genui_server_start_uses_file_backed_stderr_to_avoid_pipe_deadlock(
+    tmp_path: Path, monkeypatch
+):
+    from tools.interaction import genui_runtime
+    from tools.interaction.genui_runtime import LocalGenUIServerRuntime
+
+    class FakeBundle:
+        config_path = tmp_path / "config.json"
+        response_path = tmp_path / "response.json"
+        view_spec_path = tmp_path / "view_spec.json"
+
+    class FakeProcess:
+        pass
+
+    observed: dict[str, object] = {}
+
+    def fake_popen(cmd, **kwargs):
+        observed["cmd"] = cmd
+        observed.update(kwargs)
+        return FakeProcess()
+
+    monkeypatch.setattr(genui_runtime.subprocess, "Popen", fake_popen)
+
+    process = LocalGenUIServerRuntime()._start_server(
+        FakeBundle(),
+        "127.0.0.1",
+        8123,
+        "nonce",
+    )
+
+    stderr_log = getattr(process, "_genui_stderr_log")
+    try:
+        assert observed["stderr"] is stderr_log
+        assert observed["stderr"] not in {
+            subprocess.PIPE,
+            subprocess.DEVNULL,
+            None,
+        }
+        assert stderr_log.seekable()
+        assert stderr_log.writable()
+        assert observed["stdout"] == subprocess.DEVNULL
+    finally:
+        stderr_log.close()
+
+
+def test_genui_server_readiness_reports_file_backed_startup_stderr(
+    tmp_path: Path,
+):
+    from tools.interaction.genui_runtime import LocalGenUIServerRuntime
+
+    stderr_log = (tmp_path / "genui-server.stderr").open("w+", encoding="utf-8")
+    stderr_log.write("Traceback omitted\nRuntimeError: invalid view spec\n")
+    stderr_log.flush()
+
+    class FailedProcess:
+        returncode = 2
+        _genui_stderr_log = stderr_log
+        stderr = None
+
+        def poll(self):
+            return self.returncode
+
+    try:
+        with pytest.raises(RuntimeError, match="invalid view spec"):
+            LocalGenUIServerRuntime()._wait_until_ready(
+                FailedProcess(),
+                "127.0.0.1",
+                8123,
+                timeout_seconds=0.1,
+            )
+    finally:
+        stderr_log.close()
+
+
 def test_genui_browser_open_is_suppressed_during_pytest_even_when_env_allows(
     monkeypatch,
 ):

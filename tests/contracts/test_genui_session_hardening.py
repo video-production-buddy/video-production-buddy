@@ -321,7 +321,7 @@ def test_genui_evidence_check_target_documents_agent_command():
     assert "PROJECT=projects/<project-id>" in makefile
     assert "PIPELINE=ad-video" in makefile
     assert "STAGE=assets" in makefile
-    assert "python -m tools.validation.genui_evidence_check" in makefile
+    assert " -m tools.validation.genui_evidence_check" in makefile
     assert "PYTHONDONTWRITEBYTECODE=1" in makefile
 
 
@@ -330,7 +330,7 @@ def test_makefile_pytest_targets_disable_browser_opening():
     pytest_lines = [
         line.strip()
         for line in makefile.splitlines()
-        if "python -m pytest" in line
+        if " -m pytest" in line
     ]
 
     assert pytest_lines
@@ -354,7 +354,7 @@ def test_makefile_pytest_targets_keep_test_artifacts_out_of_checkout():
     pytest_lines = [
         line.strip()
         for line in makefile.splitlines()
-        if "python -m pytest" in line
+        if " -m pytest" in line
     ]
 
     assert pytest_lines

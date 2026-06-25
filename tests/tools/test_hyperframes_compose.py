@@ -359,6 +359,28 @@ def test_runtime_check_fails_when_npm_package_unresolvable(monkeypatch):
     assert rc["npm_package"] == "hyperframes"
 
 
+def test_runtime_check_fails_when_cli_smoke_fails(monkeypatch):
+    """The npm package can resolve while the actual CLI still exits nonzero."""
+    monkeypatch.setattr(HyperFramesCompose, "_npm_resolve_cache", None, raising=False)
+    monkeypatch.setattr(HyperFramesCompose, "_cli_smoke_cache", None, raising=False)
+    monkeypatch.setattr(
+        HyperFramesCompose,
+        "_resolve_npm_package",
+        classmethod(lambda cls: {"version": "0.7.6"}),
+    )
+    monkeypatch.setattr(
+        HyperFramesCompose,
+        "_probe_cli",
+        classmethod(lambda cls: {"error": "npx hyperframes --version exit 1"}),
+    )
+
+    rc = HyperFramesCompose()._runtime_check()
+
+    assert rc["runtime_available"] is False
+    assert rc["cli_smoke_error"] == "npx hyperframes --version exit 1"
+    assert any("CLI smoke check failed" in reason for reason in rc["reasons"])
+
+
 def test_hyperframes_doctor_runtime_check_payload_matches_output_schema(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -371,6 +393,8 @@ def test_hyperframes_doctor_runtime_check_payload_matches_output_schema(
         "npm_package": "hyperframes",
         "npm_package_version": None,
         "npm_resolve_error": None,
+        "cli_available": False,
+        "cli_smoke_error": None,
         "reasons": ["node not found on PATH", "npx not found on PATH"],
     }
     monkeypatch.setattr(tool, "_runtime_check", lambda: runtime_check)
@@ -398,6 +422,8 @@ def test_hyperframes_doctor_cli_payload_matches_output_schema(
         "npm_package": "hyperframes",
         "npm_package_version": "0.4.5",
         "npm_resolve_error": None,
+        "cli_available": True,
+        "cli_smoke_error": None,
         "reasons": [],
     }
     monkeypatch.setattr(tool, "_runtime_check", lambda: runtime_check)

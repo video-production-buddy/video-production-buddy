@@ -464,26 +464,60 @@ class ComponentManager:
                 return result.stdout.strip()
         raise ComponentError(f"{spec.name}: could not resolve git ref {ref!r} from {spec.url}")
 
+    def _run_git_with_retries(
+        self,
+        command: list[str],
+        *,
+        label: str,
+        cleanup_path: Path | None = None,
+        attempts: int = 3,
+        timeout_seconds: int = 180,
+    ) -> None:
+        last_error: subprocess.CalledProcessError | subprocess.TimeoutExpired | None = None
+        for attempt in range(1, attempts + 1):
+            try:
+                subprocess.run(
+                    command,
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    timeout=timeout_seconds,
+                )
+                return
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+                last_error = exc
+                if cleanup_path is not None:
+                    shutil.rmtree(cleanup_path, ignore_errors=True)
+                if attempt < attempts:
+                    continue
+
+        if last_error is None:
+            raise ComponentError(f"{label}: git command failed")
+        tail = _subprocess_error_tail(last_error)
+        raise ComponentError(
+            f"{label}: git command failed after {attempts} attempts: {tail}"
+        ) from last_error
+
     def _git_mirror(self, spec: ComponentSpec, *, offline: bool) -> Path:
         if not spec.url:
             raise ComponentError(f"{spec.name}: git source missing url")
         mirror = self.cache_dir / "git" / _short_hash(spec.url) / "repo.git"
         if mirror.exists():
             if not offline and mirror not in self._refreshed_mirrors:
-                subprocess.run(
+                self._run_git_with_retries(
                     ["git", f"--git-dir={mirror}", "fetch", "--prune", "--tags", "origin"],
-                    check=True,
-                    stdout=subprocess.DEVNULL,
+                    label=f"{spec.name}: could not fetch git source {spec.url}",
                 )
                 self._refreshed_mirrors.add(mirror)
             return mirror
         if offline:
             raise ComponentError(f"{spec.name}: git cache missing for {spec.url}")
         mirror.parent.mkdir(parents=True, exist_ok=True)
-        subprocess.run(
+        self._run_git_with_retries(
             ["git", "clone", "--mirror", spec.url, str(mirror)],
-            check=True,
-            stdout=subprocess.DEVNULL,
+            label=f"{spec.name}: could not clone git source {spec.url}",
+            cleanup_path=mirror,
         )
         self._refreshed_mirrors.add(mirror)
         return mirror
@@ -771,6 +805,21 @@ def _sha256_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             hasher.update(chunk)
     return hasher.hexdigest()
+
+
+def _subprocess_error_tail(
+    error: subprocess.CalledProcessError | subprocess.TimeoutExpired,
+) -> str:
+    if isinstance(error, subprocess.TimeoutExpired):
+        return f"timeout after {error.timeout}s"
+
+    stderr = error.stderr
+    if isinstance(stderr, bytes):
+        text = stderr.decode(errors="replace")
+    else:
+        text = str(stderr or "")
+    tail = text.strip().splitlines()[-1][:300] if text.strip() else ""
+    return tail or f"exit {error.returncode}"
 
 
 def _canonical_json(data: dict[str, Any]) -> str:

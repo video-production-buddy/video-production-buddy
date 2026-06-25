@@ -72,7 +72,8 @@ Use `anime_scene` type for each scene. Plan:
 | Cinematic edge darken | `vignette` | `true` / `false` |
 | Scene background | `backgroundColor` | theme-derived value such as `"#0A0A1A"` or `"#F6F1E8"` |
 
-Reference: `remotion-composer/public/demo-props/healing-anime-short.json` — anime scenes using this pattern.
+Reference: `remotion-composer/SCENE_TYPES.md` — `anime_scene` parameters for
+multi-image camera motion and particle scenes.
 Reference: `remotion-composer/public/demo-props/world-in-numbers.json` — zero-key chart/text scenes using the same cut JSON shape.
 
 ### 4. Use Metadata For Timing Rules

@@ -41,7 +41,11 @@ ALLOWED_LINE_PATTERNS = {
 
 def _tracked_files() -> list[Path]:
     output = subprocess.check_output(["git", "ls-files"], cwd=PROJECT_ROOT, text=True)
-    return [PROJECT_ROOT / path for path in output.splitlines()]
+    return [
+        PROJECT_ROOT / path
+        for path in output.splitlines()
+        if (PROJECT_ROOT / path).is_file()
+    ]
 
 
 def _is_text_file(path: Path) -> bool:

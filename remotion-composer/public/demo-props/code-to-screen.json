@@ -1,4 +1,7 @@
 {
+  "demo": {
+    "description": "Developer workflow explainer with comparison and KPI cards"
+  },
   "theme": "flat-motion-graphics",
   "cuts": [
     {

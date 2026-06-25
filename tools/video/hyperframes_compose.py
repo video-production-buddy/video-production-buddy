@@ -314,6 +314,8 @@ class HyperFramesCompose(BaseTool):
                     "npm_package": {"type": "string", "minLength": 1},
                     "npm_package_version": {"type": ["string", "null"]},
                     "npm_resolve_error": {"type": ["string", "null"]},
+                    "cli_available": {"type": "boolean"},
+                    "cli_smoke_error": {"type": ["string", "null"]},
                     "reasons": {
                         "type": "array",
                         "items": {"type": "string"},
@@ -327,6 +329,8 @@ class HyperFramesCompose(BaseTool):
                     "npm_package",
                     "npm_package_version",
                     "npm_resolve_error",
+                    "cli_available",
+                    "cli_smoke_error",
                     "reasons",
                 ],
             },
@@ -466,6 +470,7 @@ class HyperFramesCompose(BaseTool):
     # We cache per-process so the first call pays ~2-5s and subsequent calls
     # (get_info spam from the registry) are free.
     _npm_resolve_cache: Optional[dict[str, str]] = None
+    _cli_smoke_cache: Optional[dict[str, str]] = None
 
     @classmethod
     def _node_major_version(cls) -> Optional[int]:
@@ -541,6 +546,54 @@ class HyperFramesCompose(BaseTool):
             cls._npm_resolve_cache = {"version": version}
         return cls._npm_resolve_cache
 
+    @classmethod
+    def _probe_cli(cls) -> dict[str, str]:
+        """Verify the published CLI can actually start through npx."""
+        if cls._cli_smoke_cache is not None:
+            return cls._cli_smoke_cache
+
+        npx = shutil.which("npx")
+        if not npx:
+            cls._cli_smoke_cache = {"error": "npx not on PATH"}
+            return cls._cli_smoke_cache
+
+        try:
+            proc = subprocess.run(
+                [npx, "--yes", cls._NPM_PACKAGE, "--version"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+        except subprocess.TimeoutExpired:
+            cls._cli_smoke_cache = {
+                "error": "timeout (30s) running npx hyperframes --version"
+            }
+            return cls._cli_smoke_cache
+        except (OSError, subprocess.SubprocessError) as e:
+            cls._cli_smoke_cache = {
+                "error": f"npx hyperframes --version failed: {type(e).__name__}"
+            }
+            return cls._cli_smoke_cache
+
+        if proc.returncode != 0:
+            output = "\n".join(
+                part.strip() for part in (proc.stderr, proc.stdout) if part and part.strip()
+            )
+            tail = output.splitlines()[-1][:200] if output else f"exit {proc.returncode}"
+            cls._cli_smoke_cache = {
+                "error": f"npx hyperframes --version exit {proc.returncode}: {tail}"
+            }
+            return cls._cli_smoke_cache
+
+        version = (proc.stdout or "").strip().splitlines()
+        if not version:
+            cls._cli_smoke_cache = {
+                "error": "npx hyperframes --version returned empty output"
+            }
+        else:
+            cls._cli_smoke_cache = {"version": version[-1]}
+        return cls._cli_smoke_cache
+
     def _runtime_check(self) -> dict[str, Any]:
         """Return availability state for the HyperFrames runtime.
 
@@ -568,12 +621,19 @@ class HyperFramesCompose(BaseTool):
         # Only probe npm if the local tooling is actually usable — otherwise
         # a missing-node run would also show a confusing npm error.
         npm_resolve: dict[str, str] = {}
+        cli_smoke: dict[str, str] = {}
         if not reasons:
             npm_resolve = self._resolve_npm_package()
             if "error" in npm_resolve:
                 reasons.append(
                     f"npm package `{self._NPM_PACKAGE}` not resolvable: "
                     f"{npm_resolve['error']}"
+                )
+        if not reasons:
+            cli_smoke = self._probe_cli()
+            if "error" in cli_smoke:
+                reasons.append(
+                    f"HyperFrames CLI smoke check failed: {cli_smoke['error']}"
                 )
 
         return {
@@ -584,6 +644,8 @@ class HyperFramesCompose(BaseTool):
             "npm_package": self._NPM_PACKAGE,
             "npm_package_version": npm_resolve.get("version"),
             "npm_resolve_error": npm_resolve.get("error"),
+            "cli_available": "version" in cli_smoke,
+            "cli_smoke_error": cli_smoke.get("error"),
             "reasons": reasons,
         }
 

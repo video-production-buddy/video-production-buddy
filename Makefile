@@ -101,7 +101,7 @@ preflight-full:
 
 hyperframes-doctor:
 	@echo "==> Probing HyperFrames runtime (node/ffmpeg/npx + hyperframes doctor)..."
-	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) -c "from tools.video.hyperframes_compose import HyperFramesCompose; r=HyperFramesCompose().execute({'operation':'doctor'}); import json; print(json.dumps(r.data, indent=2)); print('OK' if r.success else f'FAIL: {r.error}')"
+	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) -c "from tools.video.hyperframes_compose import HyperFramesCompose; import json; r=HyperFramesCompose().execute({'operation':'doctor'}); print(json.dumps(r.data, indent=2)); print('OK' if r.success else f'FAIL: {r.error}'); raise SystemExit(0 if r.success else 1)"
 
 hyperframes-warm:
 	@echo "==> Refreshing the HyperFrames npx cache to latest..."

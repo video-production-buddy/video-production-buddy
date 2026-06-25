@@ -69,7 +69,6 @@ def embed_images(image_paths: Sequence[Union[str, Path]]) -> np.ndarray:
     if not image_paths:
         return np.zeros((0, 512), dtype=np.float32)
 
-    import torch  # type: ignore
     from PIL import Image  # type: ignore
 
     _load()
@@ -82,6 +81,8 @@ def embed_images(image_paths: Sequence[Union[str, Path]]) -> np.ndarray:
             images.append(img)
 
         inputs = _PROCESSOR(images=images, return_tensors="pt").to(_DEVICE)
+        import torch  # type: ignore
+
         with torch.no_grad():
             features = _MODEL.get_image_features(**inputs)
         features = features / features.norm(dim=-1, keepdim=True).clamp_min(1e-8)

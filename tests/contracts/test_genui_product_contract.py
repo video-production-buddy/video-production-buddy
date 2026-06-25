@@ -434,4 +434,4 @@ def test_genui_product_verify_target_is_documented():
 
     assert product_contract_lines
     assert all(line.startswith("VPB_ALLOW_BROWSER_OPEN=0 ") for line in product_contract_lines)
-    assert all("python -m pytest" in line for line in product_contract_lines)
+    assert all(" -m pytest" in line for line in product_contract_lines)

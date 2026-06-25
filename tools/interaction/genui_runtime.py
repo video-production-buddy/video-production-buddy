@@ -7,6 +7,7 @@ import os
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.request
 from pathlib import Path
@@ -73,13 +74,53 @@ class LocalGenUIServerRuntime:
             "--port",
             str(port),
         ]
-        return subprocess.Popen(
-            cmd,
-            cwd=Path(__file__).resolve().parent.parent.parent,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
+        stderr_log = tempfile.TemporaryFile(
+            mode="w+",
+            encoding="utf-8",
+            errors="replace",
         )
+        try:
+            process = subprocess.Popen(
+                cmd,
+                cwd=Path(__file__).resolve().parent.parent.parent,
+                stdout=subprocess.DEVNULL,
+                stderr=stderr_log,
+                start_new_session=True,
+            )
+        except Exception:
+            stderr_log.close()
+            raise
+        setattr(process, "_genui_stderr_log", stderr_log)
+        return process
+
+    def _read_startup_stderr(self, process: subprocess.Popen, *, limit: int = 4000) -> str:
+        stderr = getattr(process, "_genui_stderr_log", None)
+        if stderr is None:
+            stderr = getattr(process, "stderr", None)
+        if stderr is None:
+            return ""
+        try:
+            flush = getattr(stderr, "flush", None)
+            if callable(flush):
+                flush()
+            seekable = getattr(stderr, "seekable", None)
+            if callable(seekable) and seekable():
+                stderr.seek(0)
+            raw = stderr.read()
+        except Exception:
+            return ""
+        if isinstance(raw, bytes):
+            text = raw.decode("utf-8", errors="replace")
+        else:
+            text = str(raw or "")
+        return text.strip()[-limit:]
+
+    def _server_exit_detail(self, process: subprocess.Popen) -> str:
+        detail = f"process exited with code {process.returncode}"
+        stderr = self._read_startup_stderr(process)
+        if stderr:
+            detail = f"{detail}; stderr: {stderr}"
+        return detail
 
     def _wait_until_ready(
         self,
@@ -87,7 +128,8 @@ class LocalGenUIServerRuntime:
         host: str,
         port: int,
         *,
-        timeout_seconds: float = 3.0,
+        timeout_seconds: float = 10.0,
+        probe_timeout_seconds: float = 1.0,
     ) -> None:
         deadline = time.monotonic() + timeout_seconds
         last_error: Exception | None = None
@@ -95,25 +137,24 @@ class LocalGenUIServerRuntime:
             if process.poll() is not None:
                 raise RuntimeError(
                     "GenUI browser server did not become ready "
-                    f"(process exited with code {process.returncode})"
+                    f"({self._server_exit_detail(process)})"
                 )
             try:
-                with urllib.request.urlopen(f"http://{host}:{port}/", timeout=0.25) as response:
+                with urllib.request.urlopen(
+                    f"http://{host}:{port}/spec.json",
+                    timeout=probe_timeout_seconds,
+                ) as response:
                     if response.status == 200:
                         return
+                    last_error = RuntimeError(f"unexpected HTTP status {response.status}")
             except Exception as exc:
                 if process.poll() is not None:
                     raise RuntimeError(
                         "GenUI browser server did not become ready "
-                        f"(process exited with code {process.returncode})"
+                        f"({self._server_exit_detail(process)})"
                     ) from exc
                 last_error = exc
-                try:
-                    with socket.create_connection((host, port), timeout=0.25):
-                        pass
-                except OSError:
-                    pass
-                time.sleep(0.05)
+                time.sleep(0.1)
             else:
                 if process.poll() is None:
                     return

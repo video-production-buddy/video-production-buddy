@@ -1,4 +1,7 @@
 {
+  "demo": {
+    "description": "Global scale story with titles, stats, and charts"
+  },
   "theme": "flat-motion-graphics",
   "cuts": [
     {

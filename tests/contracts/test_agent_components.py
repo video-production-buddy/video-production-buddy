@@ -388,6 +388,68 @@ sources:
     )
 
 
+def test_git_mirror_clone_retries_transient_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from lib.agent_components import ComponentManager
+
+    upstream = tmp_path / "upstream"
+    _write_skill(upstream / "skills", "demo", "from retry")
+    subprocess.run(["git", "init", str(upstream)], check=True, stdout=subprocess.DEVNULL)
+    subprocess.run(["git", "-C", str(upstream), "config", "user.email", "test@example.com"], check=True)
+    subprocess.run(["git", "-C", str(upstream), "config", "user.name", "Test"], check=True)
+    subprocess.run(["git", "-C", str(upstream), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(upstream), "commit", "-m", "initial"], check=True, stdout=subprocess.DEVNULL)
+
+    manifest = _write_manifest(
+        tmp_path / "repo" / ".agents" / "components.yaml",
+        f"""
+version: 1
+materialize:
+  agents_dir: .agents/skills
+  claude_dir: .claude/skills
+sources:
+  demo-upstream:
+    type: git
+    url: file://{upstream}
+    ref: master
+    components:
+      demo:
+        kind: skill
+        path: skills/demo
+""",
+    )
+    real_run = subprocess.run
+    clone_attempts = 0
+
+    def flaky_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        nonlocal clone_attempts
+        command = args[0] if args else kwargs.get("args")
+        if isinstance(command, list) and command[:3] == ["git", "clone", "--mirror"]:
+            clone_attempts += 1
+            if clone_attempts == 1:
+                raise subprocess.CalledProcessError(
+                    returncode=128,
+                    cmd=command,
+                    stderr="GnuTLS recv error (-110): The TLS connection was non-properly terminated.",
+                )
+        return real_run(*args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", flaky_run)
+    manager = ComponentManager(
+        manifest,
+        tmp_path / "repo" / ".agents" / "components.lock.json",
+        repo_root=tmp_path / "repo",
+        cache_dir=tmp_path / "cache",
+    )
+
+    lock = manager.write_lock()
+
+    assert clone_attempts == 2
+    assert lock["components"]["demo"]["sourcePath"] == "skills/demo"
+
+
 def test_git_source_fetches_shared_source_once_per_lock_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from lib.agent_components import ComponentManager
 

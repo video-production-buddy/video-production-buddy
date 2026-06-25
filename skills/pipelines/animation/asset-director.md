@@ -80,10 +80,10 @@ When `animation_mode == "image_animation"`, each scene needs **2-3 images** for 
 
 **Cost estimation:** 2-3 images per scene × $0.03-0.13/image depending on provider.
 
-**Reference:** See `remotion-composer/public/demo-props/healing-anime-short.json`
-for the proven multi-image `anime_scene` composition pattern. For project-specific
-image batches, write idempotent scripts under the project workspace only when the
-registry tools do not already cover the need.
+**Reference:** See `remotion-composer/SCENE_TYPES.md` for the multi-image
+`anime_scene` contract. For project-specific image batches, write idempotent
+scripts under the project workspace only when the registry tools do not already
+cover the need.
 
 6. **Copy to Remotion public directory** — After generating all images, copy them to `remotion-composer/public/<project-name>/` so Remotion can access them via `staticFile()`. Image paths in the composition JSON are relative to this directory:
    ```

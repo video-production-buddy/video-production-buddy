@@ -30,7 +30,7 @@ The post-render self-review (final_review) is identical across runtimes — same
 | Tools | `composition_validator` | Pre-render validation (MANDATORY) |
 | Tools | `audio_probe` | Music duration check |
 | Playbook | Active style playbook | Render consistency |
-| Reference | `remotion-composer/public/demo-props/healing-anime-short.json` | Anime/image-animation composition JSON format reference |
+| Reference | `remotion-composer/SCENE_TYPES.md` | Anime/image-animation cut schema and scene type reference |
 | Reference | `skills/core/remotion.md` | Remotion patterns, anime_scene type, critical constraints |
 
 ## Process
@@ -57,7 +57,8 @@ Image paths in the composition JSON are relative to `remotion-composer/public/`:
 
 ### 2. Build the Composition JSON (image_animation approach)
 
-For `anime_scene` compositions, build a JSON file at `remotion-composer/public/demo-props/<name>.json`.
+For `anime_scene` compositions, build a project-specific JSON props file for the
+render, but do not commit media-backed props as checked-in demos.
 
 **Required structure:**
 
@@ -103,8 +104,8 @@ For `anime_scene` compositions, build a JSON file at `remotion-composer/public/d
 | `lightingFrom` | string | Starting gradient color (`rgba(...)` or `transparent`) | No |
 | `lightingTo` | string | Ending gradient color | No |
 
-**References:** See `remotion-composer/public/demo-props/healing-anime-short.json`
-for image-animation/anime-scene structure and `remotion-composer/public/demo-props/world-in-numbers.json`
+**References:** See `remotion-composer/SCENE_TYPES.md` for
+image-animation/anime-scene structure and `remotion-composer/public/demo-props/world-in-numbers.json`
 for zero-key chart and text-card structure.
 
 ### 3. Source Music and Find Optimal Offset

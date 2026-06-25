@@ -59,7 +59,7 @@ def test_makefile_lint_py_compile_targets_exist():
     """Every Python file referenced by `make lint` must exist in the repo."""
     makefile = PROJECT_ROOT / "Makefile"
     body = makefile.read_text(encoding="utf-8")
-    compile_targets = re.findall(r"python -m py_compile ([^\s]+\.py)", body)
+    compile_targets = re.findall(r"(?:python|\$\(PYTHON\)) -m py_compile ([^\s]+\.py)", body)
     assert compile_targets, "Makefile lint target should py_compile at least one file"
 
     missing = [path for path in compile_targets if not (PROJECT_ROOT / path).is_file()]
@@ -70,7 +70,7 @@ def test_makefile_lint_covers_shared_tool_safety_helpers():
     """`make lint` should compile shared helpers used by broad tool surfaces."""
     makefile = PROJECT_ROOT / "Makefile"
     body = makefile.read_text(encoding="utf-8")
-    compile_targets = set(re.findall(r"python -m py_compile ([^\s]+\.py)", body))
+    compile_targets = set(re.findall(r"(?:python|\$\(PYTHON\)) -m py_compile ([^\s]+\.py)", body))
 
     assert {
         "tools/output_paths.py",
@@ -85,7 +85,7 @@ def test_makefile_lint_keeps_bytecode_cache_out_of_repo():
     match = re.search(r"^lint:\n((?:\t.*\n)+)", body, flags=re.MULTILINE)
     assert match, "Makefile should define a lint target"
     lint_body = match.group(1)
-    assert "python -m py_compile" in lint_body
+    assert " -m py_compile" in lint_body
     assert "PYTHONPYCACHEPREFIX" in lint_body
     assert "mktemp -d" in lint_body
     assert "rm -rf" in lint_body

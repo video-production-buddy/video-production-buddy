@@ -95,7 +95,9 @@ The `anime_scene` type renders 1-4 images with smooth crossfade transitions, cin
 
 **Multi-image crossfade math:** Each image owns an equal time segment. Fade-out of image N and fade-in of image N+1 OVERLAP by `crossfadeDur` (~1.2s) so there's never a dead frame. Generate 2-3 images per scene from the same visual system, but vary the shot, subject, and lighting per beat. Nearby seeds help create subtle motion without flattening the whole sequence into one repeated prompt.
 
-**Reference composition:** `remotion-composer/public/demo-props/healing-anime-short.json` — anime scenes with particles, lighting, overlays, and ambient music.
+**Contract reference:** `remotion-composer/SCENE_TYPES.md` documents the
+`anime_scene` cut shape. Checked-in demo props must stay component-only; media
+backed anime-scene props belong in generated project workspaces.
 
 **Style playbook:** `styles/anime-ghibli.yaml` — Ghibli-inspired aesthetic with color palette, typography, motion parameters, and FLUX prompt prefix.
 
