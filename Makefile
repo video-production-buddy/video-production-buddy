@@ -14,15 +14,15 @@ setup:
 	$(MAKE) install-remotion
 	@echo ""
 	@echo "==> Installing free offline TTS (Piper)..."
-	$(PYTHON) -m pip install piper-tts || echo "  [skip] piper-tts install failed — TTS will use cloud providers instead"
+	$(PYTHON) -B -m lib.setup_runtime install-piper
 	@echo ""
 	@echo "==> Installing HyperFrames runtime (cache-warm via npx)..."
 	@echo "    Pulls the 'hyperframes' npm package into the local npx cache so the"
 	@echo "    first render doesn't pay a 30-60s cold-fetch penalty. ~20MB of disk."
-	@npx --yes hyperframes --version >/dev/null 2>&1 && echo "    HyperFrames CLI cached (npx)" || echo "  [skip] HyperFrames cache-warm failed — offline or npm unavailable; first render will fetch on demand"
-	@PYTHONDONTWRITEBYTECODE=1 $(PYTHON) -c "from tools.video.hyperframes_compose import HyperFramesCompose; HyperFramesCompose._npm_resolve_cache=None; c=HyperFramesCompose()._runtime_check(); print(f'    HyperFrames runtime_available={c[\"runtime_available\"]}, npm={c.get(\"npm_package_version\") or c.get(\"npm_resolve_error\")}'); [print(f'    note: {r}') for r in c['reasons']]" || echo "  [skip] HyperFrames check failed — runtime can be set up later"
+	@$(PYTHON) -B -m lib.setup_runtime warm-hyperframes
+	@$(PYTHON) -B -m lib.setup_runtime check-hyperframes
 	@echo ""
-	$(PYTHON) -c "import shutil, os; e=os.path.exists('.env'); shutil.copy('.env.example','.env') if not e else None; print('==> Created .env from .env.example — add your API keys there.' if not e else '==> .env already exists — skipping.')"
+	$(PYTHON) -B -m lib.setup_runtime ensure-env
 	@echo ""
 	@echo "Done! Open this project in your AI coding assistant and start creating."
 	@echo "  Optional: add API keys to .env to unlock cloud providers."
@@ -43,18 +43,7 @@ install-gpu:
 	$(PYTHON) -m pip install diffusers transformers accelerate
 
 install-remotion:
-	@if [ -f remotion-composer/pnpm-lock.yaml ]; then \
-		echo "Using pnpm-lock.yaml for Remotion dependencies..."; \
-		if command -v pnpm >/dev/null 2>&1; then \
-			cd remotion-composer && pnpm install --frozen-lockfile; \
-		elif command -v corepack >/dev/null 2>&1; then \
-			cd remotion-composer && corepack pnpm install --frozen-lockfile; \
-		else \
-			cd remotion-composer && npx --yes pnpm install --frozen-lockfile; \
-		fi; \
-	else \
-		cd remotion-composer && npm install; \
-	fi
+	$(PYTHON) -B -m lib.setup_runtime install-remotion
 
 # ---- Testing ----
 
@@ -102,14 +91,14 @@ genui-evidence-check:
 # ---- Utilities ----
 
 preflight:
-	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) -c "from tools.tool_registry import registry; import json; registry.discover(); print(json.dumps(registry.provider_menu_summary(), indent=2))"
+	$(PYTHON) -B -c "from tools.tool_registry import registry; import json; registry.discover(); print(json.dumps(registry.provider_menu_summary(), indent=2))"
 
 preflight-full:
-	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) -c "from tools.tool_registry import registry; import json; registry.discover(); print(json.dumps(registry.provider_menu(), indent=2))"
+	$(PYTHON) -B -c "from tools.tool_registry import registry; import json; registry.discover(); print(json.dumps(registry.provider_menu(), indent=2))"
 
 hyperframes-doctor:
 	@echo "==> Probing HyperFrames runtime (node/ffmpeg/npx + hyperframes doctor)..."
-	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) -c "from tools.video.hyperframes_compose import HyperFramesCompose; import json; r=HyperFramesCompose().execute({'operation':'doctor'}); print(json.dumps(r.data, indent=2)); print('OK' if r.success else f'FAIL: {r.error}'); raise SystemExit(0 if r.success else 1)"
+	$(PYTHON) -B -c "from tools.video.hyperframes_compose import HyperFramesCompose; import json; r=HyperFramesCompose().execute({'operation':'doctor'}); print(json.dumps(r.data, indent=2)); print('OK' if r.success else f'FAIL: {r.error}'); raise SystemExit(0 if r.success else 1)"
 
 hyperframes-warm:
 	@echo "==> Refreshing the HyperFrames npx cache to latest..."
@@ -121,10 +110,10 @@ demo:
 	@echo "==> Rendering zero-key demo videos (no API keys needed)..."
 	@echo "    These use only Remotion components — animated charts, text, data viz."
 	@echo ""
-	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) render_demo.py
+	$(PYTHON) -B render_demo.py
 
 demo-list:
-	@PYTHONDONTWRITEBYTECODE=1 $(PYTHON) render_demo.py --list
+	@$(PYTHON) -B render_demo.py --list
 
 lint:
 	@set -e; \

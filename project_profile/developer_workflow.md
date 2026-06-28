@@ -24,6 +24,10 @@ publishing this repository as code.
 - Keep tests focused on touched behavior. Do not add repo-tracked throwaway,
   duplicate, or broad temporary tests; add or update durable tests only when
   they protect real behavior or prevent a likely regression.
+- Discuss with human, ask human questions if you are not very confident about
+  the plans.
+- Based on the principle of concise, correct, friendly, short & clear & clean.
+- Do not automatically commit and push. Human should manually check before commit and push.
 
 ## Audits
 

@@ -1,0 +1,225 @@
+name: README onboarding smoke test
+
+'on':
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  onboarding:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux README path
+            os: ubuntu-latest
+            family: unix
+          - name: macOS README path
+            os: macos-latest
+            family: unix
+          - name: Windows PowerShell README path
+            os: windows-latest
+            family: windows
+
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+      TEST_REPO: ${{ runner.temp }}/vpb-readme-onboarding
+      VPB_ALLOW_BROWSER_OPEN: "0"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          path: source
+
+      - name: Create clean clone under test
+        if: matrix.family == 'unix'
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf "$TEST_REPO"
+          git clone "$GITHUB_WORKSPACE/source" "$TEST_REPO"
+          cd "$TEST_REPO"
+          git status --short
+
+      - name: Create clean clone under test
+        if: matrix.family == 'windows'
+        shell: pwsh
+        run: |
+          if (Test-Path $env:TEST_REPO) {
+            Remove-Item -Recurse -Force $env:TEST_REPO
+          }
+          $source = Join-Path $env:GITHUB_WORKSPACE "source"
+          git clone $source $env:TEST_REPO
+          Set-Location $env:TEST_REPO
+          git status --short
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Show runner versions
+        if: matrix.family == 'unix'
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 --version
+          node --version
+          npm --version
+          make --version
+
+      - name: Show runner versions
+        if: matrix.family == 'windows'
+        shell: pwsh
+        run: |
+          python --version
+          node --version
+          npm --version
+
+      - name: Assert zero-key environment
+        shell: python
+        run: |
+          import os
+
+          keys = [
+              "FAL_KEY",
+              "FAL_AI_API_KEY",
+              "DASHSCOPE_API_KEY",
+              "GOOGLE_API_KEY",
+              "GEMINI_API_KEY",
+              "GOOGLE_APPLICATION_CREDENTIALS",
+              "ELEVENLABS_API_KEY",
+              "OPENAI_API_KEY",
+              "XAI_API_KEY",
+              "DOUBAO_SPEECH_API_KEY",
+              "SUNO_API_KEY",
+              "MINIMAX_API_KEY",
+              "HEYGEN_API_KEY",
+              "RUNWAY_API_KEY",
+              "RUNWAYML_API_SECRET",
+              "REPLICATE_API_TOKEN",
+              "HIGGSFIELD_KEY",
+              "HIGGSFIELD_API_KEY",
+              "HIGGSFIELD_API_SECRET",
+              "PEXELS_API_KEY",
+              "PIXABAY_API_KEY",
+              "UNSPLASH_ACCESS_KEY",
+              "FREESOUND_API_KEY",
+          ]
+          present = [key for key in keys if os.environ.get(key)]
+          if present:
+              raise SystemExit(f"README onboarding smoke test must be zero-key; found {present}")
+          print("zero-key environment confirmed")
+
+      - name: Install FFmpeg on Linux
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg make
+          ffmpeg -version
+
+      - name: Install FFmpeg on macOS
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euxo pipefail
+          brew list ffmpeg >/dev/null 2>&1 || brew install ffmpeg
+          ffmpeg -version
+
+      - name: Install FFmpeg on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $installed = $false
+          if (Get-Command winget -ErrorAction SilentlyContinue) {
+            winget install --id Gyan.FFmpeg -e --accept-source-agreements --accept-package-agreements
+            if ($LASTEXITCODE -eq 0) {
+              $installed = $true
+            } else {
+              Write-Host "winget FFmpeg install failed; falling back to Chocolatey"
+              $global:LASTEXITCODE = 0
+            }
+          }
+          if (-not $installed) {
+            choco install ffmpeg -y --no-progress
+            $chocoBin = Join-Path $env:ChocolateyInstall "bin"
+            if (Test-Path $chocoBin) {
+              $env:Path = "$chocoBin;$env:Path"
+              Add-Content -Path $env:GITHUB_PATH -Value $chocoBin
+            }
+          }
+          ffmpeg -version
+
+      - name: Install Make on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Get-Command make -ErrorAction SilentlyContinue)) {
+            choco install make -y --no-progress
+            $chocoBin = Join-Path $env:ChocolateyInstall "bin"
+            if (Test-Path $chocoBin) {
+              $env:Path = "$chocoBin;$env:Path"
+              Add-Content -Path $env:GITHUB_PATH -Value $chocoBin
+            }
+          }
+          make --version
+
+      - name: Run README startup path on Linux/macOS
+        if: matrix.family == 'unix'
+        shell: bash
+        working-directory: ${{ env.TEST_REPO }}
+        run: |
+          set -euxo pipefail
+          python3 -m venv .venv
+          source .venv/bin/activate
+          make setup
+          python -m lib.agent_components install --profile default --frozen
+          make preflight
+          make demo-list
+          make demo
+
+      - name: Run README startup path on Windows PowerShell
+        if: matrix.family == 'windows'
+        shell: pwsh
+        working-directory: ${{ env.TEST_REPO }}
+        run: |
+          python -m venv .venv
+          Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+          .\.venv\Scripts\Activate.ps1
+          $env:PYTHON = "python"
+          make setup
+          python -m lib.agent_components install --profile default --frozen
+          make preflight
+          make demo-list
+          make demo
+
+      - name: Verify demo outputs
+        shell: python
+        working-directory: ${{ env.TEST_REPO }}
+        run: |
+          from pathlib import Path
+
+          expected = {
+              "code-to-screen.mp4",
+              "focusflow-pitch.mp4",
+              "world-in-numbers.mp4",
+          }
+          render_dir = Path("projects/demos/renders")
+          missing = sorted(name for name in expected if not (render_dir / name).is_file())
+          if missing:
+              raise SystemExit(f"Missing demo render(s): {missing}")
+          for path in sorted(render_dir.glob("*.mp4")):
+              print(f"{path}: {path.stat().st_size} bytes")

@@ -42,9 +42,11 @@
 
 ---
 
-> **Video Production Buddy / 织影** turns a general-purpose AI assistant into a governed video production studio. It does not treat video generation as a black-box prompt; it stages the work through brief refinement, research, proposal approval, asset generation, composition, and post-render checks.
+> **Video Production Buddy / 织影** turns a general-purpose AI assistant into a visible video production workflow. Instead of typing one prompt and hoping, you can review the brief, plan, script, assets, render, and final checks before major generation work.
 >
 > **Agent-first by design:** the AI assistant is the producer and orchestrator, while skills and Python tools handle concrete work such as provider routing, media analysis, generation, composition, validation, checkpointing, and cost tracking.
+>
+> **Best first try:** run the zero-key demo, confirm your machine can render locally, then open this folder in your AI assistant and paste a starter prompt. Cloud API keys are optional until you want provider-generated images, video, voice, or music.
 >
 > <p align="center"><strong>⭐ Star this project if you want an open, inspectable alternative to black-box AI video generation, thank you!</strong></p>
 
@@ -103,83 +105,107 @@ For ads and commercial-style projects, the pipeline adds stronger pre-production
 
 ## Quick Start
 
-### Happy Path
+### Before You Start
 
-```bash
-git clone https://github.com/video-production-buddy/video-production-buddy.git
-cd video-production-buddy
-make setup
-python -m lib.agent_components install --profile default --frozen
-make preflight
-```
+For a first try, you **do not** need cloud API keys. Render the checked-in zero-key demo first, confirm local rendering works, then add cloud providers only when you need them.
 
-Then open the repository in your AI assistant and ask for a video. If preflight reports FFmpeg, Remotion, and the providers you need, you are ready to produce.
+You need:
 
-### Prerequisites
-
-- **Python 3.10+** - [python.org](https://www.python.org/downloads/)
-- **FFmpeg** - `brew install ffmpeg` / `sudo apt install ffmpeg` / `winget install FFmpeg` / [ffmpeg.org](https://ffmpeg.org/download.html)
-- **Node.js 22+** - required for Remotion, HyperFrames and character-animation renders
+- **Git** - [git-scm.com](https://git-scm.com/downloads). If you do not want Git yet, download the repository ZIP from GitHub and unzip it.
+- **Python 3.10+** - [python.org](https://www.python.org/downloads/); on Ubuntu/Debian, run `sudo apt install python3-venv` if virtualenv creation fails
+- **FFmpeg** - `brew install ffmpeg` / `sudo apt install ffmpeg` / `winget install --id Gyan.FFmpeg` / `choco install ffmpeg -y` / [ffmpeg.org](https://ffmpeg.org/download.html)
+- **Node.js 22+** - required for Remotion, HyperFrames, and character-animation renders
+- **Make** - on macOS run `xcode-select --install`; on Ubuntu/Debian run `sudo apt update && sudo apt install make`; on Windows install [Chocolatey](https://chocolatey.org/install), then run `choco install make -y` in Administrator PowerShell
 - **An AI coding assistant** - Codex, Claude Code, Cursor, GitHub Copilot, Windsurf, or another assistant that can read files and run shell commands
 
-Using a virtual environment is recommended:
+On Windows, reopen PowerShell after installing Python, Node.js, FFmpeg, or Make so new `PATH` entries are visible.
+If you downloaded the ZIP instead of using Git, skip the `git clone` line and `cd` into the unzipped folder.
+
+### Check Prerequisites
+
+First confirm these commands print version or help output.
+
+macOS/Linux:
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
+git --version
+python3 --version
+python3 -m venv --help >/dev/null
+ffmpeg -version
+node --version
+npm --version
+npx --version
+make --version
 ```
 
-On Windows PowerShell:
+Windows PowerShell:
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
+git --version
+python --version
+python -m venv --help > $null
+ffmpeg -version
+node --version
+npm --version
+npx --version
+make --version
 ```
 
-### Install & Run
+If a command is not found, install that tool, reopen your terminal, and check again.
+
+### First Local Smoke Test
+
+Run this once to prove your machine can install dependencies, inspect available runtimes, and render a local demo video without API keys.
+
+macOS/Linux:
 
 ```bash
 git clone https://github.com/video-production-buddy/video-production-buddy.git
 cd video-production-buddy
+python3 -m venv .venv
+source .venv/bin/activate
 make setup
 python -m lib.agent_components install --profile default --frozen
+make preflight
+make demo
 ```
 
-`make setup` installs Python dependencies, installs the Remotion composer, installs Piper TTS when available, warms the HyperFrames `npx` cache when possible, and creates `.env` from `.env.example` if it does not already exist. The `lib.agent_components` command materializes the agent skill packs used by provider tools and runtime guidance.
+Windows PowerShell:
 
-If `make` is not available:
-
-```bash
-pip install -r requirements.txt
+```powershell
+git clone https://github.com/video-production-buddy/video-production-buddy.git
+cd video-production-buddy
+python -m venv .venv
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+.\.venv\Scripts\Activate.ps1
+$env:PYTHON = "python"
+make setup
 python -m lib.agent_components install --profile default --frozen
-cd remotion-composer
-npx --yes pnpm install --frozen-lockfile
-cd ..
-pip install piper-tts || echo "Piper TTS install skipped; offline narration may be unavailable"
-npx --yes hyperframes --version || echo "HyperFrames cache warm skipped; run make hyperframes-doctor later"
-test -f .env || cp .env.example .env
+make preflight
+make demo
 ```
 
-> **Windows note:** if Node package install fails with `ERR_INVALID_ARG_TYPE`, run the Remotion install step with `npx --yes pnpm install --frozen-lockfile` from inside `remotion-composer/`.
+`Set-ExecutionPolicy` only changes the current PowerShell process so the virtualenv activation script can run. `$env:PYTHON = "python"` makes the Makefile use Python from the active virtualenv. Later, when you want API keys, copy `.env.example` to `.env` if `make setup` did not already create it.
 
-### Verify Setup
+Success looks like this:
 
-Run the preflight summary first:
+- `make preflight` prints JSON with `composition_runtimes` and provider availability.
+- `make demo` renders local demo MP4 files under `projects/demos/renders/`.
+- No cloud API key is required for that demo path.
+
+After the demo works, open this repository folder in your AI assistant and see [Start With A Prompt](#start-with-a-prompt).
+
+### Useful Check Commands
+
+Re-run the local capability/provider summary anytime:
 
 ```bash
 make preflight
 ```
 
-You should see JSON with `composition_runtimes` and provider availability. A healthy local setup should show FFmpeg and Remotion when FFmpeg, Node.js, and Remotion dependencies are installed. HyperFrames requires Node.js 22+, FFmpeg, and `npx`; validate it separately with:
+If HyperFrames is unavailable, you can ignore it at first; the zero-key demo mainly relies on Remotion and FFmpeg.
 
-```bash
-make hyperframes-doctor
-```
-
-Docker warnings from the HyperFrames doctor are okay for local rendering; the important signal is that the command exits successfully and reports the runtime as available.
-If it prints `FAIL` or exits nonzero, treat HyperFrames as unavailable on that machine and use the Remotion or FFmpeg paths until the Node/FFmpeg/npx issue is fixed.
-
-Then render the checked-in zero-key demo suite:
+Re-render the checked-in demo suite anytime:
 
 ```bash
 make demo
@@ -187,28 +213,22 @@ make demo
 
 The demo path uses local Remotion components and should not require cloud API keys. The first Remotion render may download Chrome Headless Shell, so allow several minutes on a normal laptop. Generated demo renders are written under `projects/demos/renders/`; the command exits nonzero if Remotion finishes without creating the expected MP4.
 
+If something fails, stay in the same AI assistant session and ask it to inspect the command output, preflight result, OS, Python, Node.js, and FFmpeg versions. If it looks like a project bug or missing documentation, please open a [GitHub Issue](https://github.com/video-production-buddy/video-production-buddy/issues) with those details.
+
 ### Add API Keys
 
-Every key is optional. Add only the providers you plan to use in `.env`:
+All keys are optional. Skip this for the first try; when you need cloud generation, add only the provider keys you plan to use in `.env`. `make setup` usually creates `.env`; if not, copy `.env.example` to `.env`.
 
 ```bash
-# Free stock media
-PEXELS_API_KEY=your-key
-PIXABAY_API_KEY=your-key
-UNSPLASH_ACCESS_KEY=your-key
-
-# Image, video, voice, and music providers
-FAL_KEY=your-key              # FLUX, Recraft, Seedance, Kling, Veo, MiniMax video
-DASHSCOPE_API_KEY=your-key    # Qwen TTS/ASR, Wan video, Wanxiang image
-GOOGLE_API_KEY=your-key       # Google Imagen + Google TTS
+FAL_KEY=your-key              # Image/video generation: FLUX, Recraft, Seedance, Kling, Veo, MiniMax video
+DASHSCOPE_API_KEY=your-key    # Qwen speech, Wan video, Wanxiang image
 ELEVENLABS_API_KEY=your-key   # TTS, music, sound effects
-OPENAI_API_KEY=your-key       # OpenAI TTS + image generation
-XAI_API_KEY=your-key          # Grok image/video
-HEYGEN_API_KEY=your-key       # Avatar and video gateway
-RUNWAY_API_KEY=your-key       # Runway video
-SUNO_API_KEY=your-key         # Music generation
-MINIMAX_API_KEY=your-key      # Music generation
+OPENAI_API_KEY=your-key       # OpenAI TTS and image generation
+MINIMAX_API_KEY=your-key      # MiniMax music generation
+PEXELS_API_KEY=your-key       # Optional: stock media
 ```
+
+New to API keys? Follow [`docs/PROVIDERS.md#where-to-get-api-keys`](docs/PROVIDERS.md#where-to-get-api-keys) for official signup/key links and key-safety rules. Keep keys in `.env`; do not paste them into chat prompts, screenshots, issues, or committed files.
 
 For the full provider list, pricing notes, and free-tier guidance, see [`docs/PROVIDERS.md`](docs/PROVIDERS.md).
 
@@ -243,7 +263,7 @@ For real production briefs, the assistant will present the preflight menu and te
 
 ### Start With A Prompt
 
-Open the repository in your AI assistant and ask for a video:
+Open the repository folder in your AI assistant and describe the video you want, for example:
 
 ```text
 Make a 30-second video ad for a new coffee brand.
@@ -252,7 +272,7 @@ Platform: TikTok or Instagram Reels.
 Style: warm, modern, cinematic, not loud.
 ```
 
-The assistant should read `AGENT_GUIDE.md`, pick the right pipeline, inspect available tools, propose a plan, and wait for confirmation before major generation work.
+OpenClaw, Claude Code, Codex, and similar assistants generally use the repository's agent instructions to pick the right pipeline, inspect available tools, propose a plan, and wait for confirmation before major generation work. If your assistant does not automatically read the repo instructions, ask it to read `AGENT_GUIDE.md` first. If a provider is missing, it should offer a local fallback or explain which API key unlocks that path.
 
 Useful starter prompts:
 

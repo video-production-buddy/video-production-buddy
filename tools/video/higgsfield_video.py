@@ -41,7 +41,7 @@ class HiggsFieldVideo(BaseTool):
     ]
     install_instructions = (
         "Set HIGGSFIELD_API_KEY and HIGGSFIELD_API_SECRET for your Higgsfield Cloud credentials.\n"
-        "  Get them at https://cloud.higgsfield.ai/api-keys\n"
+        "  Sign in at https://cloud.higgsfield.ai/ and open the API Keys section.\n"
         "  Alternatively, set HIGGSFIELD_KEY as a combined key:secret value."
     )
     agent_skills = ["seedance-2-0", "ai-video-gen"]

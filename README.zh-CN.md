@@ -42,9 +42,11 @@
 
 ---
 
-> **织影 / Video Production Buddy** 可以把通用 AI 助手变成一个有治理流程的视频制作工作室。它不会把视频生成当成黑盒提示词，而是通过需求细化、背景研究、方案确认、素材生成、合成和渲染后检查来分阶段推进。
+> **织影 / Video Production Buddy** 可以把通用 AI 助手变成一个可见的视频制作流程。它不是让你输入一句提示词然后碰运气，而是通过需求细化、背景研究、方案确认、素材生成、合成和渲染后检查来分阶段推进。
 >
 > **核心设计是 agent-first：** AI 助手承担制片人与流程编排角色，skills 和 Python 工具负责具体执行，例如 provider 路由、媒体分析、素材生成、合成、校验、checkpoint 和成本记录。
+>
+> **第一次试用建议：** 先运行零 API key 演示，确认本机可以完成本地渲染；然后在 AI 助手中打开这个文件夹，并输入视频制作 prompt。当需要云端生成图像、视频、配音或音乐时，需要添加 API key。
 >
 > <p align="center"><strong>⭐ 如果你希望看到一个开放、可检查的黑盒 AI 视频生成替代方案，欢迎 Star 这个项目，谢谢！</strong></p>
 
@@ -103,82 +105,104 @@
 
 ## 快速开始
 
-### 快速路径
+### 开始前
+
+第一次试用时，你**不需要**云端 API key。建议先跑仓库内置的零 API key 演示，确认本机渲染链路正常，再按需要接入云端 provider。
+
+你需要：
+
+- **Git** - [git-scm.com](https://git-scm.com/downloads)。如果暂时不想安装 Git，也可以从 GitHub 下载 ZIP 并解压。
+- **Python 3.10+** - [python.org](https://www.python.org/downloads/)；Ubuntu/Debian 如果无法创建虚拟环境，请先运行 `sudo apt install python3-venv`
+- **FFmpeg** - `brew install ffmpeg` / `sudo apt install ffmpeg` / `winget install --id Gyan.FFmpeg` / `choco install ffmpeg -y` / [ffmpeg.org](https://ffmpeg.org/download.html)
+- **Node.js 22+** - Remotion、HyperFrames 和 character-animation 渲染需要；安装后应自带 `npm` 和 `npx`
+- **Make** - macOS 可运行 `xcode-select --install`，Ubuntu/Debian 可运行 `sudo apt update && sudo apt install make`，Windows 可先安装 [Chocolatey](https://chocolatey.org/install)，再用管理员 PowerShell 运行 `choco install make -y`
+- **AI 编程助手** - Codex、Claude Code、Cursor、GitHub Copilot、Windsurf，或其他能读文件和运行 shell 命令的 AI 助手
+
+在 Windows 上，安装 Python、Node.js、FFmpeg 或 Make 后请重新打开 PowerShell，让新的 `PATH` 生效。如果你下载的是 ZIP，请跳过 `git clone`，直接进入解压后的文件夹。
+
+### 检查前置依赖
+
+先确认这些命令都能正常输出版本信息或帮助信息。
+
+macOS/Linux：
 
 ```bash
-git clone https://github.com/video-production-buddy/video-production-buddy.git
-cd video-production-buddy
-make setup
-python -m lib.agent_components install --profile default --frozen
-make preflight
-```
-
-然后在 AI 助手中打开仓库并提出视频需求。如果 preflight 显示 FFmpeg、Remotion 和你需要的 provider 可用，就可以开始制作。
-
-### 前置依赖
-
-- **Python 3.10+** - [python.org](https://www.python.org/downloads/)
-- **FFmpeg** - `brew install ffmpeg` / `sudo apt install ffmpeg` / `winget install FFmpeg` / [ffmpeg.org](https://ffmpeg.org/download.html)
-- **Node.js 22+** - Remotion、HyperFrames 和 character-animation 渲染需要
-- **AI 编程助手** - Codex、Claude Code、Cursor、GitHub Copilot、Windsurf，或其他能读文件和运行 shell 命令的助手
-
-建议使用虚拟环境：
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
+git --version
+python3 --version
+python3 -m venv --help >/dev/null
+ffmpeg -version
+node --version
+npm --version
+npx --version
+make --version
 ```
 
 Windows PowerShell：
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
+git --version
+python --version
+python -m venv --help > $null
+ffmpeg -version
+node --version
+npm --version
+npx --version
+make --version
 ```
 
-### 安装并运行
+如果某一行提示找不到命令，请先安装对应工具，并重新打开终端后再检查。
+
+### 第一次本地自检
+
+macOS/Linux：
 
 ```bash
 git clone https://github.com/video-production-buddy/video-production-buddy.git
 cd video-production-buddy
+python3 -m venv .venv
+source .venv/bin/activate
 make setup
 python -m lib.agent_components install --profile default --frozen
+make preflight
+make demo
 ```
 
-`make setup` 会安装 Python 依赖、安装 Remotion composer、尽量安装 Piper TTS、尽量预热 HyperFrames 的 `npx` 缓存，并在 `.env` 不存在时从 `.env.example` 创建一份。`lib.agent_components` 命令会安装 provider 工具和 runtime 指南所需的 agent skill packs。
+Windows PowerShell：
 
-如果本机没有 `make`：
-
-```bash
-pip install -r requirements.txt
+```powershell
+git clone https://github.com/video-production-buddy/video-production-buddy.git
+cd video-production-buddy
+python -m venv .venv
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+.\.venv\Scripts\Activate.ps1
+$env:PYTHON = "python"
+make setup
 python -m lib.agent_components install --profile default --frozen
-cd remotion-composer
-npx --yes pnpm install --frozen-lockfile
-cd ..
-pip install piper-tts || echo "Piper TTS install skipped; offline narration may be unavailable"
-npx --yes hyperframes --version || echo "HyperFrames cache warm skipped; run make hyperframes-doctor later"
-test -f .env || cp .env.example .env
+make preflight
+make demo
 ```
 
-> **Windows 提示：** 如果 Node 包安装时出现 `ERR_INVALID_ARG_TYPE`，请进入 `remotion-composer/` 后使用 `npx --yes pnpm install --frozen-lockfile` 安装 Remotion 依赖。
+`Set-ExecutionPolicy` 只影响当前 PowerShell 进程，用来允许虚拟环境 activation 脚本运行。`$env:PYTHON = "python"` 会让 Makefile 使用当前虚拟环境里的 Python。后续要添加 API key 时，再把 `.env.example` 复制为 `.env`。
 
-### 验证安装
+成功时应该看到：
 
-先运行 preflight 摘要：
+- `make preflight` 输出包含 `composition_runtimes` 和 provider 可用性的 JSON。
+- `make demo` 在 `projects/demos/renders/` 下生成本地 demo MP4。
+- 这条 demo 路径不需要任何云端 API key。
+
+demo 成功后，在 AI 助手中打开这个仓库文件夹，并参考下面的[从一个需求开始](#从一个需求开始)。
+
+### 常用检查命令
+
+需要时可以重新查看本机 capability/provider 摘要：
 
 ```bash
 make preflight
 ```
 
-你应该看到包含 `composition_runtimes` 和 provider 可用性的 JSON。健康的本地环境在 FFmpeg、Node.js 和 Remotion 依赖安装完成后，应显示 FFmpeg 和 Remotion 可用。HyperFrames 需要 Node.js 22+、FFmpeg 和 `npx`，可以单独验证：
+如果 HyperFrames 显示不可用，可以先忽略；零 API key 演示主要依赖 Remotion 和 FFmpeg。
 
-```bash
-make hyperframes-doctor
-```
-
-HyperFrames doctor 打印 Docker 警告不一定影响本地渲染；关键是命令成功退出，并报告 runtime available。如果它打印 `FAIL` 或以非零状态退出，就先把 HyperFrames 视为当前机器不可用，改用 Remotion 或 FFmpeg 路径，直到修好 Node/FFmpeg/npx 环境。
-
-然后渲染仓库内置的零 API key 演示套件：
+需要时可以重新渲染仓库内置的零 API key 演示：
 
 ```bash
 make demo
@@ -186,28 +210,22 @@ make demo
 
 这条 demo 路径使用本地 Remotion 组件，不需要云端 API key。第一次 Remotion 渲染可能会下载 Chrome Headless Shell，普通笔记本上需要几分钟。生成的视频位于 `projects/demos/renders/`；如果 Remotion 结束后没有生成预期 MP4，命令会以非零状态退出。
 
+如果遇到问题，请优先留在同一个 AI 助手会话里继续排查。让它检查命令输出、preflight 结果、操作系统/Python/Node/FFmpeg 版本，并帮助你修复本机设置。如果问题像是项目 bug 或文档缺失，请创建 [GitHub Issue](https://github.com/video-production-buddy/video-production-buddy/issues)，并附上这些信息，非常感谢！
+
 ### 添加 API Key
 
-所有 key 都是可选的。只需要在 `.env` 中添加你计划使用的 provider：
+所有 key 都是可选的。第一次试用可以先跳过；需要云端生成时，再在 `.env` 中只添加你计划使用的 provider。`make setup` 通常已经创建 `.env`，如果没有，就把 `.env.example` 复制为 `.env`。
 
 ```bash
-# 免费素材
-PEXELS_API_KEY=your-key
-PIXABAY_API_KEY=your-key
-UNSPLASH_ACCESS_KEY=your-key
-
-# 图像、视频、配音和音乐 provider
-FAL_KEY=your-key              # FLUX, Recraft, Seedance, Kling, Veo, MiniMax video
-DASHSCOPE_API_KEY=your-key    # Qwen TTS/ASR, Wan video, Wanxiang image
-GOOGLE_API_KEY=your-key       # Google Imagen + Google TTS
-ELEVENLABS_API_KEY=your-key   # TTS, music, sound effects
-OPENAI_API_KEY=your-key       # OpenAI TTS + image generation
-XAI_API_KEY=your-key          # Grok image/video
-HEYGEN_API_KEY=your-key       # Avatar and video gateway
-RUNWAY_API_KEY=your-key       # Runway video
-SUNO_API_KEY=your-key         # Music generation
-MINIMAX_API_KEY=your-key      # Music generation
+FAL_KEY=your-key              # 图像/视频生成：FLUX、Recraft、Seedance、Kling、Veo、MiniMax video
+DASHSCOPE_API_KEY=your-key    # 通义千问语音、Wan 视频、万相图像
+ELEVENLABS_API_KEY=your-key   # 配音、音乐、音效
+OPENAI_API_KEY=your-key       # OpenAI TTS 和图像生成
+MINIMAX_API_KEY=your-key      # MiniMax 音乐生成
+PEXELS_API_KEY=your-key       # 可选：免费素材
 ```
+
+如果你还不熟悉 API key，请先看 [`docs/PROVIDERS.md#where-to-get-api-keys`](docs/PROVIDERS.md#where-to-get-api-keys)，里面有官方注册/取 key 链接、入门推荐顺序和 key 安全规则。请把 key 放在 `.env`，不要粘贴到聊天、截图、issue 或提交到仓库的文件里。
 
 完整 provider 列表、价格说明和免费额度建议见 [`docs/PROVIDERS.md`](docs/PROVIDERS.md)。
 
@@ -242,31 +260,29 @@ VIDEO_GEN_LOCAL_MODEL=wan2.1-1.3b
 
 ### 从一个需求开始
 
-在 AI 助手中打开仓库，然后提出视频需求：
+在 AI 助手中打开仓库文件夹，直接描述你想制作的视频，例如：
 
 ```text
-Make a 30-second video ad for a new coffee brand.
-Target audience: office workers who need a calm afternoon reset.
-Platform: TikTok or Instagram Reels.
-Style: warm, modern, cinematic, not loud.
+请帮我做一个 30 秒新咖啡品牌短视频广告。
+受众：下午需要放松的办公室人群。
+平台：TikTok 或 Instagram Reels。
+风格：温暖、现代、有电影感，不吵。
 ```
 
-助手应读取 `AGENT_GUIDE.md`，选择合适 pipeline，检查可用工具，提出制作方案，并在主要生成工作前等待确认。
+OpenClaw、Claude Code、Codex等助手一般会自动根据仓库内的 agent instructions 选择合适 pipeline，检查可用工具，提出制作方案，并在主要生成工作前等待确认。如果你的助手没有自动读取仓库说明，请让它先读取 `AGENT_GUIDE.md`。如果缺少某个 provider，它应该给出本地 fallback，或者说明需要哪个 API key 才能解锁对应路径。
 
 更多起步示例：
 
 ```text
-Make a 45-second animated explainer about why the sky is blue.
+请做一个 45 秒动画解释视频，主题是“为什么天空是蓝色的”。
 ```
 
 ```text
-Make a 75-second documentary montage about city life in the rain.
-Use real footage only, no narration, elegiac tone, with music.
+请做一个 75 秒雨中城市生活纪录片混剪，只用真实素材，不要旁白，情绪安静，有音乐。
 ```
 
 ```text
-Here is a reference video I like. Keep the pacing and hook style,
-but turn it into a 30-second product ad for my own app.
+我有一个喜欢的参考视频。请保留它的节奏和开头吸引力，但改成我的 app 的 30 秒产品广告。
 ```
 
 ## 能力

@@ -1,6 +1,7 @@
 # Video Production Buddy Provider Guide
 
-Everything you need to know about every provider in Video Production Buddy — setup instructions, pricing, free tiers, and what each unlocks.
+Use this after the zero-key demo works. You do not need every provider; most
+projects start with one stock-media key and one generation provider.
 
 > Provider pricing and model names change quickly. Use this guide for the
 > Video Production Buddy tool/env-var contract, then verify final pricing in the provider
@@ -10,24 +11,68 @@ Everything you need to know about every provider in Video Production Buddy — s
 
 ## Quick Start: What Should I Set Up?
 
-**Start free, add paid providers as you need them.** Here's the recommended order:
+**Start free, add paid providers only when a project needs them.**
 
 | Step | Cost | What to set up | What it unlocks |
 |------|------|----------------|-----------------|
-| 1 | **$0** | Pexels + Pixabay | Stock photos and videos — enough to produce basic videos |
-| 2 | **$0** | Google API key | TTS with 700+ voices (1M chars/month free) + $300 new account credit |
-| 3 | **$0** | ElevenLabs | Premium TTS + music + SFX (10K chars/month free) |
-| 4 | **$0** | Piper (local install) | Fully offline TTS — no API key, no cost, no network |
-| 5 | **pay-as-you-go** | Alibaba Cloud Bailian / DashScope | Qwen TTS/ASR + Wan/Wanxiang image and video under one key |
-| 6 | **~$0.03/image** | fal.ai | FLUX/Recraft images + Seedance/Kling/Veo/MiniMax video — broad single-key image + video coverage |
-| 7 | **~$0.04/image** | OpenAI | DALL-E 3 images + OpenAI TTS |
-| 8 | **~$0.04/image** | Google Imagen | Imagen 4 images (shares the Google API key) |
-| 9 | **$12/month** | Runway | Gen-4 video — highest quality AI video |
-| 10 | **pay-as-you-go** | HeyGen | Avatar videos, multi-model video gateway |
-| 11 | **pay-as-you-go** | Replicate | Seedance video via `seedance_replicate` |
-| 12 | **pay-as-you-go** | MiniMax or Suno | Music generation, covers, instrumentals, and full songs |
-| 13 | **$0 + GPU** | Local video gen | WAN 2.1, Hunyuan, CogVideo, LTX — free, offline |
-| 14 | **$0 + GPU** | Local Diffusion | Stable Diffusion images — free, offline |
+| 1 | **free/local** | No API keys | Run the README demo with Remotion, FFmpeg, and optional Piper TTS |
+| 2 | **free tier** | Pexels + Pixabay | Stock photos and videos for source-backed videos |
+| 3 | **free tier / paid** | ElevenLabs or Google | Narration, music, sound effects, or Google TTS/image paths |
+| 4 | **pay-as-you-go** | Alibaba Cloud Bailian / DashScope | Qwen TTS/ASR plus Wan/Wanxiang image and video under one key |
+| 5 | **pay-as-you-go** | fal.ai | FLUX/Recraft images plus Seedance/Kling/Veo/MiniMax video |
+| 6 | **paid** | MiniMax or Suno | Music generation, covers, instrumentals, and full songs |
+| 7 | **paid** | Runway, HeyGen, Replicate, Higgsfield, xAI, OpenAI | Add only when a project needs that provider's specific output |
+| 8 | **local GPU** | Local video/image models | WAN, Hunyuan, CogVideo, LTX, or local diffusion when you have suitable hardware |
+
+### Where To Get API Keys
+
+For your first real production run, do not set up every provider. Add one or two
+keys for the capability you need, then run `make preflight` again so the agent
+can see what is available.
+
+Key safety rules:
+
+- Put keys in `.env`; this repo ignores `.env`, `.env.local`, and `*.env`.
+- Do not paste API keys into chat prompts, issues, screenshots, or committed files.
+- Start with free or low-risk providers, then add paid video/image providers only
+  when you are ready to approve generation costs.
+- Provider dashboards change. If a direct link asks you to sign in or moves, look
+  for a menu named **API Keys**, **Developers**, **Tokens**, **Credentials**, or
+  **Billing / Usage**.
+
+Recommended beginner order:
+
+| Need | Provider | Get the key | Put this in `.env` | Beginner note |
+|------|----------|-------------|--------------------|---------------|
+| Free stock photos/video | Pexels | [Pexels API](https://www.pexels.com/api/) | `PEXELS_API_KEY=...` | Good first key because it is free and useful for source-backed videos. |
+| Free stock photos/video | Pixabay | [Pixabay API docs](https://pixabay.com/api/docs/) | `PIXABAY_API_KEY=...` | Free backup stock source; login shows the key on the docs page. |
+| Free stock photos | Unsplash | [Unsplash Developers](https://unsplash.com/developers) | `UNSPLASH_ACCESS_KEY=...` | Optional, useful when you want more photo variety. |
+| Voice / music / SFX | ElevenLabs | [ElevenLabs API keys](https://elevenlabs.io/app/settings/api-keys) | `ELEVENLABS_API_KEY=...` | Good first voice key; free tier is enough for short narration tests. |
+| Voice + Google images | Google AI Studio | [Google API keys](https://aistudio.google.com/app/apikey) | `GOOGLE_API_KEY=...` or `GEMINI_API_KEY=...` | For TTS, also enable the Text-to-Speech API in Google Cloud. |
+| Image + video gateway | fal.ai | [fal.ai API keys](https://fal.ai/dashboard/keys) | `FAL_KEY=...` or `FAL_AI_API_KEY=...` | One broad pay-as-you-go key for FLUX/Recraft images and several video models. |
+| Qwen speech + Wan/Wanxiang media | Alibaba Cloud Bailian / DashScope | [DashScope API key guide](https://www.alibabacloud.com/help/en/model-studio/get-api-key) | `DASHSCOPE_API_KEY=...` | Strong option for Mandarin, Qwen ASR/TTS, Wan video, and Wanxiang images. |
+| TTS + images | OpenAI | [OpenAI API keys](https://platform.openai.com/api-keys) | `OPENAI_API_KEY=...` | Requires billing for most accounts; use only when you want OpenAI TTS/image paths. |
+| Grok image/video | xAI | [xAI Console](https://console.x.ai/) | `XAI_API_KEY=...` | Sign in, open API keys in the console, then copy the generated key. |
+| Video generation | Runway | [Runway developer portal](https://dev.runwayml.com/) | `RUNWAY_API_KEY=...` or `RUNWAYML_API_SECRET=...` | API access may require a paid developer/subscription setup. |
+| Avatar/video gateway | HeyGen | [HeyGen API key docs](https://developers.heygen.com/docs/api-key) | `HEYGEN_API_KEY=...` | Often requires API balance separate from web-app credits. |
+| Seedance fallback | Replicate | [Replicate API tokens](https://replicate.com/account/api-tokens) | `REPLICATE_API_TOKEN=...` | Useful if you prefer Replicate billing for hosted model runs. |
+| Video gateway | Higgsfield | [Higgsfield Cloud](https://cloud.higgsfield.ai/) | `HIGGSFIELD_API_KEY=...` + `HIGGSFIELD_API_SECRET=...` or `HIGGSFIELD_KEY=key:secret` | Sign in, then open the API Keys section. Some plans/features may require subscription access. |
+| Music | Suno API | [Suno API quickstart](https://docs.sunoapi.org/suno-api/quickstart) | `SUNO_API_KEY=...` | Third-party API route; check credits and commercial terms before client work. |
+| Music | MiniMax | [MiniMax quickstart](https://platform.minimax.io/docs/guides/quickstart-preparation) | `MINIMAX_API_KEY=...` | Make sure the account has a token/paid plan for paid music models. |
+| Mandarin TTS | Volcengine Doubao Speech | [Volcengine console](https://console.volcengine.com/) | `DOUBAO_SPEECH_API_KEY=...` and `DOUBAO_SPEECH_VOICE_TYPE=...` | Enable Speech Synthesis 2.0, then create a new-console API key. |
+| Sound search | Freesound | [Freesound API access](https://freesound.org/apiv2/apply/) | `FREESOUND_API_KEY=...` | Optional fallback for sound effects and music search. |
+
+After adding keys, verify what the project can see:
+
+```bash
+make preflight
+```
+
+Without `make`:
+
+```bash
+python -c "from tools.tool_registry import registry; import json; registry.discover(); print(json.dumps(registry.provider_menu_summary(), indent=2))"
+```
 
 ### Environment Variable Summary
 
@@ -451,7 +496,7 @@ Google TTS offers 700+ voices across 50+ languages. Voice names follow the patte
 
 1. Go to [cloud.higgsfield.ai](https://cloud.higgsfield.ai/) and create an account
 2. Subscribe to a plan (Starter or above for API access)
-3. Navigate to API Keys section at [cloud.higgsfield.ai/api-keys](https://cloud.higgsfield.ai/api-keys)
+3. Sign in to [Higgsfield Cloud](https://cloud.higgsfield.ai/) and open the API Keys section
 4. Generate an API key and secret
 5. Add to `.env`:
    ```
@@ -530,8 +575,8 @@ Google TTS offers 700+ voices across 50+ languages. Voice names follow the patte
 
 #### Setup
 
-1. Create a MiniMax developer account
-2. Generate an interface key from the MiniMax platform user center
+1. Create or sign in to a MiniMax API Platform account
+2. Open **Account > API Keys** from the MiniMax API Platform and create a key
 3. Add to `.env`: `MINIMAX_API_KEY=your-key-here`
 4. For paid models such as `music-2.6` and `music-cover`, make sure the account has a Token Plan
 

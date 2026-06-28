@@ -113,7 +113,8 @@ class MinimaxTTS(BaseTool):
     install_instructions = (
         "Set the MINIMAX_API_KEY environment variable:\n"
         "  export MINIMAX_API_KEY=your_key_here\n"
-        "Get a key at https://platform.minimaxi.com/user-center/basic-information/interface-key\n"
+        "Get a key from Account > API Keys in the MiniMax API Platform:\n"
+        "  https://platform.minimax.io/docs/guides/quickstart-preparation\n"
         "For the overseas host, also set MINIMAX_API_BASE=https://api.minimax.io/v1"
     )
     fallback_tools = ["cosyvoice_tts", "openai_tts", "google_tts"]
