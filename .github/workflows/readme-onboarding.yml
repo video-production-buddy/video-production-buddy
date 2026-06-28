@@ -28,7 +28,7 @@ jobs:
     env:
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
       PYTHONDONTWRITEBYTECODE: "1"
-      TEST_REPO: ${{ runner.temp }}/vpb-readme-onboarding
+      TEST_REPO: ${{ github.workspace }}/vpb-readme-onboarding
       VPB_ALLOW_BROWSER_OPEN: "0"
 
     steps:
