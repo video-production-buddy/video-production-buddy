@@ -159,13 +159,16 @@ class FaceRestore(BaseTool):
             import cv2
             import inspect
             from gfpgan import GFPGANer
-            import torch
             from tools.video._shared import get_torch_device as _get_device
         except ImportError as e:
             return ToolResult(
                 success=False,
                 error=f"Missing dependency: {e}. Run: uv pip install gfpgan",
             )
+        try:
+            import torch
+        except ImportError:
+            torch = None  # type: ignore[assignment]
 
         _device = _get_device()
 
@@ -195,7 +198,7 @@ class FaceRestore(BaseTool):
                     "half": (_device == "cuda"),
                 }
                 # Guard: only pass device= if the installed version accepts it
-                if "device" in inspect.signature(RealESRGANer.__init__).parameters:
+                if torch is not None and "device" in inspect.signature(RealESRGANer.__init__).parameters:
                     bg_kwargs["device"] = torch.device(_device)
                 bg_upsampler = RealESRGANer(**bg_kwargs)
             except ImportError:
@@ -224,7 +227,7 @@ class FaceRestore(BaseTool):
                 "bg_upsampler": bg_upsampler,
             }
             # Guard: only pass device= if the installed version accepts it
-            if "device" in inspect.signature(GFPGANer.__init__).parameters:
+            if torch is not None and "device" in inspect.signature(GFPGANer.__init__).parameters:
                 restorer_kwargs["device"] = torch.device(_device)
             restorer = GFPGANer(**restorer_kwargs)
         except Exception as e:

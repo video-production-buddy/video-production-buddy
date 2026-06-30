@@ -700,29 +700,27 @@ class ToolRegistry:
             )
         )
 
-        # Setup offers — unavailable tools that would be 1-minute env-var fixes.
-        # Filter for short install instructions referencing an env var so the
-        # agent can lead with the easy wins.
+        # Setup offers — unavailable API/HYBRID tools that would be 1-minute
+        # env-var fixes. Local runtimes such as ComfyUI/HyperFrames expose their
+        # setup details in provider_menu(), not this compact API-key list.
         setup_offers: list[dict[str, Any]] = []
         for cap, bucket in menu.items():
             for entry in bucket.get("unavailable", []):
-                offer = entry.get("setup_offer")
-                if offer:
-                    setup_offers.append(
-                        {
-                            "capability": cap,
-                            "tool": entry.get("name"),
-                            "provider": entry.get("provider"),
-                            "runtime": entry.get("runtime"),
-                            "install_instructions": entry.get("install_instructions") or "",
-                            **offer,
-                        }
-                    )
+                if entry.get("runtime") not in {"api", "hybrid"}:
+                    continue
+
+                dependencies = entry.get("dependencies", [])
+                env_dependencies = [
+                    dep
+                    for dep in dependencies
+                    if str(dep).startswith(("env:", "env_any:"))
+                ]
+                if not env_dependencies:
                     continue
 
                 env_vars = [
                     dep[4:]
-                    for dep in entry.get("dependencies", [])
+                    for dep in env_dependencies
                     if isinstance(dep, str) and dep.startswith("env:")
                 ]
                 if env_vars:
@@ -731,39 +729,28 @@ class ToolRegistry:
                             "capability": cap,
                             "tool": entry.get("name"),
                             "provider": entry.get("provider"),
-                            "runtime": entry.get("runtime"),
                             "kind": "env_var",
                             "fix_complexity": "1-minute env-var",
                             "env_vars": env_vars,
                             "install_instructions": entry.get("install_instructions") or "",
+                            "dependencies": env_dependencies,
                         }
                     )
                     continue
 
                 hint = entry.get("install_instructions") or ""
-                dependencies = entry.get("dependencies", [])
-                env_dependencies = [
-                    dep
-                    for dep in dependencies
-                    if str(dep).startswith(("env:", "env_any:"))
-                ]
                 # Heuristic: 1-minute fixes mention an env var or API key.
-                if (
-                    entry.get("runtime") in {"api", "hybrid"}
-                    and env_dependencies
-                    and any(
-                        k in hint.lower()
-                        for k in ["api key", "env", "_key=", "_api"]
-                    )
+                if any(
+                    k in hint.lower()
+                    for k in ["api key", "env", "_key=", "_api"]
                 ):
                     setup_offers.append(
                         {
                             "capability": cap,
                             "tool": entry.get("name"),
                             "provider": entry.get("provider"),
-                            "runtime": entry.get("runtime"),
                             "install_instructions": hint,
-                            "dependencies": dependencies,
+                            "dependencies": env_dependencies,
                         }
                     )
 

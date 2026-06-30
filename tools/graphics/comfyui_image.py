@@ -123,12 +123,52 @@ class ComfyUIImage(BaseTool):
             },
         },
     }
+    output_schema = {
+        "type": "object",
+        "required": [
+            "provider",
+            "model",
+            "prompt",
+            "width",
+            "height",
+            "steps",
+            "guidance",
+            "output",
+            "output_path",
+            "format",
+            "workflow_provenance",
+        ],
+        "properties": {
+            "provider": {"type": "string", "const": "comfyui"},
+            "model": {"type": "string"},
+            "prompt": {"type": "string"},
+            "width": {"type": "integer"},
+            "height": {"type": "integer"},
+            "steps": {"type": "integer"},
+            "guidance": {"type": "number"},
+            "output": {"type": "string"},
+            "output_path": {"type": "string"},
+            "format": {"type": "string", "const": "png"},
+            "workflow_provenance": {
+                "type": "object",
+                "additionalProperties": True,
+            },
+        },
+    }
 
     resource_profile = ResourceProfile(
         cpu_cores=2, ram_mb=8000, vram_mb=8000, disk_mb=500, network_required=False,
     )
     retry_policy = RetryPolicy(max_retries=1, retryable_errors=["timeout"])
-    idempotency_key_fields = ["prompt", "width", "height", "steps", "seed"]
+    idempotency_key_fields = [
+        "prompt",
+        "width",
+        "height",
+        "steps",
+        "seed",
+        "output_path",
+        "workflow_path",
+    ]
     side_effects = ["writes image file to output_path"]
     user_visible_verification = ["Inspect generated image for quality and prompt adherence"]
 
@@ -237,6 +277,7 @@ class ComfyUIImage(BaseTool):
                 "steps": steps,
                 "guidance": guidance,
                 "output": str(paths[0]),
+                "output_path": str(paths[0]),
                 "format": "png",
                 "workflow_provenance": provenance,
             },

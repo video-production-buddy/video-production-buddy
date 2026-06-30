@@ -68,6 +68,7 @@ class ImageSelector(BaseTool):
         "allowed_providers",
         "model",
         "operation",
+        "workflow_path",
     ]
 
     input_schema = {

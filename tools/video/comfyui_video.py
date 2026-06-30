@@ -188,12 +188,58 @@ class ComfyUIVideo(BaseTool):
             },
         },
     }
+    output_schema = {
+        "type": "object",
+        "required": [
+            "provider",
+            "model",
+            "prompt",
+            "operation",
+            "width",
+            "height",
+            "num_frames",
+            "fps",
+            "duration_seconds",
+            "output",
+            "output_path",
+            "format",
+            "workflow_provenance",
+        ],
+        "properties": {
+            "provider": {"type": "string", "const": "comfyui"},
+            "model": {"type": "string"},
+            "prompt": {"type": "string"},
+            "operation": {"type": "string", "enum": ["text_to_video", "image_to_video"]},
+            "width": {"type": "integer"},
+            "height": {"type": "integer"},
+            "num_frames": {"type": "integer"},
+            "fps": {"type": "integer"},
+            "duration_seconds": {"type": "number"},
+            "output": {"type": "string"},
+            "output_path": {"type": "string"},
+            "format": {"type": "string", "const": "mp4"},
+            "workflow_provenance": {
+                "type": "object",
+                "additionalProperties": True,
+            },
+        },
+    }
 
     resource_profile = ResourceProfile(
         cpu_cores=2, ram_mb=16000, vram_mb=8000, disk_mb=2000, network_required=False,
     )
     retry_policy = RetryPolicy(max_retries=1, retryable_errors=["timeout"])
-    idempotency_key_fields = ["prompt", "operation", "width", "height", "num_frames", "seed"]
+    idempotency_key_fields = [
+        "prompt",
+        "operation",
+        "width",
+        "height",
+        "num_frames",
+        "seed",
+        "output_path",
+        "reference_image_path",
+        "workflow_path",
+    ]
     side_effects = ["writes video file to output_path"]
     user_visible_verification = ["Watch generated clip for motion coherence and artifacts"]
 
@@ -347,6 +393,7 @@ class ComfyUIVideo(BaseTool):
                 "fps": 16,
                 "duration_seconds": round(num_frames / 16, 2),
                 "output": str(paths[0]),
+                "output_path": str(paths[0]),
                 "format": "mp4",
                 "workflow_provenance": provenance,
             },

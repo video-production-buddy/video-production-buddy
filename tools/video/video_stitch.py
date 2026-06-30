@@ -50,7 +50,7 @@ class VideoStitch(BaseTool):
         "macOS: brew install ffmpeg\n"
         "Linux: sudo apt install ffmpeg"
     )
-    agent_skills = ["ffmpeg", "video-toolkit"]
+    agent_skills = ["ffmpeg", "video_toolkit"]
 
     capabilities = [
         "validate_clips",

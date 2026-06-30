@@ -297,6 +297,20 @@
       "treeSha256": "sha256:3040fb8a7f9a5e9f194d5ca7b845559168bdd83ab50ef5e527f40cd25b1fac1d",
       "type": "local"
     },
+    "comfyui": {
+      "files": [
+        {
+          "mode": "100644",
+          "path": "SKILL.md",
+          "sha256": "sha256:d1acd9e2886b38d77cb0688ae56e1cd31696fc62748d560a78df84bbff522fbb"
+        }
+      ],
+      "kind": "skill",
+      "source": "video-production-buddy-local",
+      "sourcePath": ".agents/local/skills/comfyui",
+      "treeSha256": "sha256:f7daa83eeacb760e69eb0588eff594e0879200e390971fa8d1ddbab887f4caf5",
+      "type": "local"
+    },
     "create-video": {
       "files": [
         {
@@ -586,13 +600,13 @@
         {
           "mode": "100644",
           "path": "README.md",
-          "sha256": "sha256:f10e0ac6094c2bb0a68b3a9ecec04c3e0981c81c44e099befc8797c038a133df"
+          "sha256": "sha256:aa60a887c5cb587f7580510d3e9d20e440caa56c3568fcfc1cd15bdfd7769c35"
         }
       ],
       "kind": "skill",
       "source": "video-production-buddy-local",
       "sourcePath": ".agents/local/skills/gsap",
-      "treeSha256": "sha256:9c80e917e958e813a8be86dc7a64533913e98393c369915032f1739c01882701",
+      "treeSha256": "sha256:657aad7261e03320ace71906be61ba39de5b7b4ee1ffc4f58951c6b3edd1dcb5",
       "type": "local"
     },
     "gsap-core": {
@@ -855,17 +869,17 @@
         {
           "mode": "100644",
           "path": "SKILL.md",
-          "sha256": "sha256:c6331e984e08b31269bd7725fdc86f1c267409391c1270ac32ee76c6986f10b1"
+          "sha256": "sha256:cae375ffe84cb58b73eb10c93351868c2a11004c651a2224f9fea0a346d2f40e"
         },
         {
           "mode": "100644",
           "path": "data-in-motion.md",
-          "sha256": "sha256:22084b4460a8f815d923b972a908f937c1e573bbbc7a865f6f2979ec2ae7ff15"
+          "sha256": "sha256:6066c79717156c4a41ef86f28e07c6bd35f18d6830b12893c58523063c788d7d"
         },
         {
           "mode": "100644",
           "path": "house-style.md",
-          "sha256": "sha256:e0719895b369d7ee5203850250e605b3a1c15dbe43a367dd54e396f2b439f838"
+          "sha256": "sha256:61e260aebcab552dcd42fd2dcaf4431349b51f043fe155c8f670f156d09b69dd"
         },
         {
           "mode": "100644",
@@ -920,7 +934,7 @@
         {
           "mode": "100644",
           "path": "references/audio-reactive.md",
-          "sha256": "sha256:f0d83c24fa40d42a74f972ccf3b5254d7706cb063d16b8b41f87dc668a418f49"
+          "sha256": "sha256:ad93a0c588a702203a08ed909842570f010f041500aa33512d2b06f66d450c1c"
         },
         {
           "mode": "100644",
@@ -930,12 +944,12 @@
         {
           "mode": "100644",
           "path": "references/css-patterns.md",
-          "sha256": "sha256:39c4af128cdd3ed9d1be652a88c3e4d01cb0daf744dfde3db7197014cd1a38d8"
+          "sha256": "sha256:9705c6fd30c03974172a57d79a1825cfbdf9d0c9b8d5bb94eb61732c18184d54"
         },
         {
           "mode": "100644",
           "path": "references/dynamic-techniques.md",
-          "sha256": "sha256:f48f666acb270daf2ac57fede5efc96ff3f168fa4f41db611de0310452e6d7e3"
+          "sha256": "sha256:20646595c341902877f31804d4ac6be54e1a261f7d34600660b0e9fcae964019"
         },
         {
           "mode": "100644",
@@ -945,12 +959,12 @@
         {
           "mode": "100644",
           "path": "references/transcript-guide.md",
-          "sha256": "sha256:e52bf99b88d5d75cb715376edc67dc86e824d54ede65815b1aa6f7582a1b166c"
+          "sha256": "sha256:84c4d5181749022c00b6de62ffe95fe257598fb5f9111d9e8541d25a13836287"
         },
         {
           "mode": "100644",
           "path": "references/transitions/catalog.md",
-          "sha256": "sha256:557b5b30be7b68f95d8481209b1a2f0a0e1df23f65de9b08f86697d0e6159a54"
+          "sha256": "sha256:3914ec091c1f16bfee5c53d38ed6af1dfab74caedf561788dc39e67c6d7ca239"
         },
         {
           "mode": "100644",
@@ -1020,7 +1034,7 @@
         {
           "mode": "100644",
           "path": "references/transitions.md",
-          "sha256": "sha256:302fab350697e210a763ba7e3b2acbde9aadac37bd49cb9814a12e60983294ce"
+          "sha256": "sha256:ec878d479d16addcd88c770b39fc88fa5219086478aee39e9f96a1096a58b084"
         },
         {
           "mode": "100644",
@@ -1030,17 +1044,17 @@
         {
           "mode": "100644",
           "path": "references/typography.md",
-          "sha256": "sha256:d0ef1c5666a5b7a5f2af0c5701d17e63017eafc07499830c6616ccdcb21befc8"
+          "sha256": "sha256:3a844a2b3ed0f24e2892907ff68e9dfc3418833cd52e97dc7907892c2f558218"
         },
         {
           "mode": "100755",
           "path": "scripts/animation-map.mjs",
-          "sha256": "sha256:6840bf5c08b8b1eab234dec3e19fe6988abdb53d2ad98560f8da05f4c6cca74f"
+          "sha256": "sha256:9bc3ff7dbe299c6697bf88a5d813bf38d0f7c2a11cd343f0ae37d19d9862e523"
         },
         {
           "mode": "100755",
           "path": "scripts/contrast-report.mjs",
-          "sha256": "sha256:84c9cdec6242845c625af041d8fe94d48fdde89b77ea32ec241af99deda03ad1"
+          "sha256": "sha256:44e403be89c03b0c00847e10828554a2f3282cf0a69b19f08b56f71f3d45e011"
         },
         {
           "mode": "100644",
@@ -1051,7 +1065,7 @@
       "kind": "skill",
       "source": "video-production-buddy-local",
       "sourcePath": ".agents/local/skills/hyperframes",
-      "treeSha256": "sha256:b7d0a655f5df028cd0f9ff83b48ccb55f4e908b27f4941ea7c189c334d858565",
+      "treeSha256": "sha256:a6d10678755c49b59e0dfb84cbb2f9812af98270537e469189509720cff503f8",
       "type": "local"
     },
     "hyperframes-cli": {
@@ -2376,13 +2390,13 @@
         {
           "mode": "100644",
           "path": "SKILL.md",
-          "sha256": "sha256:8f2a9bb10d4c3d29952ce4d8f254f66979e1def80df0ec7c08c3ddb38dc42710"
+          "sha256": "sha256:e9a061a762a136327cb623be9077aa1f0b80121d328621837caab9a2a7424e4a"
         }
       ],
       "kind": "skill",
       "source": "video-production-buddy-local",
       "sourcePath": ".agents/local/skills/text-to-speech",
-      "treeSha256": "sha256:e1ac54805b045b566f61a6afe043241bc8097bffeee4c61e7f4800dde5247fdd",
+      "treeSha256": "sha256:ab0f19b31e2cca53a281f78f79b90d3e976f27e6e59400bc484702ccae56990e",
       "type": "local"
     },
     "threejs-animation": {
@@ -2540,7 +2554,7 @@
         {
           "mode": "100644",
           "path": "SKILL.md",
-          "sha256": "sha256:e38e0eaa609316b10423a9a138ed95e35099accd3f735585295c8a8f165c28a3"
+          "sha256": "sha256:6f228aa8c71048a2b5c0fc94f54ca708be4aa7d46edb7ab26bb96939c4db5456"
         },
         {
           "mode": "100644",
@@ -2596,7 +2610,7 @@
       "kind": "skill",
       "source": "video-production-buddy-local",
       "sourcePath": ".agents/local/skills/vercel-composition-patterns",
-      "treeSha256": "sha256:a798b42803a3251709adf4eaaee296eb37af0c417c5d4b8cab0703b45fff475f",
+      "treeSha256": "sha256:610ef7625fdd6e33afb622bb333bc185a5413b97eb47e08632d167dd99c6240c",
       "type": "local"
     },
     "vercel-react-best-practices": {
@@ -2614,7 +2628,7 @@
         {
           "mode": "100644",
           "path": "SKILL.md",
-          "sha256": "sha256:efe15ae3ac3c84766837f3c97063cba62b2322feca04c7548a5bfabb07d03e50"
+          "sha256": "sha256:97c8b0404aa9f6674681c97ff8bc67f2f829ee415d4083ad1d15c002a1fd2c73"
         },
         {
           "mode": "100644",
@@ -2960,7 +2974,7 @@
       "kind": "skill",
       "source": "video-production-buddy-local",
       "sourcePath": ".agents/local/skills/vercel-react-best-practices",
-      "treeSha256": "sha256:2ea8a72173e4515d0580afbaf7b2135fb87b0ea35da29034eb5012a2f6c4531b",
+      "treeSha256": "sha256:72676eb8dcc4f3498c238c3ae636a885a957539069afba74f794810849fded61",
       "type": "local"
     },
     "video-download": {
@@ -3039,13 +3053,13 @@
         {
           "mode": "100644",
           "path": "SKILL.md",
-          "sha256": "sha256:cb9cffe74e3d30c5f3bf1edebf11c8c03f5887a115fc73f8972610e0c6697f3b"
+          "sha256": "sha256:4b815f9b94e0330f63df41683742eec6db8a3a8388aae466fd47ff3988bfc3dd"
         }
       ],
       "kind": "skill",
       "source": "video-production-buddy-local",
       "sourcePath": ".agents/local/skills/video_toolkit",
-      "treeSha256": "sha256:c4df0f2537cd3ce6b50307821d1cb55fe9f70dd03152443fc1becc9aa444870d",
+      "treeSha256": "sha256:3d0d25567ef63c2ca3db556d715705579f53c47a5d25a5bc46f52351ff104a65",
       "type": "local"
     },
     "visual-style": {
@@ -3185,7 +3199,7 @@
         {
           "mode": "100644",
           "path": "references/step-3-script.md",
-          "sha256": "sha256:55cb26d748c68d7136de98d4ca1db74205908a134200f5f061f87afbde6c4496"
+          "sha256": "sha256:6002bb2a2270149a8955068d5952fc57cd22594649f576b3e8c38057846610b6"
         },
         {
           "mode": "100644",
@@ -3210,13 +3224,13 @@
         {
           "mode": "100644",
           "path": "references/techniques.md",
-          "sha256": "sha256:7bd2ace20c485e4a8108bc534c517df5cb9aad3dfc536fa850fdf7613548a7f2"
+          "sha256": "sha256:59eca990aad2beade34e47b3c5ea7f03df894574bf9264dd2bd42188542420e7"
         }
       ],
       "kind": "skill",
       "source": "video-production-buddy-local",
       "sourcePath": ".agents/local/skills/website-to-hyperframes",
-      "treeSha256": "sha256:294a1c67e0bc01dc727caee5d90c47c2900b2ef3fb7dd917e83c6ccac9ac2f48",
+      "treeSha256": "sha256:2c51ed8ef7ee1d7b979f7a475160eca4cde0f9c1b85f714320c27155e4e35e26",
       "type": "local"
     }
   },

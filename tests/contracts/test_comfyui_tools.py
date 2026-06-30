@@ -65,7 +65,7 @@ class TestContract:
         assert "comfyui" in tool.agent_skills
 
     def test_comfyui_layer3_skill_exists(self, cls):
-        skill_path = PROJECT_ROOT / ".agents" / "skills" / "comfyui" / "SKILL.md"
+        skill_path = PROJECT_ROOT / ".agents" / "local" / "skills" / "comfyui" / "SKILL.md"
         assert skill_path.exists()
         assert "output_node" in skill_path.read_text(encoding="utf-8")
 
@@ -454,17 +454,18 @@ class TestCustomWorkflowContract:
 
 class TestComfyUISetupOffer:
 
-    def test_provider_menu_summary_includes_structured_setup_offer(self):
+    def test_provider_menu_includes_structured_setup_offer(self):
         registry = ToolRegistry()
         tool = ComfyUIImage()
         tool._client.is_available = lambda: False
         registry.register(tool)
         registry._discovered_packages.add("tools")
 
-        summary = registry.provider_menu_summary()
+        menu = registry.provider_menu()
 
-        offer = summary["setup_offers"][0]
-        assert offer["tool"] == "comfyui_image"
+        entry = menu["image_generation"]["unavailable"][0]
+        assert entry["name"] == "comfyui_image"
+        offer = entry["setup_offer"]
         assert offer["env_var"] == "COMFYUI_SERVER_URL"
         assert offer["default_url"] == "http://localhost:8188"
         assert offer["health_check"] == "GET /system_stats"

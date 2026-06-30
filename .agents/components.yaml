@@ -14,6 +14,7 @@ profiles:
     - canvas-procedural-animation
     - character-animation-qa
     - character-rigging
+    - comfyui
     - create-video
     - d3-viz
     - doubao-tts
@@ -121,6 +122,7 @@ sources:
       canvas-procedural-animation: {kind: skill, path: canvas-procedural-animation}
       character-animation-qa: {kind: skill, path: character-animation-qa}
       character-rigging: {kind: skill, path: character-rigging}
+      comfyui: {kind: skill, path: comfyui}
       create-video: {kind: skill, path: create-video}
       d3-viz: {kind: skill, path: d3-viz}
       doubao-tts: {kind: skill, path: doubao-tts}

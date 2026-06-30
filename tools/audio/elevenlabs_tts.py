@@ -182,6 +182,17 @@ class ElevenLabsTTS(BaseTool):
             "provider": {"type": "string", "const": "elevenlabs"},
             "model": {"type": "string"},
             "voice_id": {"type": "string"},
+            "voice_settings": {
+                "type": "object",
+                "properties": {
+                    "stability": {"type": "number"},
+                    "similarity_boost": {"type": "number"},
+                    "style": {"type": "number"},
+                    "speed": {"type": "number"},
+                    "use_speaker_boost": {"type": "boolean"},
+                },
+                "additionalProperties": False,
+            },
             "text_length": {"type": "integer", "minimum": 0},
             "format": {
                 "type": "string",

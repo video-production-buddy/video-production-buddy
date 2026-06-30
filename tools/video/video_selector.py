@@ -68,6 +68,7 @@ class VideoSelector(BaseTool):
         "image_url",
         "resolution",
         "output_path",
+        "workflow_path",
     ]
 
     input_schema = {

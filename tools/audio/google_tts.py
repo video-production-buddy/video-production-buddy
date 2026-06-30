@@ -135,6 +135,7 @@ class GoogleTTS(BaseTool):
             "provider": {"type": "string", "const": "google_tts"},
             "voice": {"type": "string"},
             "language_code": {"type": "string"},
+            "input_type": {"type": "string", "enum": ["text", "ssml"]},
             "text_length": {"type": "integer", "minimum": 0},
             "format": {
                 "type": "string",

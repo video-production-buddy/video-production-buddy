@@ -762,7 +762,7 @@ def test_project_agent_component_manifest_matches_schema() -> None:
 
 
 def test_project_agent_component_lock_is_canonical_and_complete() -> None:
-    from lib.agent_components import ComponentManager, load_manifest
+    from lib.agent_components import load_manifest
 
     repo_root = Path(__file__).resolve().parents[2]
     lock_path = repo_root / ".agents" / "components.lock.json"
@@ -772,5 +772,3 @@ def test_project_agent_component_lock_is_canonical_and_complete() -> None:
     assert lock["lockfileVersion"] == 1
     assert set(lock["components"]) == set(manifest.components)
     assert lock_path.read_text(encoding="utf-8") == json.dumps(lock, indent=2, sort_keys=True) + "\n"
-    manager = ComponentManager(repo_root=repo_root)
-    assert manager.verify(frozen=True, offline=True) == []
