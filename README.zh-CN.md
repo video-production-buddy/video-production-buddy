@@ -37,7 +37,7 @@
 </p>
 
 <p align="center">
-  <img src="assets/hero-production-assistant.png" alt="织影工作流概览" width="100%">
+  <img src="assets/readme/hero-banner-loop-zh-v1-hd-preview.gif" alt="织影" width="100%">
 </p>
 
 ---

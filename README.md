@@ -37,7 +37,7 @@
 </p>
 
 <p align="center">
-  <img src="assets/hero-production-assistant.png" alt="Video Production Buddy workflow overview" width="100%">
+  <img src="assets/readme/hero-banner-loop-en-v1-hd-preview.gif" alt="Video Production Buddy" width="100%">
 </p>
 
 ---
