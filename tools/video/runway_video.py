@@ -175,6 +175,11 @@ _RUNTIME_SECONDS = {
     "gen3a_turbo": 25.0,
 }
 
+# Single source of truth for the default model. Referenced by both the input
+# schema and every code path that reads `model`, so estimate_cost / estimate_runtime
+# / execute can never silently diverge from the advertised default again.
+_DEFAULT_MODEL = "seedance2"
+
 
 class RunwayVideo(BaseTool):
     name = "runway_video"
@@ -229,7 +234,7 @@ class RunwayVideo(BaseTool):
             "model": {
                 "type": "string",
                 "enum": _MODEL_IDS,
-                "default": "seedance2",
+                "default": _DEFAULT_MODEL,
                 "description": (
                     "seedance2 = preferred premium default. "
                     "gen4.5 = current Runway-native SOTA option. "
@@ -316,16 +321,16 @@ class RunwayVideo(BaseTool):
         return os.environ.get("RUNWAY_API_KEY") or os.environ.get("RUNWAYML_API_SECRET")
 
     def estimate_cost(self, inputs: dict[str, Any]) -> float:
-        model = inputs.get("model", "seedance2")
+        model = inputs.get("model", _DEFAULT_MODEL)
         duration = inputs.get("duration", 5)
         return _COST_PER_SECOND.get(model, 0.05) * duration
 
     def estimate_runtime(self, inputs: dict[str, Any]) -> float:
-        model = inputs.get("model", "seedance2")
+        model = inputs.get("model", _DEFAULT_MODEL)
         return _RUNTIME_SECONDS.get(model, 30.0)
 
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
-        model = inputs.get("model", "seedance2")
+        model = inputs.get("model", _DEFAULT_MODEL)
         operation = inputs.get("operation", "text_to_video")
         operation_error = validate_video_operation(operation, {"text_to_video", "image_to_video"})
         if operation_error:

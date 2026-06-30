@@ -71,6 +71,6 @@ Without per-frame sampling, the composition doesn't actually react to audio.
 
 ## Constraints
 
-- All audio data must be pre-extracted (use `extract-audio-data.py` from the gsap skill's scripts/)
+- All audio data must be pre-extracted (use `extract-audio-data.py` from this skill's `scripts/`)
 - No `Math.random()` or `Date.now()`
 - Audio reactivity runs on the same GSAP timeline as everything else

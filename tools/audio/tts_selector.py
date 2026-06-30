@@ -89,6 +89,43 @@ class TTSSelector(BaseTool):
                 "type": "number", "minimum": 0, "maximum": 1,
                 "description": "Style exaggeration (ElevenLabs). Higher = more expressive.",
             },
+            "instructions": {
+                "type": "string",
+                "description": "Provider-level delivery instructions for expressive narration when supported.",
+            },
+            "speaking_rate": {
+                "type": "number",
+                "minimum": 0.25,
+                "maximum": 2.0,
+                "description": "Google-style speakingRate control. Use speed for OpenAI/ElevenLabs-style controls.",
+            },
+            "speed": {
+                "type": "number",
+                "minimum": 0.25,
+                "maximum": 4.0,
+                "description": "Alias for speaking speed used by some providers.",
+            },
+            "pitch": {
+                "type": "number",
+                "minimum": -50,
+                "maximum": 50,
+                "description": "Provider-specific pitch control. Google TTS accepts -20..20; HeyGen-style providers may accept wider ranges.",
+            },
+            "input_type": {
+                "type": "string",
+                "enum": ["text", "ssml"],
+                "default": "text",
+                "description": "Use 'ssml' only when the selected provider supports tags such as <break>.",
+            },
+            "voice_performance": {
+                "type": "object",
+                "description": "Structured voice-performance plan or section delivery cues from the script artifact.",
+            },
+            "sample_mode": {
+                "type": "boolean",
+                "default": False,
+                "description": "True when generating an approval sample before batch narration.",
+            },
             "output_format": {
                 "type": "string",
                 "description": "Audio output format (e.g. mp3_44100_128). Passed through to provider.",

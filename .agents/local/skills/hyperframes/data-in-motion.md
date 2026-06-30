@@ -1,6 +1,6 @@
 # Data in Motion
 
-Light guidance for data and stats in video compositions. The [house style](./house-style.md) handles aesthetics — this just addresses data-specific pitfalls.
+Light guidance for data and stats in video compositions. `house-style.md` handles aesthetics; this just addresses data-specific pitfalls.
 
 ## Visual Continuity
 

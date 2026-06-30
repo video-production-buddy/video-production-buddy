@@ -2,7 +2,7 @@
 
 Pure CSS + GSAP implementations of all five MarkerHighlight.js drawing modes. Use these for deterministic rendering in HyperFrames compositions — no external library dependency, full GSAP timeline control.
 
-## Table of Contents
+## Contents
 
 - [1. Highlight Mode](#1-highlight-mode) — Yellow marker sweep behind text
 - [2. Circle Mode](#2-circle-mode) — Hand-drawn ellipse around text

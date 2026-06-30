@@ -107,6 +107,7 @@ class VideoSelector(BaseTool):
                     "Generation operation to rank for when operation='rank'. "
                     "Without this, rank mode defaults to text_to_video."
                 ),
+                "default": "text_to_video",
             },
             "aspect_ratio": {
                 "type": "string",
@@ -143,6 +144,38 @@ class VideoSelector(BaseTool):
             "resolution": {
                 "type": "string",
                 "description": "Resolution hint for providers that support named output resolutions.",
+            },
+            "workflow_json": {
+                "type": "string",
+                "description": (
+                    "Optional full ComfyUI workflow JSON. Routes to a custom-workflow-capable "
+                    "provider (e.g. comfyui_video) based on server availability, not bundled "
+                    "model readiness. Requires output_node."
+                ),
+            },
+            "workflow_path": {
+                "type": "string",
+                "description": (
+                    "Optional path to a ComfyUI workflow JSON file. Routes to a custom-workflow-"
+                    "capable provider based on server availability. Requires output_node."
+                ),
+            },
+            "output_node": {
+                "type": "string",
+                "description": "ComfyUI output node ID for a custom workflow_json/workflow_path.",
+            },
+            "workflow_name": {
+                "type": "string",
+                "description": "Optional human-readable provenance label for a custom workflow.",
+            },
+            "workflow_model": {
+                "type": "string",
+                "description": "Optional model/provenance label for a custom workflow.",
+            },
+            "workflow_model_stack": {
+                "type": "array",
+                "items": {"type": "object"},
+                "description": "Optional provenance metadata for custom workflow dependencies.",
             },
             "output_path": {"type": "string"},
         },
@@ -307,6 +340,7 @@ class VideoSelector(BaseTool):
             )
 
         # Normal generation — use scored selection
+        task_context = self._prepare_task_context(inputs)
         tool, score = self._select_best_tool(inputs, candidates, task_context)
         if tool is None:
             if requested_operation in {"image_to_video", "reference_to_video"}:
@@ -341,7 +375,7 @@ class VideoSelector(BaseTool):
             result.data.update(self._tool_context_payload(tool))
             result.data["alternatives_considered"] = [
                 t.name for t in candidates
-                if t.name != tool.name and is_tool_available(t)
+                if t.name != tool.name and self._tool_selectable(t, inputs)
             ]
         return result
 
@@ -381,7 +415,7 @@ class VideoSelector(BaseTool):
         # scorer's per-tool ranking.
         available_by_name: dict[str, BaseTool] = {}
         for tool in candidates:
-            if is_tool_available(tool):
+            if self._tool_selectable(tool, inputs):
                 available_by_name[tool.name] = tool
 
         # If a preferred provider is explicitly requested and available,
@@ -507,6 +541,12 @@ class VideoSelector(BaseTool):
         return adapted, None
 
     @staticmethod
+    def _rank_inputs(inputs: dict[str, object]) -> dict[str, object]:
+        rank_inputs = dict(inputs)
+        rank_inputs["operation"] = inputs.get("target_operation", "text_to_video")
+        return rank_inputs
+
+    @staticmethod
     def _tool_context_payload(tool: BaseTool) -> dict[str, object]:
         info = safe_tool_info(tool)
         return {
@@ -539,26 +579,38 @@ class VideoSelector(BaseTool):
         inputs: dict[str, object],
         candidates: list[BaseTool],
     ) -> list[BaseTool]:
+        # A caller-supplied custom workflow is provider-specific (ComfyUI graph
+        # JSON). Route it only to custom-workflow-capable providers whose server
+        # is reachable; bundled-model readiness is irrelevant in that case.
+        if self._has_custom_workflow(inputs):
+            return [t for t in candidates if self._custom_workflow_eligible(t, inputs)]
+
         operation = self._requested_generation_operation(inputs)
         if operation == "rank":
-            return candidates
+            operation = inputs.get("target_operation", "text_to_video")
 
         filtered: list[BaseTool] = []
+        matched_operation = False
         for tool in candidates:
             supports = getattr(tool, "supports", {})
             props = getattr(tool, "input_schema", {}).get("properties", {})
 
             if operation == "image_to_video":
                 if supports.get("image_to_video") or "image_url" in props or "reference_image_url" in props:
-                    filtered.append(tool)
+                    matched_operation = True
+                    if self._operation_ready(tool, "image_to_video"):
+                        filtered.append(tool)
                 continue
 
             if operation == "reference_to_video":
                 if supports.get("reference_to_video") or "reference_image_urls" in props:
+                    matched_operation = True
                     filtered.append(tool)
                 continue
 
-            filtered.append(tool)
+            matched_operation = True
+            if self._operation_ready(tool, str(operation)):
+                filtered.append(tool)
 
         return filtered
 
@@ -579,6 +631,34 @@ class VideoSelector(BaseTool):
         if operation == "rank":
             return str(inputs.get("target_operation", "text_to_video"))
         return operation
+
+    @staticmethod
+    def _operation_ready(tool: BaseTool, operation: str) -> bool:
+        checker = getattr(tool, "is_operation_available", None)
+        if not callable(checker):
+            return True
+        return bool(checker(operation))
+
+    @staticmethod
+    def _has_custom_workflow(inputs: dict[str, object]) -> bool:
+        return bool(inputs.get("workflow_json") or inputs.get("workflow_path"))
+
+    def _custom_workflow_eligible(self, tool: BaseTool, inputs: dict[str, object]) -> bool:
+        """Whether a tool can run the caller-supplied custom workflow."""
+        if not self._has_custom_workflow(inputs):
+            return False
+        if not inputs.get("output_node"):
+            return False
+        supports = getattr(tool, "supports", {})
+        if not supports.get("custom_workflow"):
+            return False
+        return tool.get_status() != ToolStatus.UNAVAILABLE
+
+    def _tool_selectable(self, tool: BaseTool, inputs: dict[str, object]) -> bool:
+        """Select AVAILABLE tools, plus reachable custom-workflow providers."""
+        if is_tool_available(tool):
+            return True
+        return self._custom_workflow_eligible(tool, inputs)
 
 
 def _allowed_candidates(

@@ -81,10 +81,24 @@ class OpenAITTS(BaseTool):
                 "type": "string",
                 "default": "mp3",
                 "enum": ["mp3", "wav", "pcm"],
+                "description": "Backward-compatible alias for response_format.",
+            },
+            "response_format": {
+                "type": "string",
+                "default": "mp3",
+                "enum": ["mp3", "opus", "aac", "flac", "wav", "pcm"],
+                "description": "OpenAI speech response_format.",
             },
             "instructions": {
                 "type": "string",
-                "description": "Optional delivery instructions for the voice",
+                "description": "Optional delivery instructions. Supported by gpt-4o-mini-tts.",
+            },
+            "speed": {
+                "type": "number",
+                "default": 1.0,
+                "minimum": 0.25,
+                "maximum": 4.0,
+                "description": "OpenAI speech speed multiplier.",
             },
             "speed": {
                 "type": "number",
@@ -130,6 +144,7 @@ class OpenAITTS(BaseTool):
         "voice",
         "model",
         "format",
+        "response_format",
         "instructions",
         "speed",
     ]
@@ -143,6 +158,10 @@ class OpenAITTS(BaseTool):
 
     def estimate_cost(self, inputs: dict[str, Any]) -> float:
         return round(len(inputs.get("text", "")) * 0.000015, 4)
+
+    @staticmethod
+    def _supports_instructions(model: str) -> bool:
+        return model.startswith("gpt-4o-mini-tts")
 
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
         output_path, output_error = require_explicit_output_path(
@@ -176,7 +195,15 @@ class OpenAITTS(BaseTool):
         text = inputs["text"]
         model = inputs.get("model", "gpt-4o-mini-tts")
         voice = inputs.get("voice", "alloy")
-        fmt = inputs.get("format", "mp3")
+        fmt = inputs.get("response_format") or inputs.get("format", "mp3")
+        if inputs.get("instructions") and not self._supports_instructions(model):
+            return ToolResult(
+                success=False,
+                error=(
+                    "OpenAI TTS instructions are only supported by "
+                    "gpt-4o-mini-tts. Use that model or omit instructions."
+                ),
+            )
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         kwargs: dict[str, Any] = {
@@ -202,6 +229,9 @@ class OpenAITTS(BaseTool):
                 "model": model,
                 "voice": voice,
                 "format": fmt,
+                "response_format": fmt,
+                "instructions": inputs.get("instructions"),
+                "speed": inputs.get("speed", 1.0),
                 "text_length": len(text),
                 "audio_duration_seconds": round(audio_duration, 2) if audio_duration else None,
                 "output": str(output_path),

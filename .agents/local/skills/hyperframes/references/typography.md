@@ -1,6 +1,49 @@
 # Typography
 
-The compiler embeds supported fonts — just write `font-family` in CSS.
+The compiler **pre-bundles a fixed set** of fonts (the table below) — write one of those families in `font-family` and it renders deterministically, offline, with no setup and no warning. A name _outside_ that set is **not silently dropped**: if it's a real Google font the compiler fetches it from Google Fonts at **build time** and embeds it, so it _does_ render — but that implicit path (a) trips a `font_family_without_font_face` lint warning, and (b) is **fail-closed in distributed/cloud renders** — if Google is unreachable the render _errors_ rather than quietly substituting a system font. Beyond that, **local renders auto-capture fonts you actually have**: a family installed on your machine, a local `@font-face` path, or an external CDN stylesheet all get compressed to woff2 and inlined at build time. So a name on **neither** the bundle **nor** Google Fonts only truly falls back to a generic system font when it's _also_ not installed locally and not declared in an `@font-face` — and even that logs a compiler warning. **One caveat**: distributed/cloud (Lambda) renders disable system-font capture, so don't rely on a locally-installed-only font for those. So don't assume an un-bundled display name will Just Work: for anything that must render predictably, pick a bundled family below **or embed your own `@font-face`** (see "Finding Fonts").
+
+## Contents
+
+- Fonts that embed (auto-resolve)
+- Banned fonts
+- Guardrails
+- What you do not do without being told
+- Finding fonts
+- Selection thinking
+- Similar-font pairing
+- Dark backgrounds
+- OpenType features for data
+
+## Fonts That Embed (auto-resolve)
+
+These **18 families** are the ones the renderer **pre-bundles** — embedded as local data URIs with no network fetch, so they render offline and deterministically with zero setup, no lint warning, and no fail-closed fetch risk. Write any of them as a `font-family` and it renders; **only the listed weights exist** (asking for a weight a family doesn't ship gives a synthetic/fallback weight, not a real cut). (Any _other_ real Google font still works via the implicit build-time fetch described in the intro — but only these render with none of those caveats.)
+
+| Family            | Weights         | Role              |
+| ----------------- | --------------- | ----------------- |
+| Inter             | 400 · 700 · 900 | sans (body/UI)    |
+| Roboto            | 400 · 700 · 900 | sans              |
+| Open Sans         | 400 · 700       | sans              |
+| Lato              | 400 · 700 · 900 | sans              |
+| Nunito            | 400 · 700 · 900 | sans (rounded)    |
+| Montserrat        | 400 · 700 · 900 | geometric sans    |
+| Poppins           | 400 · 700 · 900 | geometric sans    |
+| Outfit            | 400 · 700 · 900 | geometric sans    |
+| Oswald            | 400 · 700       | condensed sans    |
+| **League Gothic** | **400 only**    | condensed display |
+| **Archivo Black** | **400 only**    | heavy display     |
+| Playfair Display  | 400 · 700 · 900 | serif (display)   |
+| EB Garamond       | 400 · 700       | serif (text)      |
+| Space Mono        | 400 · 700       | mono              |
+| IBM Plex Mono     | 400 · 700       | mono              |
+| JetBrains Mono    | 400 · 700       | mono              |
+| Source Code Pro   | 400 · 700       | mono              |
+| Noto Sans JP      | 400 · 700       | CJK (Japanese)    |
+
+> ⚠ **League Gothic and Archivo Black ship weight 400 ONLY** — they are already heavy/condensed display faces. Do not request `font-weight: 700/900` on them.
+
+**Aliases** — these common names resolve to an embedded family, so you may safely write them: `Helvetica Neue` / `Helvetica` / `Arial` → Inter · `Futura` / `DIN Alternate` / `Arial Black` → Montserrat · `Bebas Neue` → League Gothic · `Segoe UI` → Roboto · `Courier New` / `Courier` → JetBrains Mono · `Garamond` → EB Garamond. (This is why a "safe" `Helvetica Neue` stack always renders — it maps to embedded Inter.)
+
+**Reconciling with the Banned list below:** several embedded families (Inter, Roboto, Open Sans, Lato, Nunito, Poppins, Outfit, Playfair Display, EB Garamond) are _also_ on the Banned monoculture list — they render fine but read as generic. The families that are **embedded AND not banned** — your safe-and-distinctive picks — are: **Montserrat, Oswald, League Gothic, Archivo Black, Space Mono, IBM Plex Mono, JetBrains Mono, Source Code Pro, Noto Sans JP**. Reach for these (or a non-bundled font you've confirmed via the Finding-Fonts step). A non-bundled name isn't guaranteed-broken — a real Google font is auto-fetched and embedded — but it carries a lint warning and a fail-closed fetch in cloud renders, so for anything that must render predictably, **embed it yourself via `@font-face`** (see "Finding Fonts") rather than relying on the implicit fetch.
 
 ## Banned
 

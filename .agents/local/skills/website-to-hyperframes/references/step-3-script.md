@@ -1,10 +1,6 @@
-# Step 3: Write the Narration Script
+# Narration & Script
 
-**Before writing, re-read DESIGN.md** — specifically the Overview and Components sections. The script should reference real product features, real stats, and real components that the website highlights. Use exact numbers from `extracted/visible-text.txt`.
-
-The script is the backbone. Everything downstream — scene durations, animation timing, beat pacing — comes from the narration. Write it before the storyboard.
-
-Save as `SCRIPT.md` in the project directory.
+How to write narration scripts for video compositions. Read when the composition includes voiceover or TTS.
 
 ## Pacing
 
@@ -26,7 +22,7 @@ Write like a person, not a brochure:
 
 Write what you want the voice to say. TTS reads literally.
 
-| On the website | Write in script as                |
+| In the product | Write in script as                |
 | -------------- | --------------------------------- |
 | 135+           | more than one hundred thirty five |
 | $1.9T          | nearly two trillion dollars       |
@@ -40,11 +36,11 @@ The visual can show the exact figure while the voice rounds it.
 
 ## Structure
 
-For product videos from a website capture:
+For product videos:
 
 1. **Hook** — what's surprising or impressive about this product? A bold claim, a provocative question, a contrast, or a striking number. This is the opening line. **Vary the hook type** — don't default to a stat every time.
 2. **Story** — what does the product do? Who uses it? Keep it concrete.
-3. **Proof** — stats, customer names, social proof. Real numbers from the website.
+3. **Proof** — stats, customer names, social proof. Real numbers from the product.
 4. **CTA** — what should the viewer do? "Start building at stripe dot com."
 
 Not every video needs all four. A 15-second social ad might be Hook + Proof + CTA. A 60-second product tour uses all four with more Story.

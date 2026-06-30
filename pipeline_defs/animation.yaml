@@ -40,6 +40,7 @@ required_skills:
   - meta/reviewer
   - meta/checkpoint-protocol
   - meta/animation-runtime-selector
+  - meta/voice-performance-director
 
 orchestration:
   mode: executive-producer
@@ -150,6 +151,7 @@ stages:
       - Script beats are concise and animation-friendly
       - On-screen text remains readable and restrained
       - Timing structure leaves room for visual holds
+      - Narration-led scripts include concrete voice performance cues
       - Word count within +/-10% of duration target from selected concept
       - Script incorporates research data points where relevant
     success_criteria:
@@ -211,6 +213,7 @@ stages:
       - Asset production path is explicit per scene
       - Reusable motifs and templates are prepared and referenced
       - Missing tool paths are surfaced honestly
+      - Narration assets apply the approved voice performance plan and sample settings
       - Total cost within approved budget from proposal_packet
       - "Layer 3 skills read for EVERY generation tool before writing prompts (check agent_skills field)"
       - "Clip duration maximized (prefer 10s over 5s) to reduce API calls and cost"

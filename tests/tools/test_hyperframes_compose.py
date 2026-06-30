@@ -3957,6 +3957,69 @@ def test_proposal_packet_schema_accepts_render_runtime():
     assert props["render_runtime"]["enum"] == ["remotion", "hyperframes", "ffmpeg"]
 
 
+def test_schemas_accept_voice_performance_contract():
+    root = Path(__file__).resolve().parent.parent.parent
+
+    script_schema = json.loads(
+        (root / "schemas" / "artifacts" / "script.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert "voice_performance" in script_schema["properties"]
+    section_props = script_schema["properties"]["sections"]["items"]["properties"]
+    assert "delivery_cues" in section_props
+    assert "provider_text" in section_props["delivery_cues"]["properties"]
+
+    proposal_schema = json.loads(
+        (root / "schemas" / "artifacts" / "proposal_packet.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    voice_selection = proposal_schema["properties"]["production_plan"]["properties"][
+        "voice_selection"
+    ]["properties"]
+    assert "delivery_style" in voice_selection
+    assert "pacing_policy" in voice_selection
+    assert "sample_approval_required" in voice_selection
+
+    asset_schema = json.loads(
+        (root / "schemas" / "artifacts" / "asset_manifest.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    asset_props = asset_schema["properties"]["assets"]["items"]["properties"]
+    assert "voice_performance" in asset_props
+    assert "provider_settings" in asset_props["voice_performance"]["properties"]
+
+
+def test_tts_provider_contracts_match_supported_fields():
+    from tools.audio.elevenlabs_tts import ElevenLabsTTS
+    from tools.audio.google_tts import GoogleTTS
+    from tools.audio.openai_tts import OpenAITTS
+
+    google_props = GoogleTTS.input_schema["properties"]
+    assert google_props["input_type"]["enum"] == ["text", "ssml"]
+    assert google_props["speaking_rate"]["maximum"] == 2.0
+    assert google_props["pitch"]["minimum"] == -20.0
+    assert google_props["pitch"]["maximum"] == 20.0
+
+    openai_props = OpenAITTS.input_schema["properties"]
+    assert "response_format" in openai_props
+    assert {"mp3", "opus", "aac", "flac", "wav", "pcm"}.issubset(
+        set(openai_props["response_format"]["enum"])
+    )
+    assert OpenAITTS._supports_instructions("gpt-4o-mini-tts")
+    assert not OpenAITTS._supports_instructions("tts-1")
+    assert not OpenAITTS._supports_instructions("tts-1-hd")
+
+    eleven_props = ElevenLabsTTS.input_schema["properties"]
+    assert {"stability", "similarity_boost", "style", "speed", "use_speaker_boost"}.issubset(
+        set(eleven_props)
+    )
+    assert eleven_props["speed"]["minimum"] == 0.7
+    assert eleven_props["speed"]["maximum"] == 1.2
+
+
 def test_edit_decisions_schema_accepts_render_runtime():
     schema_path = (
         Path(__file__).resolve().parent.parent.parent

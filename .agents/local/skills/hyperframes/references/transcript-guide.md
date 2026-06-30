@@ -1,24 +1,6 @@
 # Transcript Guide
 
-## How Transcripts Are Generated
-
-`hyperframes transcribe` handles both transcription and format conversion:
-
-```bash
-# Transcribe audio/video (uses whisper.cpp locally, no API key needed)
-npx hyperframes transcribe audio.mp3
-
-# Use a larger model for better accuracy
-npx hyperframes transcribe audio.mp3 --model medium.en
-
-# Filter to English only (skips non-English speech)
-npx hyperframes transcribe audio.mp3 --language en
-
-# Import an existing transcript from another tool
-npx hyperframes transcribe captions.srt
-npx hyperframes transcribe captions.vtt
-npx hyperframes transcribe openai-response.json
-```
+For the `transcribe` CLI invocation, the `.en`-translates-non-English rule, and whisper model selection, see [`../transcribe.md`](../transcribe.md). This file covers what to do with the resulting transcript when authoring captions: input formats, mandatory quality checks, cleaning code, external-API fallbacks.
 
 ## Supported Input Formats
 
@@ -33,32 +15,6 @@ The CLI auto-detects and normalizes these formats:
 | Normalized word array | `.json`   | Pre-processed by any tool                                                   | Yes               |
 
 **Word-level timestamps produce better captions.** SRT/VTT give phrase-level timing, which works but can't do per-word animation effects.
-
-## Whisper Model Guide
-
-The default model (`small.en`) balances accuracy and speed. For better results, use a larger model:
-
-| Model      | Size   | Speed    | Accuracy  | When to use                           |
-| ---------- | ------ | -------- | --------- | ------------------------------------- |
-| `tiny`     | 75 MB  | Fastest  | Low       | Quick previews, testing pipeline      |
-| `base`     | 142 MB | Fast     | Fair      | Short clips, clear audio              |
-| `small`    | 466 MB | Moderate | Good      | **Default** — good for most content   |
-| `medium`   | 1.5 GB | Slow     | Very good | Important content, noisy audio, music |
-| `large-v3` | 3.1 GB | Slowest  | Best      | Production quality                    |
-
-**Only add `.en` suffix when the user explicitly says the audio is English.** `.en` models are slightly more accurate for English but will TRANSLATE non-English audio instead of transcribing it.
-
-**Critical: `.en` models translate non-English audio into English** — they don't transcribe it. If the audio might not be English, always use a model without the `.en` suffix and pass `--language` to specify the source language. If you're unsure of the language, use `small` (not `small.en`) without `--language` — whisper will auto-detect.
-
-```bash
-# Spanish audio
-npx hyperframes transcribe audio.mp3 --model small --language es
-
-# Unknown language — let whisper auto-detect
-npx hyperframes transcribe audio.mp3 --model small
-```
-
-**Music and vocals over instrumentation**: `small.en` will misidentify lyrics — use `medium.en` as the minimum, or import lyrics manually. Even `medium.en` struggles with heavily produced tracks; for music videos, providing known lyrics as an SRT/VTT and importing with `hyperframes transcribe lyrics.srt` will always beat automated transcription.
 
 ## Transcript Quality Check (Mandatory)
 
@@ -101,12 +57,7 @@ var words = raw.filter(function (w) {
 });
 ```
 
-### When to use which model (decision tree)
-
-1. **Is this speech over silence/light background?** → `small.en` is fine
-2. **Is this speech over music, or music with vocals?** → Start with `medium.en`
-3. **Is this a produced music track (vocals + full instrumentation)?** → Start with `medium.en`, expect to need manual lyrics or an external API
-4. **Is this multilingual?** → Use `medium` or `large-v3` (no `.en` suffix)
+For model-selection guidance by content type, see [`../transcribe.md`](../transcribe.md) → "Picking a model by content type".
 
 ## Using External Transcription APIs
 
@@ -141,11 +92,6 @@ npx hyperframes transcribe transcript-groq.json
 
 ## If No Transcript Exists
 
-1. Check the project root for `transcript.json`, `.srt`, or `.vtt` files
-2. If none found, run transcription — pick the starting model based on the content type:
-   - Speech/voiceover → `small.en`
-   - Music with vocals → `medium.en`
-   ```bash
-   npx hyperframes transcribe <audio-or-video-file> --model medium.en
-   ```
-3. **Read the transcript and run the quality check** (see above). If it fails, retry with a larger model or suggest manual lyrics.
+1. Check the project root for `transcript.json`, `.srt`, or `.vtt` files.
+2. If none found, run [`../transcribe.md`](../transcribe.md) — pick the starting model from "Picking a model by content type" there.
+3. Run the quality check above. If it fails, retry with a larger model or fall back to manual lyrics / external API.

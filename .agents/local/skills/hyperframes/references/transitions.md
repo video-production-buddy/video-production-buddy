@@ -2,14 +2,40 @@
 
 A transition tells the viewer how two scenes relate. A crossfade says "this continues." A push slide says "next point." A blur crossfade says "drift with me." Choose transitions that match what the content is doing emotionally, not just technically.
 
+## Contents
+
+- Animation rules for multi-scene compositions
+- Energy and mood transition selection
+- Narrative position
+- Blur intensity
+- Presets
+- Implementation
+- CSS vs shader guidance
+- Shader-compatible CSS rules
+- Visual pattern warnings
+
 ## Animation Rules for Multi-Scene Compositions
 
 These are non-negotiable for every multi-scene composition:
 
 1. **Every composition uses transitions.** No exceptions. Scenes without transitions feel like jump cuts.
-2. **Every scene uses entrance animations.** Elements animate IN via `gsap.from()` — opacity, position, scale, etc. No scene should pop fully-formed onto screen.
+2. **Every scene uses entrance animations.** Elements animate IN — opacity, position, scale, etc. No scene should pop fully-formed onto screen. Use `gsap.fromTo()` (not `gsap.from()`) so the start state is explicit: `from()` animates _to_ current CSS, so pairing it with CSS `opacity: 0` is a 0→0 noop and the element never appears (see `/hyperframes-core` → sub-compositions).
 3. **Exit animations are BANNED** except on the final scene. Do NOT use `gsap.to()` to animate elements out before a transition fires. The transition IS the exit. Outgoing scene content must be fully visible when the transition starts — the transition handles the visual handoff.
 4. **Final scene exception:** The last scene MAY fade elements out (e.g., fade to black at the end of the composition). This is the only scene where exit animations are allowed.
+
+```js
+// ❌ BANNED — fading the outgoing scene out, then the next scene just runs its entrance.
+//    This is a jump cut with a dip, not a transition.
+tl.to("#s1", { opacity: 0, duration: 0.4 }, 4.0);
+tl.from("#s2 .headline", { y: 40, opacity: 0 }, 4.4);
+
+// ✅ CORRECT — outgoing and incoming animate AT THE SAME TIME T; the motion IS the handoff.
+const T = 4.0;
+tl.to("#s1", { yPercent: -100, filter: "blur(8px)", duration: 0.5, ease: "power3.in" }, T);
+tl.fromTo("#s2", { yPercent: 100 }, { yPercent: 0, duration: 0.5, ease: "power3.out" }, T);
+```
+
+> **You are NOT done after this file.** This overview gives you _which_ transition and _when_. Before writing any transition you MUST open **`catalog.md`** in this directory for the GSAP code and the hard rule every transition follows — _position new scene → animate outgoing → swap → animate incoming → clean up overlays_ — plus the per-category `css-*.md` files for specifics. Authoring transitions from this overview alone is how you end up shipping the ❌ pattern above.
 
 ## Energy → Primary Transition
 
@@ -69,7 +95,7 @@ Think about what the transition _communicates_, not just what it looks like.
 
 ## Implementation
 
-Read [transitions/catalog.md](transitions/catalog.md) for GSAP code and hard rules for every transition type.
+Read `catalog.md` in this directory for GSAP code and hard rules for every transition type, and the `css-*.md` files for per-category implementation details.
 
 | Category    | CSS                                                            | Shader (WebGL)                                                            |
 | ----------- | -------------------------------------------------------------- | ------------------------------------------------------------------------- |
@@ -92,7 +118,22 @@ CSS transitions animate scene containers with opacity, transforms, clip-path, an
 
 **Both are first-class options.** Shaders are provided by the `@hyperframes/shader-transitions` package — import from the package instead of writing raw GLSL. CSS transitions are simpler to set up. Choose based on the effect you want, not based on which is easier.
 
-When a composition uses shader transitions, ALL transitions in that composition should be shader-based (the WebGL canvas replaces DOM-based scene switching). Don't mix CSS and shader transitions in the same composition.
+**Mixing is supported.** You can have some transitions use WebGL shaders and others use a CSS crossfade in the same composition. Omit the `shader` field on any `TransitionConfig` entry to get a smooth opacity crossfade instead of a WebGL effect:
+
+```js
+var tl = HyperShader.init({
+  bgColor: "#000",
+  accentColor: "#6366f1",
+  scenes: ["s1", "s2", "s3", "s4"],
+  transitions: [
+    { time: 4.0, shader: "sdf-iris", duration: 0.7 }, // WebGL shader
+    { time: 8.5, duration: 0.8 }, // no shader → CSS crossfade
+    { time: 13.0, shader: "domain-warp", duration: 0.6 }, // WebGL shader
+  ],
+});
+```
+
+HyperShader manages all scene visibility regardless of transition type. Let it create the timeline (don't pass `timeline:` into `init()`) and add your beat animations to the returned `tl` after the call.
 
 ## Shader-Compatible CSS Rules
 

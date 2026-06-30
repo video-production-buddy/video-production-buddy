@@ -307,6 +307,23 @@
                 }
               }
             ]
+          },
+          "voice_performance": {
+            "type": "object",
+            "description": "Applied voice-performance contract for narration assets.",
+            "properties": {
+              "source_section_id": { "type": "string" },
+              "delivery_cues_applied": { "type": "boolean" },
+              "provider_text_used": { "type": "boolean" },
+              "provider_settings": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "sample_approved": { "type": "boolean" },
+              "sample_path": { "type": "string" },
+              "review_notes": { "type": "string" }
+            },
+            "additionalProperties": false
           }
         },
         "additionalProperties": false

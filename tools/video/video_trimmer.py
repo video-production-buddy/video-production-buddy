@@ -48,7 +48,7 @@ class VideoTrimmer(BaseTool):
         "macOS: brew install ffmpeg\n"
         "Linux: sudo apt install ffmpeg"
     )
-    agent_skills = ["ffmpeg", "video_toolkit"]
+    agent_skills = ["ffmpeg", "video-toolkit"]
 
     capabilities = ["cut", "trim", "speed_adjust", "concat"]
     best_for = [

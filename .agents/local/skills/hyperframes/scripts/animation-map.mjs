@@ -6,19 +6,24 @@
 // human-readable summaries. Outputs a single animation-map.json.
 //
 // Usage:
-//   node skills/hyperframes/scripts/animation-map.mjs <composition-dir> \
+//   node skills/hyperframes-animation/scripts/animation-map.mjs <composition-dir> \
 //     [--frames N] [--out <dir>] [--min-duration S] [--width W] [--height H] [--fps N]
 
 import { mkdir, writeFile } from "node:fs/promises";
 import { resolve, join } from "node:path";
+import { hyperframesPackageSpec, importPackagesOrBootstrap } from "./package-loader.mjs";
 
-import {
+const {
   createFileServer,
   createCaptureSession,
   initializeSession,
   closeCaptureSession,
   getCompositionDuration,
-} from "@hyperframes/producer";
+} = (
+  await importPackagesOrBootstrap(["@hyperframes/producer"], {
+    npmPackages: [hyperframesPackageSpec("@hyperframes/producer")],
+  })
+)["@hyperframes/producer"];
 
 // ─── CLI ─────────────────────────────────────────────────────────────────────
 

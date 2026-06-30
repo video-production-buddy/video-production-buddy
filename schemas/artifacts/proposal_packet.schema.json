@@ -155,6 +155,15 @@
           "enum": ["remotion", "hyperframes", "ffmpeg"],
           "description": "Locked at proposal stage — the technical runtime that realizes renderer_family. remotion=React scene components, hyperframes=HTML/CSS/GSAP, ffmpeg=simple concat/trim. Must be explicit and auditable; silent swaps are forbidden."
         },
+        "composition_mode": {
+          "type": "string",
+          "enum": ["templated", "atelier"],
+          "description": "Locked at proposal — HOW the composition is built (orthogonal to render_runtime). templated=assemble stock cut.type scenes (Explainer/CinematicRenderer); atelier=hand-author a project-local composition from scratch with no creative-component reuse. Default atelier for hero work. See AGENT_GUIDE.md → 'Composition Authoring Mode' and skills/meta/bespoke-composition.md. The decision MUST be logged in decision_log with category='composition_mode' and BOTH options presented."
+        },
+        "art_direction": {
+          "type": "string",
+          "description": "Required when composition_mode='atelier'. Short note (or path to art-direction.md) committing to a fresh visual language for THIS piece — palette, type, motion, signature device. Per skills/meta/bespoke-composition.md step 1, written down BEFORE authoring scenes."
+        },
         "music_source": {
           "type": "object",
           "description": "Resolved music plan from the proposal stage",
@@ -174,7 +183,19 @@
             "provider": { "type": "string" },
             "voice_id": { "type": "string" },
             "rationale": { "type": "string" },
-            "estimated_cost_usd": { "type": "number", "minimum": 0 }
+            "estimated_cost_usd": { "type": "number", "minimum": 0 },
+            "delivery_style": {
+              "type": "string",
+              "description": "Plain-language voice direction, e.g. warm expert, expressive narrator, crisp tutorial."
+            },
+            "pacing_policy": {
+              "type": "string",
+              "description": "How the voice should use pauses, speed, and emphasis across the piece."
+            },
+            "sample_approval_required": {
+              "type": "boolean",
+              "description": "True when a TTS sample must be approved before batch narration generation."
+            }
           },
           "additionalProperties": false
         },

@@ -2,6 +2,14 @@
 
 Hard rules, scene template, and routing to implementation code. Read the reference file for the transition type you need — don't load all of them.
 
+## Contents
+
+- Hard rules for CSS transitions
+- Shader transitions
+- Scene template
+- CSS transition examples
+- Shader transition routing
+
 ## Hard Rules (CSS)
 
 These cause real bugs if violated.
@@ -30,7 +38,7 @@ These cause real bugs if violated.
 
 ## Shader Transitions
 
-Shader setup, WebGL init, capture, and fragment shaders are handled by `@hyperframes/shader-transitions` (`packages/shader-transitions/`). Read the package source for API details. Compositions using shaders must follow the CSS rules in [transitions.md](../transitions.md) § "Shader-Compatible CSS Rules".
+Shader setup, WebGL init, capture, and fragment shaders are handled by `@hyperframes/shader-transitions` (`packages/shader-transitions/`). Read the package source for API details. Compositions using shaders must follow the shader-compatible CSS rules in `overview.md` (this directory).
 
 ## Scene Template
 
@@ -96,22 +104,24 @@ Every transition follows: position new scene → animate outgoing → swap → a
 
 All code examples use `old` for the outgoing scene-inner selector and `new` for the incoming, with `T` as the transition start time. Read the reference file for the type you need.
 
-| Type           | Transitions                                          | Reference                                  |
-| -------------- | ---------------------------------------------------- | ------------------------------------------ |
-| Push           | Push slide, vertical push, elastic push, squeeze     | [css-push.md](./css-push.md)               |
-| Radial / Shape | Circle iris, diamond iris, diagonal split            | [css-radial.md](./css-radial.md)           |
-| 3D             | 3D card flip                                         | [css-3d.md](./css-3d.md)                   |
-| Scale / Zoom   | Zoom through, zoom out                               | [css-scale.md](./css-scale.md)             |
-| Dissolve       | Crossfade, blur crossfade, focus pull, color dip     | [css-dissolve.md](./css-dissolve.md)       |
-| Cover          | Staggered blocks, horizontal blinds, vertical blinds | [css-cover.md](./css-cover.md)             |
-| Light          | Light leak, overexposure burn, film burn             | [css-light.md](./css-light.md)             |
-| Distortion     | Glitch, chromatic aberration, ripple, VHS tape       | [css-distortion.md](./css-distortion.md)   |
-| Mechanical     | Shutter, clock wipe                                  | [css-mechanical.md](./css-mechanical.md)   |
-| Grid           | Grid dissolve                                        | [css-grid.md](./css-grid.md)               |
-| Other          | Gravity drop, morph circle                           | [css-other.md](./css-other.md)             |
-| Blur           | Blur through, directional blur                       | [css-blur.md](./css-blur.md)               |
-| Destruction    | Page burn                                            | [css-destruction.md](./css-destruction.md) |
+| Type           | Transitions                                          | Reference                        |
+| -------------- | ---------------------------------------------------- | -------------------------------- |
+| Push           | Push slide, vertical push, elastic push, squeeze     | `transitions/css-push.md`        |
+| Radial / Shape | Circle iris, diamond iris, diagonal split            | `transitions/css-radial.md`      |
+| 3D             | 3D card flip                                         | `transitions/css-3d.md`          |
+| Scale / Zoom   | Zoom through, zoom out                               | `transitions/css-scale.md`       |
+| Dissolve       | Crossfade, blur crossfade, focus pull, color dip     | `transitions/css-dissolve.md`    |
+| Cover          | Staggered blocks, horizontal blinds, vertical blinds | `transitions/css-cover.md`       |
+| Light          | Light leak, overexposure burn, film burn             | `transitions/css-light.md`       |
+| Distortion     | Glitch, chromatic aberration, ripple, VHS tape       | `transitions/css-distortion.md`  |
+| Mechanical     | Shutter, clock wipe                                  | `transitions/css-mechanical.md`  |
+| Grid           | Grid dissolve                                        | `transitions/css-grid.md`        |
+| Other          | Gravity drop, morph circle                           | `transitions/css-other.md`       |
+| Blur           | Blur through, directional blur                       | `transitions/css-blur.md`        |
+| Destruction    | Page burn                                            | `transitions/css-destruction.md` |
 
 ## Shader Transitions
 
 WebGL shader transitions are provided by `@hyperframes/shader-transitions` (`packages/shader-transitions/`). The package handles setup, capture, WebGL init, render loop, and GSAP integration. Read the package source for available shaders and API — do not copy raw GLSL manually.
+
+The built-ins are not a ceiling. For an effect no built-in covers, you can write custom GLSL from scratch, adapt shader code found online (ShaderToy, GLSL Sandbox, GitHub), or build a custom CSS transition that fits no existing category — combine clip-path, transforms, and filters in new ways. If the storyboard calls for an effect that doesn't exist yet, build it; the framework renders anything a browser can run.
