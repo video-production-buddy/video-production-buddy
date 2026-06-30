@@ -5,12 +5,15 @@ replacement for live preflight.
 
 ## Last Verified
 
-- Date: 2026-06-18
+- Date: 2026-06-18 / 2026-06-28
 - Scope: local repo defaults and observed account/tool behavior for this
   checkout.
 
 ## Current Findings
 
+- Public provider-doc audit on 2026-06-28 updated local model defaults for
+  OpenAI image, Google image, FLUX, Recraft, xAI media, Bailian video/image,
+  Runway video, and ElevenLabs TTS. See `model_defaults.md`.
 - OpenAI TTS is not configured in this environment.
 - Bailian/CosyVoice system male voices such as `longxiaocheng` and
   `longanyang` returned HTTP 400 / parse errors during prior checks because the

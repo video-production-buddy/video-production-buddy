@@ -64,6 +64,48 @@ class VeoVideo(BaseTool):
     ]
     not_good_for = ["budget projects", "offline generation", "quick iteration"]
     fallback_tools = ["kling_video", "minimax_video", "wan_video"]
+    model_options = [
+        {
+            "id": "veo3.1",
+            "name": "Veo 3.1",
+            "field": "model_variant",
+            "default": True,
+            "quality": "highest",
+            "speed": "medium",
+            "cost_hint": {"usd": 0.20, "unit": "per_second_without_audio"},
+            "note": "Audio and 4k raise the per-second estimate.",
+        },
+        {
+            "id": "veo3.1/fast",
+            "name": "Veo 3.1 Fast",
+            "field": "model_variant",
+            "default": False,
+            "quality": "high",
+            "speed": "fast",
+            "cost_hint": {"usd": 0.10, "unit": "per_second_without_audio"},
+            "note": "Lower-latency route; audio raises the per-second estimate.",
+        },
+        {
+            "id": "veo3",
+            "name": "Veo 3",
+            "field": "model_variant",
+            "default": False,
+            "quality": "highest",
+            "speed": "medium",
+            "cost_hint": {"usd": 0.20, "unit": "per_second_without_audio"},
+            "note": "Audio and 4k raise the per-second estimate.",
+        },
+        {
+            "id": "veo3/fast",
+            "name": "Veo 3 Fast",
+            "field": "model_variant",
+            "default": False,
+            "quality": "high",
+            "speed": "fast",
+            "cost_hint": {"usd": 0.10, "unit": "per_second_without_audio"},
+            "note": "Lower-latency route; audio raises the per-second estimate.",
+        },
+    ]
 
     input_schema = {
         "type": "object",

@@ -68,28 +68,86 @@ After adding keys, verify what the project can see:
 make preflight
 ```
 
+To inspect model choices in a beginner-friendly list:
+
+```bash
+make models-list
+make models-list CAPABILITY=video_generation
+```
+
 Without `make`:
 
 ```bash
 python -c "from tools.tool_registry import registry; import json; registry.discover(); print(json.dumps(registry.provider_menu_summary(), indent=2))"
 ```
 
+The summary includes `model_choices`. Each entry shows the capability, provider
+tool, selector field, default model, and any available quality, speed, cost,
+release-stage, deprecation, and last-verified hints. The tracked template is
+`.env.example`; copy it to `.env`, then keep
+provider keys, optional `VPB_*` model defaults, and provider shortlists together
+in that local file.
+
+Example local `.env` defaults:
+
+```bash
+MINIMAX_API_KEY=your-key
+VPB_VIDEO_GENERATION_PROVIDER=minimax
+VPB_VIDEO_GENERATION_MODEL=MiniMax-Hailuo-2.3
+
+DASHSCOPE_API_KEY=your-key
+DASHSCOPE_WORKSPACE_ID=your-workspace-id
+DASHSCOPE_REGION=cn-beijing
+VPB_IMAGE_GENERATION_PROVIDER=bailian
+VPB_IMAGE_GENERATION_MODEL=qwen-image-2.0-pro
+VPB_TTS_PROVIDER=bailian
+VPB_TTS_MODEL=qwen3-tts-flash
+```
+
+After editing, validate the file:
+
+```bash
+make models-check ENV_FILE=.env
+```
+
+If you prefer a command-generated preview instead of editing `.env` manually:
+
+```bash
+make models-configure ENV_FILE=.env CAPABILITY=video_generation PRESET=fast DRY_RUN=1
+make models-configure ENV_FILE=.env CAPABILITY=video_generation PRESET=fast YES=1
+```
+
+Explicit request/tool inputs still win over these defaults. The agent must
+announce the actual provider and model before paid generation.
+
 ### Environment Variable Summary
 
 ```bash
 # .env — add your keys here
+
+# OPTIONAL MODEL DEFAULTS (leave blank for auto-selection)
+VPB_VIDEO_GENERATION_PROVIDER=      # e.g. bailian | minimax | seedance | kling | veo
+VPB_VIDEO_GENERATION_MODEL=         # e.g. MiniMax-Hailuo-2.3 | happyhorse-1.1-t2v | seedance2
+VPB_IMAGE_GENERATION_PROVIDER=      # e.g. bailian | flux | openai
+VPB_IMAGE_GENERATION_MODEL=         # e.g. qwen-image-2.0-pro | gpt-image-2 | flux-2-pro
+VPB_TTS_PROVIDER=                   # e.g. minimax | bailian | openai
+VPB_TTS_MODEL=                      # e.g. speech-2.8-hd | qwen3-tts-flash | eleven_v3
+
+# Advanced: limit auto-selection to a provider shortlist.
+# Example: VPB_VIDEO_GENERATION_ALLOWED_PROVIDERS=seedance,veo,kling
+VPB_VIDEO_GENERATION_ALLOWED_PROVIDERS=
 
 # FREE (no cost, ever)
 PEXELS_API_KEY=              # Stock photos + videos
 PIXABAY_API_KEY=             # Stock photos + videos
 
 # GOOGLE (one key, two tools, generous free tier)
-GOOGLE_API_KEY=              # Google TTS + Google Imagen
+GOOGLE_API_KEY=              # Google TTS + Gemini/Imagen images
 GEMINI_API_KEY=              # Optional Google AI Studio alias accepted by Google image/TTS tools
 
 # VOICE + MUSIC
 ELEVENLABS_API_KEY=          # TTS, music, sound effects (10K chars/month free)
-OPENAI_API_KEY=              # OpenAI TTS + DALL-E 3 images
+OPENAI_API_KEY=              # OpenAI TTS + GPT Image generation
 XAI_API_KEY=                 # xAI Grok image generation/editing + Grok video generation
 DOUBAO_SPEECH_API_KEY=       # Volcengine Doubao Speech TTS (strong Mandarin narration)
 DOUBAO_SPEECH_VOICE_TYPE=    # Default Doubao speaker/voice type
@@ -102,7 +160,7 @@ FAL_AI_API_KEY=              # Optional fal.ai alias used by several provider to
 
 # VIDEO
 HEYGEN_API_KEY=              # HeyGen avatar video gateway
-RUNWAY_API_KEY=              # Runway Gen-4 video (direct)
+RUNWAY_API_KEY=              # Runway direct API: Seedance 2, Gen-4.5, Veo 3.1, etc.
 RUNWAYML_API_SECRET=         # Optional Runway alias accepted by runway_video
 REPLICATE_API_TOKEN=         # Replicate-hosted Seedance provider
 HIGGSFIELD_API_KEY=          # Higgsfield video API key
@@ -112,7 +170,7 @@ SUNO_API_KEY=                # Suno music generation
 
 # LOCAL (no keys needed — just GPU + install)
 VIDEO_GEN_LOCAL_ENABLED=     # Set to "true" for local video gen
-VIDEO_GEN_LOCAL_MODEL=       # wan2.1-1.3b, wan2.1-14b, hunyuan-1.5, ltx2-local, cogvideo-5b
+VIDEO_GEN_LOCAL_MODEL=       # wan2.1-1.3b, wan2.1-14b, hunyuan-1.5, ltx2-local, cogvideo-5b, cogvideo-2b
 
 # STOCK / SEARCH
 UNSPLASH_ACCESS_KEY=         # Unsplash stock images
@@ -128,6 +186,7 @@ HF_TOKEN=                    # Optional HuggingFace token for speaker diarizatio
 VIDEO_PRODUCTION_BUDDY_CACHE_DIR=       # Optional clip/media cache override
 VIDEO_PRODUCTION_BUDDY_CACHE_MAX_GB=    # Optional cache size limit in GB
 SUBTITLE_ALIGNER_DEVICE=     # Optional subtitle alignment device, e.g. cpu or cuda
+VPB_ALLOW_BROWSER_OPEN=      # Set 0/false to stop GenUI opening a browser automatically
 SADTALKER_PATH=              # Optional local SadTalker repo path
 WAV2LIP_PATH=                # Optional local Wav2Lip repo path
 ```
@@ -142,6 +201,9 @@ WAV2LIP_PATH=                # Optional local Wav2Lip repo path
 
 **Tools unlocked:** `grok_image`, `grok_video`
 **Env var:** `XAI_API_KEY`
+
+**Default video models:** `grok-imagine-video` for text-to-video and
+reference-to-video; `grok-imagine-video-1.5` for image-to-video.
 
 #### Setup
 
@@ -161,11 +223,11 @@ Current xAI docs pricing for the Grok media models:
 
 | Model | Price |
 |------|-------|
-| `grok-imagine-image` | $0.02 per generated image |
-| `grok-imagine-image` input images (edits/composites) | $0.002 per input image |
-| `grok-imagine-video` at 480p | $0.05/sec |
-| `grok-imagine-video` at 720p | $0.07/sec |
-| `grok-imagine-video` input images | $0.002 per input image |
+| `grok-imagine-image-quality` | $0.05 per generated image |
+| `grok-imagine-image` legacy | $0.02 per generated image |
+| `grok-imagine-video` at 720p | estimated $0.08/sec |
+| `grok-imagine-video-1.5` at 1080p | estimated $0.12/sec |
+| Grok image/video input images | estimated $0.002 per input image |
 
 Video Production Buddy now uses those published rates in the Grok tool estimators.
 
@@ -173,24 +235,28 @@ Video Production Buddy now uses those published rates in the Grok tool estimator
 
 ### Alibaba Cloud Bailian / DashScope — Qwen + Wan + Wanxiang
 
-> **Strong China-region media coverage under one key.** Bailian/DashScope unlocks Qwen speech, Wan video generation/editing, and Wanxiang image generation/editing.
+> **Strong China-region media coverage under one key.** Bailian/DashScope unlocks Qwen speech, HappyHorse/Wan video generation/editing, and Qwen Image/Wanxiang image generation/editing.
 
 **Tools unlocked:** `cosyvoice_tts`, `qwen_asr`, `wan_video_api`, `wanx_image`
-**Env var:** `DASHSCOPE_API_KEY`
+**Env vars:** `DASHSCOPE_API_KEY`; `DASHSCOPE_WORKSPACE_ID` and `DASHSCOPE_REGION` are also needed for the `qwen-image-2.0-pro` image endpoint.
 
 #### Setup
 
 1. Create or open an Alibaba Cloud Bailian account
 2. Generate an API key in the Bailian console
-3. Enable the specific model families you plan to use: Qwen TTS/ASR, Wan video, and/or Wanxiang image
+3. Enable the specific model families you plan to use: Qwen TTS/ASR, HappyHorse/Wan video, and/or Qwen Image/Wanxiang image
 4. Add to `.env`: `DASHSCOPE_API_KEY=your-key-here`
+5. For Qwen Image 2.0 (`qwen-image-2.0-pro`), also add your Model Studio workspace endpoint settings:
+   `DASHSCOPE_WORKSPACE_ID=your-workspace-id` and `DASHSCOPE_REGION=cn-beijing` or `ap-southeast-1`
+   Without those workspace settings, `wanx_image` keeps a key-only Wan image
+   model as its default.
 
 #### What It's Best For
 
 - Natural Mandarin and bilingual narration through Qwen3/CosyVoice models
 - Fast Chinese and multilingual transcription with `qwen3-asr-flash`
-- Wan API video generation: text-to-video, image-to-video, reference-to-video, and video editing
-- Wanxiang image generation/editing with style presets, seeds, and multi-image references
+- HappyHorse/Wan API video generation: text-to-video, image-to-video, reference-to-video, and video editing
+- Qwen Image / Wanxiang image generation/editing with style presets, seeds, and multi-image references
 - Product-visible ad workflows where a still reference can condition Wan image/video generation
 
 #### API Notes
@@ -198,7 +264,7 @@ Video Production Buddy now uses those published rates in the Grok tool estimator
 Video Production Buddy uses two DashScope patterns:
 
 - Qwen TTS/ASR calls the multimodal generation endpoint directly
-- Wan/Wanxiang media tools submit async tasks, poll the task endpoint, then download generated assets
+- HappyHorse/Wan/Qwen Image/Wanxiang media tools submit async tasks, poll the task endpoint, then download generated assets
 
 Wanxiang image sizes use `*` separators such as `1024*1024`, not `1024x1024`.
 
@@ -230,19 +296,20 @@ No subscription — pure pay-as-you-go, no minimum spend.
 
 | Model | Price | Per $1 |
 |-------|-------|--------|
-| FLUX Pro v1.1 | $0.05/image | 20 images |
-| FLUX Dev | $0.03/image | 33 images |
-| Recraft v3 | ~$0.04/image | 25 images |
+| FLUX.2 Pro | ~$0.05/image | ~20 images |
+| FLUX.2 Turbo | ~$0.025/image | ~40 images |
+| Recraft V4.1 | ~$0.035/image | ~28 images |
+| Recraft V4.1 Pro | ~$0.21/image | ~4 images |
 
 **Video generation:**
 
 | Model | Price | Per $1 |
 |-------|-------|--------|
-| Kling 2.5 Turbo Pro | $0.07/sec | 14 seconds |
-| Seedance | varies by model page | varies |
-| MiniMax | ~$0.05/sec | 20 seconds |
-| Veo 3 | $0.40/sec | 2.5 seconds |
-| WAN 2.5 | $0.05/sec | 20 seconds |
+| Kling v3 / v2.1 routes | varies by model page | varies |
+| Seedance 2 routes | varies by model page | varies |
+| MiniMax Hailuo 2.3 | model-specific | varies |
+| Veo 3.1 | model-specific | varies |
+| HappyHorse / Wan routes | model-specific | varies |
 
 **Free tier:** None — but $0 to start, you only pay for what you use.
 
@@ -347,9 +414,9 @@ Doubao Speech 2.0 is billed by character package or usage in Volcengine. Video P
 
 ---
 
-### Google — TTS + Imagen (Shared Key)
+### Google — TTS + Gemini/Imagen Images (Shared Key)
 
-> **One key, two tools.** Google Cloud TTS has 700+ voices in 50+ languages — the strongest localization option. Imagen 4 generates high-quality images.
+> **One key, two tools.** Google Cloud TTS has 700+ voices in 50+ languages — the strongest localization option. `google_imagen` now defaults to Gemini 3 Pro Image / Nano Banana Pro when using an AI Studio API key, with Imagen 4 still available as a stable image model family.
 
 **Tools unlocked:** `google_tts`, `google_imagen`
 **Env var:** `GOOGLE_API_KEY` or `GEMINI_API_KEY`
@@ -367,7 +434,7 @@ Doubao Speech 2.0 is billed by character package or usage in Volcengine. Video P
 2. Click **Enable**
 3. Make sure your API key's restrictions allow the Text-to-Speech API
 
-**For Imagen**, enable the Generative Language API:
+**For Gemini Image / Imagen**, enable the Generative Language API:
 1. Visit [console.cloud.google.com/apis/library/generativelanguage.googleapis.com](https://console.cloud.google.com/apis/library/generativelanguage.googleapis.com)
 2. Click **Enable**
 
@@ -383,15 +450,17 @@ Doubao Speech 2.0 is billed by character package or usage in Volcengine. Video P
 
 The free tiers apply *independently* — you get 1M Standard AND 1M WaveNet AND 1M Neural2 characters per month free. That's roughly 250+ minutes of narration per month at zero cost.
 
-#### Google Imagen Pricing
+#### Google Gemini Image / Imagen Pricing
 
 | Model | Price per image |
 |-------|----------------|
+| Gemini 3 Pro Image / Nano Banana Pro | check current Google pricing |
+| Gemini 3.1 Flash Image / Nano Banana 2 | check current Google pricing |
 | Imagen 4 Fast | $0.02 |
 | Imagen 4 Standard | $0.04 |
 | Imagen 4 Ultra | $0.06 |
 
-**Free tier for Imagen:** None. Paid tier only.
+**Free tier for Gemini Image / Imagen:** model- and account-dependent. Check the Google AI Studio or Cloud billing page before approving production spend.
 
 **New account bonus:** Google Cloud offers **$300 in free credits** for new accounts (90-day trial), applicable to both TTS and Imagen.
 
@@ -416,7 +485,7 @@ Google TTS offers 700+ voices across 50+ languages. Voice names follow the patte
 
 ### OpenAI — TTS + Image Generation
 
-> **Solid all-rounder.** DALL-E 3 handles complex multi-element compositions well. TTS is fast and affordable.
+> **Solid all-rounder.** GPT Image 2 is the current OpenAI image default for detailed image generation/editing. TTS is fast and affordable.
 
 **Tools unlocked:** `openai_tts`, `openai_image`
 **Env var:** `OPENAI_API_KEY`
@@ -441,18 +510,19 @@ Google TTS offers 700+ voices across 50+ languages. Voice names follow the patte
 
 | Model | Size | Quality | Price per image |
 |-------|------|---------|----------------|
-| DALL-E 3 | 1024x1024 | standard | $0.040 |
-| DALL-E 3 | 1024x1024 | hd | $0.080 |
-| DALL-E 3 | 1024x1792 | standard | $0.080 |
-| DALL-E 3 | 1024x1792 | hd | $0.120 |
+| GPT Image 2 | 1024x1024 | low | $0.016 |
+| GPT Image 2 | 1024x1024 | medium | $0.063 |
+| GPT Image 2 | 1024x1024 | high | $0.250 |
+| GPT Image 1 | 1024x1024 | high | $0.167 |
+| DALL-E 3 legacy | 1024x1024 | standard | $0.040 |
 
 **Free tier:** None. Requires prepaid billing. Previously offered $5 in free credits for new accounts (discontinued for most signups).
 
 ---
 
-### Runway — Gen-3/Gen-4 Video
+### Runway — Multi-Model Video
 
-> **Highest-rated AI video quality.** #1 on Elo rankings. Professional-grade video generation with Gen-3 Alpha Turbo, Gen-4 Turbo, and Gen-4 Aleph models.
+> **Professional multi-model video generation.** Current Runway API models include Seedance 2, Gen-4.5, Veo 3.1, HappyHorse 1.0, and legacy Gen-4 routes.
 
 **Tools unlocked:** `runway_video`
 **Env var:** `RUNWAY_API_KEY` or `RUNWAYML_API_SECRET`
@@ -477,9 +547,11 @@ Google TTS offers 700+ voices across 50+ languages. Voice names follow the patte
 
 | Model | Price per second |
 |-------|-----------------|
-| Gen-3 Alpha Turbo | ~$0.05 |
-| Gen-4 Turbo | ~$0.05 |
-| Gen-4 Aleph | ~$0.15 |
+| Seedance 2 | model/account specific |
+| Gen-4.5 | model/account specific |
+| Veo 3.1 | model/account specific |
+| Gen-4 Turbo legacy | model/account specific |
+| Gen-4 Aleph deprecated | model/account specific |
 
 **Free tier:** 125 one-time credits (no monthly renewal). Enough for about 5 seconds of Gen-4 video. API access requires a paid subscription.
 
@@ -846,7 +918,7 @@ First run downloads the model (~4GB). Subsequent runs use the cached model.
 
 **VRAM requirement:** 4GB+ (8GB recommended for 1024x1024 images)
 
-**Supports:** Negative prompts, seeds, custom sizes. Quality is lower than FLUX or DALL-E 3 but completely free and offline.
+**Supports:** Negative prompts, seeds, custom sizes. Quality is lower than current FLUX or OpenAI GPT Image cloud models but completely free and offline.
 
 ---
 
@@ -925,7 +997,7 @@ Coverage is discovered from the live registry at preflight. This table groups th
 
 | Capability | Cloud Providers | Local Providers | Free Options |
 |-----------|----------------|-----------------|--------------|
-| **Image Generation** | FLUX, Grok, Google Imagen, DALL-E 3, Recraft, Wanxiang | Local Diffusion | Pexels, Pixabay (stock) |
+| **Image Generation** | FLUX, Grok, Google Gemini/Imagen, OpenAI GPT Image, Recraft, Qwen Image/Wanxiang | Local Diffusion | Pexels, Pixabay (stock) |
 | **Video Generation** | Grok, Kling, Runway, Veo, Higgsfield, MiniMax, HeyGen, Seedance, Wan API | WAN, Hunyuan, CogVideo, LTX | Pexels, Pixabay (stock) |
 | **Text-to-Speech** | ElevenLabs, Google TTS, OpenAI, Doubao, Qwen/CosyVoice | Piper | Piper, Google free tier, ElevenLabs free tier |
 | **Music Generation** | ElevenLabs, MiniMax, Suno | — | ElevenLabs free tier, Freesound/Pixabay search, provider-specific trial/free variants |

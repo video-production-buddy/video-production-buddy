@@ -1,7 +1,7 @@
 """Alibaba Cloud Bailian / DashScope video generation and editing.
 
-Supports HappyHorse 1.0 (current flagship — native joint audio+video generation
-for t2v/i2v/r2v/video-edit), Wan 2.7 (t2v/i2v/r2v/videoedit — also with native
+Supports HappyHorse 1.1 (current recommended t2v/i2v/r2v family),
+HappyHorse 1.0 video edit, Wan 2.7 (t2v/i2v/r2v/videoedit — also with native
 audio sync), Wan 2.6 (t2v, i2v-flash), and legacy Wan 2.1. All models share the
 same async task pattern: submit → poll → download, and only differ by the
 `model` field. HappyHorse and Wan 2.7 use `resolution`+`ratio` (not `size`) and
@@ -32,6 +32,7 @@ from tools.base_tool import (
     ToolTier,
 )
 from tools.output_paths import require_explicit_output_path
+from tools.model_options import build_model_options
 
 _API_BASE = "https://dashscope.aliyuncs.com/api/v1"
 _VIDEO_GEN_URL = f"{_API_BASE}/services/aigc/video-generation/video-synthesis"
@@ -48,7 +49,44 @@ def _uses_new_api(variant: str) -> bool:
 
 # ── Model registry ─────────────────────────────────────────────────────────────
 _MODELS: dict[str, dict[str, Any]] = {
-    # ── HappyHorse 1.0 (current flagship, native audio+video joint generation) ─
+    # ── HappyHorse 1.1 (current recommended t2v/i2v/r2v family) ───────────────
+    "happyhorse-1.1-t2v": {
+        "name": "HappyHorse 1.1 Text-to-Video",
+        "operation": "text_to_video",
+        "quality": "highest",
+        "speed": "medium",
+        "cost_per_5s": 0.30,
+        "max_duration": 10,
+        "native_audio": True,
+        "release_stage": "current_sota",
+        "last_verified": "2026-06-28",
+        "source_url": "https://www.alibabacloud.com/help/en/model-studio/models",
+    },
+    "happyhorse-1.1-i2v": {
+        "name": "HappyHorse 1.1 Image-to-Video",
+        "operation": "image_to_video",
+        "quality": "highest",
+        "speed": "medium",
+        "cost_per_5s": 0.32,
+        "max_duration": 10,
+        "native_audio": True,
+        "release_stage": "current_sota",
+        "last_verified": "2026-06-28",
+        "source_url": "https://www.alibabacloud.com/help/en/model-studio/models",
+    },
+    "happyhorse-1.1-r2v": {
+        "name": "HappyHorse 1.1 Reference-to-Video",
+        "operation": "reference_to_video",
+        "quality": "highest",
+        "speed": "medium",
+        "cost_per_5s": 0.34,
+        "max_duration": 10,
+        "native_audio": True,
+        "release_stage": "current_sota",
+        "last_verified": "2026-06-28",
+        "source_url": "https://www.alibabacloud.com/help/en/model-studio/models",
+    },
+    # ── HappyHorse 1.0 (legacy plus current video-edit route) ─────────────────
     "happyhorse-1.0-t2v": {
         "name": "HappyHorse 1.0 Text-to-Video",
         "operation": "text_to_video",
@@ -57,6 +95,9 @@ _MODELS: dict[str, dict[str, Any]] = {
         "cost_per_5s": 0.30,
         "max_duration": 10,
         "native_audio": True,
+        "release_stage": "legacy",
+        "last_verified": "2026-06-28",
+        "source_url": "https://www.alibabacloud.com/help/en/model-studio/models",
     },
     "happyhorse-1.0-i2v": {
         "name": "HappyHorse 1.0 Image-to-Video",
@@ -66,6 +107,9 @@ _MODELS: dict[str, dict[str, Any]] = {
         "cost_per_5s": 0.32,
         "max_duration": 10,
         "native_audio": True,
+        "release_stage": "legacy",
+        "last_verified": "2026-06-28",
+        "source_url": "https://www.alibabacloud.com/help/en/model-studio/models",
     },
     "happyhorse-1.0-r2v": {
         "name": "HappyHorse 1.0 Reference-to-Video",
@@ -75,6 +119,9 @@ _MODELS: dict[str, dict[str, Any]] = {
         "cost_per_5s": 0.34,
         "max_duration": 10,
         "native_audio": True,
+        "release_stage": "legacy",
+        "last_verified": "2026-06-28",
+        "source_url": "https://www.alibabacloud.com/help/en/model-studio/models",
     },
     "happyhorse-1.0-video-edit": {
         "name": "HappyHorse 1.0 Video Edit",
@@ -84,6 +131,9 @@ _MODELS: dict[str, dict[str, Any]] = {
         "cost_per_5s": 0.36,
         "max_duration": 10,
         "native_audio": True,
+        "release_stage": "current_edit",
+        "last_verified": "2026-06-28",
+        "source_url": "https://www.alibabacloud.com/help/en/model-studio/models",
     },
     # ── Wan 2.7 (Bailian, native audio sync) ───────────────────────────────────
     "wan2.7-t2v": {
@@ -172,11 +222,11 @@ _MODELS: dict[str, dict[str, Any]] = {
     },
 }
 
-# Best model per operation (prefer HappyHorse 1.0 flagship, fall back to Wan 2.7).
+# Best model per operation (prefer HappyHorse 1.1; keep 1.0 for video edit).
 _OP_DEFAULTS: dict[str, str] = {
-    "text_to_video": "happyhorse-1.0-t2v",
-    "image_to_video": "happyhorse-1.0-i2v",
-    "reference_to_video": "happyhorse-1.0-r2v",
+    "text_to_video": "happyhorse-1.1-t2v",
+    "image_to_video": "happyhorse-1.1-i2v",
+    "reference_to_video": "happyhorse-1.1-r2v",
     "video_editing": "happyhorse-1.0-video-edit",
 }
 
@@ -223,11 +273,11 @@ class WanVideoAPI(BaseTool):
         "local_gpu": False,
     }
     best_for = [
-        "HappyHorse 1.0 flagship — native joint audio+video generation (t2v/i2v/r2v/edit)",
-        "text-to-video with native audio sync (happyhorse-1.0-t2v, wan2.7-t2v)",
+        "HappyHorse 1.1 flagship — native joint audio+video generation (t2v/i2v/r2v)",
+        "text-to-video with native audio sync (happyhorse-1.1-t2v, wan2.7-t2v)",
         "Wan 2.7 i2v/r2v/videoedit on Bailian without a local GPU",
         "video editing via natural-language instruction (happyhorse-1.0-video-edit, wan2.7-videoedit)",
-        "reference-guided video generation keeping character identity (happyhorse-1.0-r2v, wan2.7-r2v)",
+        "reference-guided video generation keeping character identity (happyhorse-1.1-r2v, wan2.7-r2v)",
         "Chinese-language prompt video generation",
     ]
     not_good_for = [
@@ -235,6 +285,12 @@ class WanVideoAPI(BaseTool):
         "projects needing guaranteed sub-60s turnaround",
     ]
     fallback_tools = ["wan_video", "kling_video", "minimax_video"]
+    model_options = build_model_options(
+        _MODELS,
+        field="model_variant",
+        default_by_operation=_OP_DEFAULTS,
+        cost_units={"cost_per_5s": "per_5s"},
+    )
 
     input_schema = {
         "type": "object",
@@ -312,9 +368,9 @@ class WanVideoAPI(BaseTool):
                 ],
                 "default": "text_to_video",
                 "description": (
-                    "text_to_video: prompt → clip (default happyhorse-1.0-t2v). "
-                    "image_to_video: still image → clip (default happyhorse-1.0-i2v). "
-                    "reference_to_video: reference images/video → new clip (default happyhorse-1.0-r2v). "
+                    "text_to_video: prompt → clip (default happyhorse-1.1-t2v). "
+                    "image_to_video: still image → clip (default happyhorse-1.1-i2v). "
+                    "reference_to_video: reference images/video → new clip (default happyhorse-1.1-r2v). "
                     "video_editing: edit existing video by instruction (default happyhorse-1.0-video-edit)."
                 ),
             },
@@ -484,14 +540,14 @@ class WanVideoAPI(BaseTool):
 
     def estimate_cost(self, inputs: dict[str, Any]) -> float:
         operation = inputs.get("operation", "text_to_video")
-        variant = inputs.get("model_variant") or _OP_DEFAULTS.get(operation, "happyhorse-1.0-t2v")
+        variant = inputs.get("model_variant") or _OP_DEFAULTS.get(operation, "happyhorse-1.1-t2v")
         duration = int(inputs.get("duration", 5))
-        base = _MODELS.get(variant, _MODELS["happyhorse-1.0-t2v"])["cost_per_5s"]
+        base = _MODELS.get(variant, _MODELS["happyhorse-1.1-t2v"])["cost_per_5s"]
         return round(base * (duration / 5), 4)
 
     def estimate_runtime(self, inputs: dict[str, Any]) -> float:
         operation = inputs.get("operation", "text_to_video")
-        variant = inputs.get("model_variant") or _OP_DEFAULTS.get(operation, "happyhorse-1.0-t2v")
+        variant = inputs.get("model_variant") or _OP_DEFAULTS.get(operation, "happyhorse-1.1-t2v")
         speed = _MODELS.get(variant, {}).get("speed", "medium")
         return {"fast": 60.0, "medium": 120.0, "slow": 240.0}.get(speed, 120.0)
 

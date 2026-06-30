@@ -132,7 +132,7 @@ stages:
       - video_selector
       - diagram_gen
       - code_snippet
-      - music_gen
+      - music_selector
       - audio_enhance
     tools_available:
       - subtitle_gen
@@ -141,7 +141,7 @@ stages:
       - video_selector
       - diagram_gen
       - code_snippet
-      - music_gen
+      - music_selector
       - audio_enhance
     checkpoint_required: true
     human_approval_default: false

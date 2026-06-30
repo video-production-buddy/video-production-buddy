@@ -30,6 +30,7 @@ from tools.base_tool import (
     ToolStatus,
     ToolTier,
 )
+from tools.model_options import build_model_options
 from tools.output_paths import require_explicit_output_path
 
 _DEFAULT_API_BASE = "https://api.minimaxi.com/v1"
@@ -136,6 +137,12 @@ class MinimaxTTS(BaseTool):
         "second TTS provider on MINIMAX_API_KEY when CosyVoice/OpenAI are unavailable",
     ]
     not_good_for = ["fully offline production", "voice cloning (use the MiniMax Voice Cloning API)"]
+    model_options = build_model_options(
+        _MODELS,
+        field="model",
+        default="speech-2.8-hd",
+        cost_units={"cost_per_char": "per_char"},
+    )
 
     input_schema = {
         "type": "object",

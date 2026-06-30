@@ -219,7 +219,7 @@ stages:
     tools_available:
       - image_selector
       - tts_selector
-      - music_gen
+      - music_selector
       - character_rig_renderer
     checkpoint_required: true
     human_approval_default: false

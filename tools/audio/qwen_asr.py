@@ -28,6 +28,7 @@ from tools.base_tool import (
     ToolStatus,
     ToolTier,
 )
+from tools.model_options import build_model_options
 from tools.output_paths import require_optional_project_sidecar_path
 
 _ASR_URL = (
@@ -81,6 +82,13 @@ class QwenASR(BaseTool):
         "Batch transcription via URL-referenced audio files",
     ]
     not_good_for = ["speaker diarization", "word-level timestamps"]
+    model_options = build_model_options(
+        _MODELS,
+        field="model",
+        default="qwen3-asr-flash",
+        cost_units={"cost_per_hour": "per_hour"},
+        include_keys=("quality", "speed", "multilingual"),
+    )
 
     input_schema = {
         "type": "object",

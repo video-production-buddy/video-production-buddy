@@ -71,6 +71,26 @@ class SeedanceReplicate(BaseTool):
     not_good_for = ["offline generation", "budget-constrained projects"]
     fallback_tools = ["seedance_video", "veo_video", "kling_video", "minimax_video"]
     quality_score = 0.95
+    model_options = [
+        {
+            "id": "standard",
+            "name": "Seedance 2.0 Standard",
+            "field": "model_variant",
+            "default": True,
+            "quality": "highest",
+            "speed": "medium",
+            "note": "Replicate-hosted bytedance/seedance-2.0.",
+        },
+        {
+            "id": "fast",
+            "name": "Seedance 2.0 Fast",
+            "field": "model_variant",
+            "default": False,
+            "quality": "high",
+            "speed": "fast",
+            "note": "Replicate-hosted bytedance/seedance-2.0-fast.",
+        },
+    ]
 
     input_schema = {
         "type": "object",

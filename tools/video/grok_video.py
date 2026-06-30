@@ -80,10 +80,46 @@ class GrokVideo(BaseTool):
         "cinematic clips with native synchronized audio (dialogue, SFX, music)",
         "reference-conditioned video with product/character consistency",
         "lip-synced dialogue and foley in a single generation pass",
-        "cost-effective high-quality video ($0.07/s at 720p)",
+        "cost-effective high-quality video with native audio",
     ]
     not_good_for = ["offline generation"]
     fallback_tools = ["veo_video", "runway_video", "kling_video", "minimax_video"]
+    model_options = [
+        {
+            "id": "grok-imagine-video-1.5",
+            "name": "Grok Imagine Video 1.5",
+            "field": "model",
+            "default": False,
+            "quality": "highest",
+            "speed": "medium",
+            "release_stage": "current",
+            "last_verified": "2026-06-30",
+            "source_url": "https://docs.x.ai/developers/model-capabilities/imagine",
+            "supports": {
+                "text_to_video": False,
+                "image_to_video": True,
+                "reference_to_video": False,
+            },
+            "note": "Use for image_to_video at higher resolution; xAI documents text/reference video on grok-imagine-video.",
+        },
+        {
+            "id": "grok-imagine-video",
+            "name": "Grok Imagine Video",
+            "field": "model",
+            "default": True,
+            "quality": "high",
+            "speed": "medium",
+            "release_stage": "current_text_reference",
+            "last_verified": "2026-06-30",
+            "source_url": "https://docs.x.ai/developers/model-capabilities/imagine",
+            "supports": {
+                "text_to_video": True,
+                "image_to_video": True,
+                "reference_to_video": True,
+            },
+            "note": "Use for reference_to_video; xAI documents reference images as legacy-model-only.",
+        },
+    ]
 
     input_schema = {
         "type": "object",
@@ -97,7 +133,7 @@ class GrokVideo(BaseTool):
             },
             "model": {
                 "type": "string",
-                "enum": ["grok-imagine-video"],
+                "enum": ["grok-imagine-video-1.5", "grok-imagine-video"],
                 "default": "grok-imagine-video",
             },
             "duration": {
@@ -113,7 +149,7 @@ class GrokVideo(BaseTool):
             },
             "resolution": {
                 "type": "string",
-                "enum": ["480p", "720p"],
+                "enum": ["480p", "720p", "1080p"],
                 "default": "720p",
             },
             "image_url": {"type": "string", "description": "Reference image URL for image_to_video"},
@@ -193,10 +229,12 @@ class GrokVideo(BaseTool):
         return ToolStatus.UNAVAILABLE
 
     @staticmethod
-    def _normalize_resolution(value: str | None) -> str:
+    def _normalize_resolution(value: str | None, model: str | None = None) -> str:
         if value == "540p":
             return "480p"
-        return value or "720p"
+        if value:
+            return value
+        return "1080p" if model == "grok-imagine-video-1.5" else "720p"
 
     @staticmethod
     def _input_image_count(inputs: dict[str, Any]) -> int:
@@ -209,11 +247,14 @@ class GrokVideo(BaseTool):
 
     def estimate_cost(self, inputs: dict[str, Any]) -> float:
         duration = int(inputs.get("duration", 5))
-        resolution = self._normalize_resolution(inputs.get("resolution"))
-        base_per_second = 0.07 if resolution == "720p" else 0.05
+        operation = inputs.get("operation", "text_to_video")
+        model = inputs.get("model", self._default_model_for_operation(operation))
+        resolution = self._normalize_resolution(inputs.get("resolution"), model)
+        if resolution == "1080p":
+            base_per_second = 0.12
+        else:
+            base_per_second = 0.08 if resolution == "720p" else 0.06
         input_image_cost = self._input_image_count(inputs) * 0.002
-        # xAI currently publishes Grok Imagine Video at $0.05/sec for 480p,
-        # $0.07/sec for 720p, plus $0.002 per input image.
         return base_per_second * duration + input_image_cost
 
     def estimate_runtime(self, inputs: dict[str, Any]) -> float:
@@ -222,17 +263,24 @@ class GrokVideo(BaseTool):
 
     def _build_payload(self, inputs: dict[str, Any]) -> dict[str, Any]:
         operation = inputs.get("operation", "text_to_video")
+        model = inputs.get("model", self._default_model_for_operation(operation))
+        if operation == "text_to_video" and model == "grok-imagine-video-1.5":
+            raise ValueError(
+                "text_to_video requires model='grok-imagine-video'; "
+                "grok-imagine-video-1.5 supports image_to_video."
+            )
         payload: dict[str, Any] = {
-            "model": inputs.get("model", "grok-imagine-video"),
+            "model": model,
             "prompt": inputs["prompt"],
         }
 
         if operation != "reference_to_video":
             payload["duration"] = int(inputs.get("duration", 5))
-            if inputs.get("aspect_ratio"):
-                payload["aspect_ratio"] = inputs["aspect_ratio"]
-            if inputs.get("resolution"):
-                payload["resolution"] = self._normalize_resolution(inputs["resolution"])
+            payload["aspect_ratio"] = inputs.get("aspect_ratio", "16:9")
+            payload["resolution"] = self._normalize_resolution(
+                inputs.get("resolution"),
+                model,
+            )
 
         if operation == "image_to_video":
             image = _normalize_media_ref(inputs.get("image_url"), inputs.get("image_path"))
@@ -240,6 +288,11 @@ class GrokVideo(BaseTool):
                 raise ValueError("image_to_video requires image_url or image_path")
             payload["image"] = image
         elif operation == "reference_to_video":
+            if model != "grok-imagine-video":
+                raise ValueError(
+                    "reference_to_video requires model='grok-imagine-video'; "
+                    "grok-imagine-video-1.5 supports image_to_video."
+                )
             refs = [{"url": url} for url in (inputs.get("reference_image_urls") or [])]
             refs.extend(
                 {"url": _file_to_data_uri(path)}
@@ -251,12 +304,19 @@ class GrokVideo(BaseTool):
                 )
             payload["reference_images"] = refs
             payload["duration"] = int(inputs.get("duration", 5))
-            if inputs.get("aspect_ratio"):
-                payload["aspect_ratio"] = inputs["aspect_ratio"]
-            if inputs.get("resolution"):
-                payload["resolution"] = self._normalize_resolution(inputs["resolution"])
+            payload["aspect_ratio"] = inputs.get("aspect_ratio", "16:9")
+            payload["resolution"] = self._normalize_resolution(
+                inputs.get("resolution"),
+                model,
+            )
 
         return payload
+
+    @staticmethod
+    def _default_model_for_operation(operation: str) -> str:
+        if operation in {"text_to_video", "reference_to_video"}:
+            return "grok-imagine-video"
+        return "grok-imagine-video-1.5"
 
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
         operation = inputs.get("operation", "text_to_video")

@@ -56,6 +56,44 @@ class KlingVideo(BaseTool):
     ]
     not_good_for = ["budget-constrained projects", "offline generation", "quick iteration"]
     fallback_tools = ["minimax_video", "veo_video", "wan_video"]
+    model_options = [
+        {
+            "id": "v3/standard",
+            "name": "Kling v3 Standard",
+            "field": "model_variant",
+            "default": True,
+            "quality": "high",
+            "speed": "medium",
+            "cost_hint": {"usd": 0.10, "unit": "per_5s"},
+        },
+        {
+            "id": "v2.1/master",
+            "name": "Kling v2.1 Master",
+            "field": "model_variant",
+            "default": False,
+            "quality": "highest",
+            "speed": "medium",
+            "cost_hint": {"usd": 0.30, "unit": "per_5s"},
+        },
+        {
+            "id": "v2.1/pro",
+            "name": "Kling v2.1 Pro",
+            "field": "model_variant",
+            "default": False,
+            "quality": "high",
+            "speed": "medium",
+            "cost_hint": {"usd": 0.20, "unit": "per_5s"},
+        },
+        {
+            "id": "v2.1/standard",
+            "name": "Kling v2.1 Standard",
+            "field": "model_variant",
+            "default": False,
+            "quality": "high",
+            "speed": "medium",
+            "cost_hint": {"usd": 0.10, "unit": "per_5s"},
+        },
+    ]
 
     input_schema = {
         "type": "object",

@@ -109,32 +109,31 @@ def test_wanx_image_requires_project_output_path_before_network(monkeypatch) -> 
 def test_wanx_image_success_payload_matches_output_schema(monkeypatch, tmp_path) -> None:
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("DASHSCOPE_API_KEY", "test-key")
+    monkeypatch.setenv("DASHSCOPE_WORKSPACE_ID", "ws-test")
+    monkeypatch.setenv("DASHSCOPE_REGION", "ap-southeast-1")
     monkeypatch.setattr("time.sleep", lambda _seconds: None)
+    post_calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
 
-    def fake_post(*_args, **_kwargs):
-        return _FakeResponse({"output": {"task_id": "task-1"}})
+    def fake_post(*args, **kwargs):
+        post_calls.append((args, kwargs))
+        return _FakeResponse(
+            {
+                "output": {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": [
+                                    {"image": "https://cdn.example.test/wanx.png"}
+                                ]
+                            }
+                        }
+                    ],
+                    "seed": 123,
+                }
+            }
+        )
 
     def fake_get(url, *_args, **_kwargs):
-        if "tasks/task-1" in url:
-            return _FakeResponse(
-                {
-                    "output": {
-                        "task_status": "SUCCEEDED",
-                        "choices": [
-                            {
-                                "message": {
-                                    "content": [
-                                        {
-                                            "type": "image",
-                                            "image": "https://cdn.example.test/wanx.png",
-                                        }
-                                    ]
-                                }
-                            }
-                        ],
-                    }
-                }
-            )
         if url == "https://cdn.example.test/wanx.png":
             return _FakeResponse(content=b"png")
         raise AssertionError(f"unexpected GET {url}")
@@ -146,6 +145,10 @@ def test_wanx_image_success_payload_matches_output_schema(monkeypatch, tmp_path)
     result = WanxImage().execute({"prompt": "product hero", "output_path": output_path})
 
     assert result.success is True
+    assert post_calls[0][0][0] == (
+        "https://ws-test.ap-southeast-1.maas.aliyuncs.com"
+        "/api/v1/services/aigc/multimodal-generation/generation"
+    )
     assert result.data["output"] == output_path
     assert result.data["output_path"] == output_path
     assert result.artifacts == [output_path]

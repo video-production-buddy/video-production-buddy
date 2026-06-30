@@ -29,6 +29,7 @@ from tools.base_tool import (
     ToolStatus,
     ToolTier,
 )
+from tools.model_options import build_model_options
 from tools.output_paths import require_explicit_output_path
 
 _API_URL = "https://api.minimaxi.com/v1/music_generation"
@@ -118,6 +119,14 @@ class MinimaxMusic(BaseTool):
         "sound effects (use ElevenLabs SFX instead)",
         "offline generation",
     ]
+    model_options = build_model_options(
+        _MODELS,
+        field="model",
+        default="music-2.6",
+        cost_units={"cost_per_generation": "per_generation"},
+        support_keys=("supports_lyrics", "supports_instrumental", "supports_cover"),
+        include_keys=("tier", "note"),
+    )
 
     input_schema = {
         "type": "object",

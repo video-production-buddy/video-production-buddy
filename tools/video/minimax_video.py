@@ -33,6 +33,7 @@ from tools.base_tool import (
     ToolStatus,
     ToolTier,
 )
+from tools.model_options import build_model_options
 from tools.video._shared import require_generated_video_output_path, validate_video_operation, probe_output
 
 # China mainland host (consistent with minimax_music). Overseas: https://api.minimax.io/v1
@@ -114,6 +115,13 @@ class MiniMaxVideo(BaseTool):
     ]
     not_good_for = ["offline generation", "native audio in the generated clip"]
     fallback_tools = ["kling_video", "veo_video", "wan_video_api"]
+    model_options = build_model_options(
+        _MODELS,
+        field="model_variant",
+        default="MiniMax-Hailuo-2.3",
+        cost_units={"cost_per_6s": "per_6s"},
+        support_keys=("supports_t2v", "supports_i2v"),
+    )
 
     input_schema = {
         "type": "object",

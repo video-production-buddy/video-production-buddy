@@ -5,6 +5,9 @@ from pathlib import Path
 import jsonschema
 import pytest
 
+from lib.config_model import (
+    VideoProductionBuddyConfig,
+)
 from tools.base_tool import ToolResult
 from lib.scoring import ProviderScore
 from tools.audio.openai_tts import OpenAITTS
@@ -24,7 +27,10 @@ class _AvailableProviderTool:
         self.agent_skills = []
         self.input_schema = {"properties": {"prompt": {"type": "string"}}}
         self.supports = {}
+        self.model_options: list[dict[str, object]] = []
         self.calls: list[dict[str, object]] = []
+        self.cost_calls: list[dict[str, object]] = []
+        self.runtime_calls: list[dict[str, object]] = []
 
     def get_status(self):
         from tools.base_tool import ToolStatus
@@ -44,6 +50,16 @@ class _AvailableProviderTool:
     def execute(self, inputs: dict[str, object]) -> ToolResult:
         self.calls.append(dict(inputs))
         return ToolResult(success=True, data={"inputs": inputs})
+
+    def estimate_cost(self, inputs: dict[str, object]) -> float:
+        self.cost_calls.append(dict(inputs))
+        model = inputs.get("model") or inputs.get("model_variant")
+        return 4.5 if model == "gen4.5" else 0.1
+
+    def estimate_runtime(self, inputs: dict[str, object]) -> float:
+        self.runtime_calls.append(dict(inputs))
+        model = inputs.get("model") or inputs.get("model_variant")
+        return 45.0 if model == "gen4.5" else 10.0
 
 
 class _BrokenStatusProviderTool(_AvailableProviderTool):
@@ -70,6 +86,12 @@ def test_selector_schemas_require_output_path_for_generation_but_not_rank() -> N
 
         rank_inputs = {**generation_inputs, "operation": "rank"}
         jsonschema.validate(instance=rank_inputs, schema=selector.input_schema)
+
+
+def test_selector_schemas_expose_model_override_fields() -> None:
+    assert "model_variant" in VideoSelector().input_schema["properties"]
+    assert "model" in ImageSelector().input_schema["properties"]
+    assert "model_id" in TTSSelector().input_schema["properties"]
 
 
 def test_image_selector_maps_edit_inputs_to_wanx_contract(monkeypatch, tmp_path):
@@ -139,6 +161,364 @@ def test_video_selector_passes_local_reference_path_to_wan_api_without_fal_uploa
     assert result.success
     assert captured["image_path"] == str(source)
     assert captured["output_path"] == "projects/demo/assets/video/product-frame.mp4"
+
+
+def test_video_selector_applies_env_model_preference(monkeypatch):
+    selector = VideoSelector()
+    provider = _AvailableProviderTool("video_provider", provider="selected")
+    provider.input_schema = {
+        "properties": {
+            "prompt": {"type": "string"},
+            "output_path": {"type": "string"},
+            "model_variant": {"type": "string"},
+        }
+    }
+
+    monkeypatch.setenv("VPB_VIDEO_GENERATION_PROVIDER", "selected")
+    monkeypatch.setenv("VPB_VIDEO_GENERATION_MODEL", "fast")
+    monkeypatch.setattr(selector, "_providers", lambda: [provider])
+    monkeypatch.setattr(
+        "lib.scoring.rank_providers",
+        lambda candidates, _ctx: [
+            ProviderScore(tool_name=tool.name, provider=tool.provider, task_fit=1.0)
+            for tool in candidates
+        ],
+    )
+
+    result = selector.execute(
+        {
+            "prompt": "Cinematic launch shot",
+            "output_path": "projects/demo/assets/video/preferred.mp4",
+        }
+    )
+
+    assert result.success
+    assert provider.calls[0]["model_variant"] == "fast"
+    assert provider.calls[0]["output_path"] == "projects/demo/assets/video/preferred.mp4"
+
+
+def test_video_selector_env_provider_overrides_explicit_auto(monkeypatch):
+    selector = VideoSelector()
+    selected = _AvailableProviderTool("selected_video", provider="selected")
+    fallback = _AvailableProviderTool("fallback_video", provider="fallback")
+
+    monkeypatch.setenv("VPB_VIDEO_GENERATION_PROVIDER", "selected")
+    monkeypatch.setattr(selector, "_providers", lambda: [selected, fallback])
+    monkeypatch.setattr(
+        "lib.scoring.rank_providers",
+        lambda candidates, _ctx: [
+            ProviderScore(tool_name="fallback_video", provider="fallback", task_fit=1.0),
+            ProviderScore(tool_name="selected_video", provider="selected", task_fit=0.1),
+        ],
+    )
+
+    result = selector.execute(
+        {
+            "prompt": "Cinematic launch shot",
+            "preferred_provider": "auto",
+            "output_path": "projects/demo/assets/video/preferred.mp4",
+        }
+    )
+
+    assert result.success
+    assert selected.calls
+    assert not fallback.calls
+
+
+def test_video_selector_explicit_provider_ignores_env_model_default(
+    monkeypatch,
+):
+    selector = VideoSelector()
+    runway = _AvailableProviderTool("runway_video", provider="runway")
+    runway.input_schema = {
+        "properties": {
+            "prompt": {"type": "string"},
+            "output_path": {"type": "string"},
+            "model": {"type": "string"},
+        }
+    }
+    runway.model_options = [
+        {"id": "gen4.5", "field": "model", "default": False}
+    ]
+    seedance = _AvailableProviderTool("seedance_video", provider="seedance")
+    seedance.model_options = [
+        {"id": "standard", "field": "model_variant", "default": True}
+    ]
+
+    monkeypatch.setenv("VPB_VIDEO_GENERATION_ALLOWED_PROVIDERS", "seedance")
+    monkeypatch.setenv("VPB_VIDEO_GENERATION_MODEL", "MiniMax-Hailuo-2.3")
+    monkeypatch.setattr(selector, "_providers", lambda: [runway, seedance])
+    monkeypatch.setattr(
+        "lib.scoring.rank_providers",
+        lambda candidates, _ctx: [
+            ProviderScore(tool_name=tool.name, provider=tool.provider, task_fit=1.0)
+            for tool in candidates
+        ],
+    )
+
+    result = selector.execute(
+        {
+            "prompt": "Cinematic launch shot",
+            "preferred_provider": "runway",
+            "output_path": "projects/demo/assets/video/runway.mp4",
+        }
+    )
+
+    assert result.success
+    assert runway.calls
+    assert "model" not in runway.calls[0]
+    assert "preferred_provider" not in runway.calls[0]
+    assert "allowed_providers" not in runway.calls[0]
+    assert not seedance.calls
+    assert result.data["selected_provider"] == "runway"
+
+
+def test_video_selector_explicit_provider_honors_explicit_model_alias(monkeypatch):
+    selector = VideoSelector()
+    runway = _AvailableProviderTool("runway_video", provider="runway")
+    runway.input_schema = {
+        "properties": {
+            "prompt": {"type": "string"},
+            "output_path": {"type": "string"},
+            "model": {"type": "string"},
+        }
+    }
+    runway.model_options = [
+        {"id": "gen4.5", "field": "model", "default": False}
+    ]
+    seedance = _AvailableProviderTool("seedance_video", provider="seedance")
+    seedance.model_options = [
+        {"id": "standard", "field": "model_variant", "default": True}
+    ]
+
+    monkeypatch.setenv("VPB_VIDEO_GENERATION_MODEL", "MiniMax-Hailuo-2.3")
+    monkeypatch.setattr(selector, "_providers", lambda: [runway, seedance])
+    monkeypatch.setattr(
+        "lib.scoring.rank_providers",
+        lambda candidates, _ctx: [
+            ProviderScore(tool_name=tool.name, provider=tool.provider, task_fit=1.0)
+            for tool in candidates
+        ],
+    )
+
+    result = selector.execute(
+        {
+            "prompt": "Cinematic launch shot",
+            "preferred_provider": "runway",
+            "model": "gen4.5",
+            "output_path": "projects/demo/assets/video/runway.mp4",
+        }
+    )
+
+    assert result.success
+    assert runway.calls[0]["model"] == "gen4.5"
+    assert "model_variant" not in runway.calls[0]
+    assert not seedance.calls
+
+
+def test_video_selector_model_only_env_preference_filters_matching_provider(monkeypatch):
+    selector = VideoSelector()
+    selected = _AvailableProviderTool("selected_video", provider="selected")
+    selected.input_schema = {
+        "properties": {
+            "prompt": {"type": "string"},
+            "output_path": {"type": "string"},
+            "model_variant": {"type": "string"},
+        }
+    }
+    selected.model_options = [
+        {"id": "fast", "field": "model_variant", "default": True}
+    ]
+    fallback = _AvailableProviderTool("fallback_video", provider="fallback")
+    fallback.input_schema = selected.input_schema
+    fallback.model_options = [
+        {"id": "slow", "field": "model_variant", "default": True}
+    ]
+
+    monkeypatch.setenv("VPB_VIDEO_GENERATION_MODEL", "fast")
+    monkeypatch.setattr(selector, "_providers", lambda: [selected, fallback])
+    monkeypatch.setattr(
+        "lib.scoring.rank_providers",
+        lambda candidates, _ctx: [
+            ProviderScore(tool_name="fallback_video", provider="fallback", task_fit=1.0),
+            ProviderScore(tool_name="selected_video", provider="selected", task_fit=0.1),
+        ],
+    )
+
+    result = selector.execute(
+        {
+            "prompt": "Cinematic launch shot",
+            "output_path": "projects/demo/assets/video/preferred.mp4",
+        }
+    )
+
+    assert result.success
+    assert selected.calls[0]["model_variant"] == "fast"
+    assert not fallback.calls
+
+
+def test_video_selector_filters_explicit_model_alias_before_ranking(monkeypatch):
+    selector = VideoSelector()
+    selected = _AvailableProviderTool("runway_like", provider="runway")
+    selected.input_schema = {
+        "properties": {
+            "prompt": {"type": "string"},
+            "output_path": {"type": "string"},
+            "model": {"type": "string"},
+        }
+    }
+    selected.model_options = [
+        {"id": "gen4.5", "field": "model", "default": False}
+    ]
+    fallback = _AvailableProviderTool("other_video", provider="fallback")
+    fallback.input_schema = selected.input_schema
+    fallback.model_options = [
+        {"id": "seedance2", "field": "model", "default": True}
+    ]
+
+    monkeypatch.setattr(selector, "_providers", lambda: [selected, fallback])
+    monkeypatch.setattr(
+        "lib.scoring.rank_providers",
+        lambda candidates, _ctx: [
+            ProviderScore(tool_name=tool.name, provider=tool.provider, task_fit=1.0)
+            for tool in candidates
+        ],
+    )
+
+    result = selector.execute(
+        {
+            "prompt": "Cinematic launch shot",
+            "model": "gen4.5",
+            "output_path": "projects/demo/assets/video/runway.mp4",
+        }
+    )
+
+    assert result.success
+    assert selected.calls[0]["model"] == "gen4.5"
+    assert "model_variant" not in selected.calls[0]
+    assert not fallback.calls
+
+
+def test_video_selector_estimates_with_provider_adapted_model_field(monkeypatch):
+    selector = VideoSelector()
+    selected = _AvailableProviderTool("runway_like", provider="runway")
+    selected.input_schema = {
+        "properties": {
+            "prompt": {"type": "string"},
+            "output_path": {"type": "string"},
+            "model": {"type": "string"},
+            "duration": {"type": "integer"},
+        }
+    }
+    selected.model_options = [
+        {"id": "gen4.5", "field": "model", "default": False}
+    ]
+
+    monkeypatch.setenv("VPB_VIDEO_GENERATION_MODEL", "gen4.5")
+    monkeypatch.setattr(selector, "_providers", lambda: [selected])
+    monkeypatch.setattr(
+        "lib.scoring.rank_providers",
+        lambda candidates, _ctx: [
+            ProviderScore(tool_name=tool.name, provider=tool.provider, task_fit=1.0)
+            for tool in candidates
+        ],
+    )
+
+    assert selector.estimate_cost({"prompt": "Cinematic launch shot"}) == 4.5
+    assert selector.estimate_runtime({"prompt": "Cinematic launch shot"}) == 45.0
+    assert selected.cost_calls[0]["model"] == "gen4.5"
+    assert "model_variant" not in selected.cost_calls[0]
+    assert selected.runtime_calls[0]["model"] == "gen4.5"
+    assert "model_variant" not in selected.runtime_calls[0]
+
+
+def test_image_selector_explicit_model_beats_env_model_preference(monkeypatch):
+    selector = ImageSelector()
+    provider = _AvailableProviderTool("image_provider", provider="selected")
+    provider.input_schema = {
+        "properties": {
+            "prompt": {"type": "string"},
+            "output_path": {"type": "string"},
+            "model": {"type": "string"},
+        }
+    }
+
+    monkeypatch.setenv("VPB_IMAGE_GENERATION_PROVIDER", "selected")
+    monkeypatch.setenv("VPB_IMAGE_GENERATION_MODEL", "configured-model")
+    monkeypatch.setattr(selector, "_providers", lambda: [provider])
+    monkeypatch.setattr(
+        "lib.scoring.rank_providers",
+        lambda candidates, _ctx: [
+            ProviderScore(tool_name=tool.name, provider=tool.provider, task_fit=1.0)
+            for tool in candidates
+        ],
+    )
+
+    result = selector.execute(
+        {
+            "prompt": "Product key visual",
+            "model": "explicit-model",
+            "output_path": "projects/demo/assets/images/preferred.png",
+        }
+    )
+
+    assert result.success
+    assert provider.calls[0]["model"] == "explicit-model"
+
+
+def test_image_selector_relaxes_env_text_to_image_model_for_edit_requests(monkeypatch):
+    selector = ImageSelector()
+    generation_only = _AvailableProviderTool("flux_image", provider="flux")
+    generation_only.input_schema = {
+        "properties": {
+            "prompt": {"type": "string"},
+            "model": {"type": "string"},
+            "output_path": {"type": "string"},
+        }
+    }
+    generation_only.model_options = [
+        {"id": "flux-2-pro", "field": "model", "default": True}
+    ]
+    edit_provider = _AvailableProviderTool("wanx_image", provider="bailian")
+    edit_provider.supports = {"image_edit": True}
+    edit_provider.input_schema = {
+        "properties": {
+            "prompt": {"type": "string"},
+            "operation": {"type": "string"},
+            "base_image_path": {"type": "string"},
+            "output_path": {"type": "string"},
+        }
+    }
+    edit_provider.model_options = [
+        {"id": "qwen-image-2.0-pro", "field": "model", "default": True}
+    ]
+
+    monkeypatch.setenv("VPB_IMAGE_GENERATION_MODEL", "flux-2-pro")
+    monkeypatch.setattr(selector, "_providers", lambda: [generation_only, edit_provider])
+    monkeypatch.setattr(
+        "lib.scoring.rank_providers",
+        lambda candidates, _ctx: [
+            ProviderScore(tool_name=tool.name, provider=tool.provider, task_fit=1.0)
+            for tool in candidates
+        ],
+    )
+
+    result = selector.execute(
+        {
+            "prompt": "Keep the product, change the background",
+            "generation_mode": "edit",
+            "image_path": "projects/demo/reference_assets/product.png",
+            "output_path": "projects/demo/assets/images/edited.png",
+        }
+    )
+
+    assert result.success
+    assert generation_only.calls == []
+    assert edit_provider.calls[0]["operation"] == "image_editing"
+    assert edit_provider.calls[0]["base_image_path"] == (
+        "projects/demo/reference_assets/product.png"
+    )
+    assert "model" not in edit_provider.calls[0]
 
 
 def test_video_selector_selects_highest_ranked_tool_when_provider_has_multiple_tools(monkeypatch):
@@ -490,6 +870,7 @@ def test_selector_idempotency_keys_include_routing_and_generation_inputs():
                 "operation": "image_to_video",
                 "preferred_provider": "auto",
                 "allowed_providers": ["seedance"],
+                "model_variant": "standard",
                 "reference_image_path": "projects/demo/reference_assets/product_a.png",
                 "aspect_ratio": "16:9",
                 "duration": "5",
@@ -499,6 +880,8 @@ def test_selector_idempotency_keys_include_routing_and_generation_inputs():
                 {"prompt": "Animate the alternate product frame"},
                 {"operation": "reference_to_video"},
                 {"allowed_providers": ["wan_video_api"]},
+                {"model_variant": "fast"},
+                {"model": "gen4.5"},
                 {"reference_image_path": "projects/demo/reference_assets/product_b.png"},
                 {"duration": "10"},
                 {"resolution": "1080p"},
@@ -512,6 +895,7 @@ def test_selector_idempotency_keys_include_routing_and_generation_inputs():
                 "generation_mode": "edit",
                 "preferred_provider": "auto",
                 "allowed_providers": ["bailian"],
+                "model": "wan2.7-image-pro",
                 "image_path": "projects/demo/reference_assets/product_a.png",
                 "width": 1024,
                 "height": 1024,
@@ -521,6 +905,7 @@ def test_selector_idempotency_keys_include_routing_and_generation_inputs():
                 {"prompt": "Product key visual alternate"},
                 {"generation_mode": "generate"},
                 {"allowed_providers": ["openai"]},
+                {"model": "wan2.7-image"},
                 {"image_path": "projects/demo/reference_assets/product_b.png"},
                 {"width": 1536},
                 {"seed": 456},

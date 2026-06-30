@@ -438,10 +438,11 @@ print(json.dumps(registry.provider_menu_summary(), indent=2))
 "
 ```
 
-The summary returns four fields the agent should translate into plain language:
+The summary returns five fields the agent should translate into plain language:
 
 - `composition_runtimes` — booleans for `ffmpeg`, `remotion`, `hyperframes`. This is the source of truth for the "Present Both Composition Runtimes (HARD RULE)" check.
 - `capabilities[]` — one entry per capability family with `configured / total` counts and provider lists. Ready-made for the "N of M configured" menu.
+- `model_choices[]` — selectable provider/model variants grouped by capability/tool, including the selector input field (`model_variant`, `model`, or `model_id`), defaults, and any quality/speed/cost hints exposed by the provider tool.
 - `setup_offers[]` — unavailable tools whose install is a 1-minute env-var fix. Lead with these when offering upgrades.
 - `runtime_warnings[]` — specific signals like "hyperframes: npm package not resolvable". Surface these to the user verbatim — they're the kind of silent-failure bugs that break the governance contract.
 
@@ -466,6 +467,15 @@ Then:
 ### Provider Menu (Mandatory at Preflight)
 
 Already fetched via `provider_menu_summary()` above. Read that output and **present it to the user as a capability menu**, not as a flat tool list. Use `provider_menu()` directly only when you need the per-tool detail the summary collapses.
+
+Also surface relevant `model_choices[]` entries for any capability the user is
+likely to use. The user must be able to choose quality/cost/speed tradeoffs
+after setting API keys; do not present providers as a black box. Model defaults
+live beside API keys as `VPB_*` variables in `.env` (template:
+`.env.example`). Those defaults are selector inputs, not hidden decisions, and
+still need to be announced before a paid or consequential generation call. For
+user-facing setup help, point users to `.env.example`, `make models-list`, and
+`make models-check ENV_FILE=.env`.
 
 **How to present:**
 
@@ -637,10 +647,12 @@ Key capability families to look for in the output:
 - **tts** — Text-to-speech providers. Route via `tts_selector`.
 - **video_generation** — Video generation providers (cloud, local GPU, stock). Route via `video_selector`.
 - **image_generation** — Image generation providers (cloud, local GPU, stock). Route via `image_selector`.
-- **music_generation** — Music and sound effect generation.
+- **music_generation** — Music and sound effect generation. Route via `music_selector`.
 - **video_post** — Composition, stitching, trimming (FFmpeg-based, always local).
 - **audio_processing** — Mixing, enhancement (FFmpeg-based, always local).
-- **analysis** — Transcription, scene detection, frame sampling.
+- **analysis** — Scene detection, frame sampling, and broader media analysis.
+- **transcription** — Speech-to-text providers. Route via `transcription_selector`.
+- **text_generation** — Optional billed LLM helper tools. Route via `text_selector` only after the required user approval.
 - **avatar** — Talking head and lip sync generation.
 - **character_animation** — Local character specs, SVG rigs, pose libraries, action timelines, previews, and QA.
 - **enhancement** — Upscale, background removal, face enhance, color grading.
@@ -666,13 +678,16 @@ All tools call via `.execute(params_dict)` (returns `ToolResult` with `.success`
 
 ### Selector Pattern
 
-Three selector tools abstract multi-provider capabilities. **Selectors auto-discover providers from the registry.** Adding a new provider tool automatically makes it available through the selector — no selector code changes needed.
+Selector tools abstract multi-provider capabilities. **Selectors auto-discover providers from the registry.** Adding a new provider tool automatically makes it available through the selector — no selector code changes needed.
 
 | Selector | Routes to | How it discovers |
 |----------|-----------|-----------------|
 | `tts_selector` | All tools with `capability="tts"` (ElevenLabs, Google TTS, OpenAI, Piper) | `registry.get_by_capability("tts")` |
 | `image_selector` | All tools with `capability="image_generation"` (FLUX, Google Imagen, DALL-E, Recraft, etc.) | `registry.get_by_capability("image_generation")` |
 | `video_selector` | All tools with `capability="video_generation"` | `registry.get_by_capability("video_generation")` |
+| `music_selector` | All tools with `capability="music_generation"` | `registry.get_by_capability("music_generation")` |
+| `text_selector` | Optional billed tools with `capability="text_generation"` | `registry.get_by_capability("text_generation")` |
+| `transcription_selector` | All tools with `capability="transcription"` | `registry.get_by_capability("transcription")` |
 
 Selectors route based on: user preference > availability > discovery order. They adapt input schemas between providers transparently.
 

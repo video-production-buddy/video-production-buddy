@@ -8,7 +8,9 @@ the tool file in tools/video/; no changes to this selector are needed.
 from __future__ import annotations
 
 import os
+from typing import Mapping
 
+from lib.model_preferences import apply_model_preferences, filter_model_candidates
 from tools.base_tool import BaseTool, ToolResult, ToolRuntime, ToolStability, ToolStatus, ToolTier
 from tools.status_utils import (
     is_tool_available,
@@ -53,6 +55,8 @@ class VideoSelector(BaseTool):
         "prompt",
         "preferred_provider",
         "allowed_providers",
+        "model_variant",
+        "model",
         "operation",
         "target_operation",
         "aspect_ratio",
@@ -75,6 +79,20 @@ class VideoSelector(BaseTool):
                 "type": "string",
                 "description": "Provider name or 'auto'. Valid values are discovered at runtime from the registry.",
                 "default": "auto",
+            },
+            "model_variant": {
+                "type": "string",
+                "description": (
+                    "Provider-specific model variant. Valid values are reported by "
+                    "provider_menu_summary()['model_choices'] for the selected tool."
+                ),
+            },
+            "model": {
+                "type": "string",
+                "description": (
+                    "Alias for providers whose advertised model choice field is "
+                    "'model' instead of 'model_variant'."
+                ),
             },
             "allowed_providers": {"type": "array", "items": {"type": "string"}},
             "operation": {
@@ -155,6 +173,10 @@ class VideoSelector(BaseTool):
                 "type": "array",
                 "items": {"type": "string"},
             },
+            "selected_tool_model_options": {
+                "type": "array",
+                "items": {"type": "object"},
+            },
             "alternatives_considered": {
                 "type": "array",
                 "items": {"type": "string"},
@@ -215,22 +237,47 @@ class VideoSelector(BaseTool):
         return ToolStatus.UNAVAILABLE
 
     def estimate_cost(self, inputs: dict[str, object]) -> float:
-        candidates = self._filter_candidates(inputs, self._providers())
+        original_inputs = dict(inputs)
+        inputs = apply_model_preferences(original_inputs, self.capability)
+        providers = self._providers()
+        inputs = self._relax_incompatible_env_model_default(
+            original_inputs, inputs, providers
+        )
+        candidates = self._filter_candidates(inputs, providers)
         if not candidates:
             return 0.0
         tool, _ = self._select_best_tool(inputs, candidates, self._prepare_task_context(inputs))
-        return tool.estimate_cost(inputs) if tool else 0.0
+        if tool is None:
+            return 0.0
+        adapted, _ = self._provider_inputs(inputs, tool)
+        return tool.estimate_cost(adapted)
 
     def estimate_runtime(self, inputs: dict[str, object]) -> float:
-        candidates = self._operation_candidates(inputs, self._providers())
+        original_inputs = dict(inputs)
+        inputs = apply_model_preferences(original_inputs, self.capability)
+        providers = self._providers()
+        inputs = self._relax_incompatible_env_model_default(
+            original_inputs, inputs, providers
+        )
+        candidates = self._operation_candidates(inputs, providers)
         if not candidates:
             return 0.0
         tool, _ = self._select_best_tool(inputs, candidates, self._prepare_task_context(inputs))
-        return tool.estimate_runtime(inputs) if tool else 0.0
+        if tool is None:
+            return 0.0
+        adapted, _ = self._provider_inputs(inputs, tool)
+        return tool.estimate_runtime(adapted)
+
+    def idempotency_key(self, inputs: dict[str, object]) -> str:
+        return super().idempotency_key(
+            apply_model_preferences(dict(inputs), self.capability)
+        )
 
     def execute(self, inputs: dict[str, object]) -> ToolResult:
         from lib.scoring import rank_providers
 
+        original_inputs = dict(inputs)
+        inputs = apply_model_preferences(original_inputs, self.capability)
         if inputs.get("operation") != "rank":
             _, output_error = require_explicit_output_path(
                 inputs, self.name, artifact_label="generated video"
@@ -238,9 +285,13 @@ class VideoSelector(BaseTool):
             if output_error:
                 return output_error
 
+        providers = self._providers()
+        inputs = self._relax_incompatible_env_model_default(
+            original_inputs, inputs, providers
+        )
         task_context = self._prepare_task_context(inputs)
         requested_operation = self._requested_generation_operation(inputs)
-        candidates = self._operation_candidates(inputs, self._providers())
+        candidates = self._operation_candidates(inputs, providers)
 
         # Rank mode — return scored provider rankings without generating
         if inputs.get("operation") == "rank":
@@ -271,41 +322,13 @@ class VideoSelector(BaseTool):
         if output_error:
             return output_error
 
-        # Adapt input keys: stock tools use 'query' while generators use 'prompt'
-        adapted = dict(inputs)
-        if hasattr(tool, 'input_schema'):
-            required = tool.input_schema.get("properties", {})
-            if "query" in required and "query" not in adapted:
-                adapted["query"] = adapted.get("prompt", "")
-
-        tool_props = getattr(tool, "input_schema", {}).get("properties", {})
-
-        if adapted.get("operation") == "image_to_video":
-            if adapted.get("reference_image_url") and "image_url" in tool_props:
-                adapted.setdefault("image_url", adapted["reference_image_url"])
-
-            if adapted.get("reference_image_path"):
-                # Prefer a provider's native local-path input. Only upload to
-                # fal.ai when the chosen provider requires a URL and lacks a
-                # local path field.
-                if "image_path" in tool_props:
-                    adapted.setdefault("image_path", adapted["reference_image_path"])
-                elif "reference_image_path" not in tool_props and "image_url" in tool_props:
-                    try:
-                        from tools.video._shared import upload_image_fal
-                        adapted["image_url"] = upload_image_fal(adapted["reference_image_path"])
-                    except Exception as e:
-                        return ToolResult(success=False, error=f"Failed to upload reference image: {e}")
-
-        if adapted.get("operation") == "reference_to_video" and "ref_images" in tool_props:
-            ref_images = []
-            ref_images.extend(adapted.get("reference_image_urls") or [])
-            ref_images.extend(adapted.get("reference_image_paths") or [])
-            if ref_images:
-                adapted["ref_images"] = ref_images
-
-        adapted.pop("preferred_provider", None)
-        adapted.pop("allowed_providers", None)
+        adapted, adaptation_error = self._provider_inputs(
+            inputs,
+            tool,
+            allow_upload=True,
+        )
+        if adaptation_error:
+            return ToolResult(success=False, error=adaptation_error)
 
         result = tool.execute(adapted)
         if result.success:
@@ -337,7 +360,7 @@ class VideoSelector(BaseTool):
 
         preferred = inputs.get("preferred_provider", "auto")
         candidates = _allowed_candidates(inputs, candidates)
-        candidates = self._filter_candidates(inputs, candidates)
+        candidates = self._operation_candidates(inputs, candidates)
 
         env_hint = os.environ.get("VIDEO_GEN_LOCAL_MODEL", "").lower()
         env_map = {
@@ -369,6 +392,7 @@ class VideoSelector(BaseTool):
                     tool = available_by_name.get(score.tool_name)
                     if tool is not None:
                         return tool, score
+            return None, None
 
         # Return the highest-scored available provider
         for score in rankings:
@@ -388,6 +412,100 @@ class VideoSelector(BaseTool):
             operation=self._requested_generation_operation(inputs),
         )
 
+    def _relax_incompatible_env_model_default(
+        self,
+        original_inputs: dict[str, object],
+        inputs: dict[str, object],
+        candidates: list[BaseTool],
+    ) -> dict[str, object]:
+        """Drop an env-only model default when it conflicts with the operation."""
+        if "model_variant" in original_inputs or "model" in original_inputs:
+            return inputs
+
+        model = _selector_model_value(inputs)
+        if model is None:
+            return inputs
+
+        operation_candidates = self._filter_candidates(inputs, candidates)
+        if filter_model_candidates(inputs, self.capability, operation_candidates):
+            return inputs
+
+        operation = self._requested_generation_operation(inputs)
+        if not _model_known_but_incompatible(model, operation, operation_candidates):
+            return inputs
+
+        relaxed = dict(inputs)
+        relaxed.pop("model_variant", None)
+        relaxed.pop("model", None)
+        if self._operation_candidates(relaxed, candidates):
+            return relaxed
+        return inputs
+
+    def _provider_inputs(
+        self,
+        inputs: dict[str, object],
+        tool: BaseTool,
+        *,
+        allow_upload: bool = False,
+    ) -> tuple[dict[str, object], str | None]:
+        """Map selector-level video fields to the selected provider schema."""
+        adapted = dict(inputs)
+        tool_props = getattr(tool, "input_schema", {}).get("properties", {})
+
+        # Stock tools use query while generated-video providers use prompt.
+        if "query" in tool_props and "query" not in adapted:
+            adapted["query"] = adapted.get("prompt", "")
+
+        if (
+            "model" in tool_props
+            and "model" not in adapted
+            and "model_variant" in adapted
+        ):
+            adapted["model"] = adapted["model_variant"]
+        if (
+            "model_variant" in tool_props
+            and "model_variant" not in adapted
+            and "model" in adapted
+        ):
+            adapted["model_variant"] = adapted["model"]
+        for model_key in ("model", "model_variant"):
+            if model_key in adapted and model_key not in tool_props:
+                adapted.pop(model_key)
+
+        if adapted.get("operation") == "image_to_video":
+            if adapted.get("reference_image_url") and "image_url" in tool_props:
+                adapted.setdefault("image_url", adapted["reference_image_url"])
+
+            if adapted.get("reference_image_path"):
+                # Prefer a provider's native local-path input. Only generation
+                # execution may upload to fal.ai for providers that require URLs.
+                if "image_path" in tool_props:
+                    adapted.setdefault("image_path", adapted["reference_image_path"])
+                elif (
+                    allow_upload
+                    and "reference_image_path" not in tool_props
+                    and "image_url" in tool_props
+                ):
+                    try:
+                        from tools.video._shared import upload_image_fal
+
+                        adapted["image_url"] = upload_image_fal(
+                            adapted["reference_image_path"]
+                        )
+                    except Exception as exc:
+                        return adapted, f"Failed to upload reference image: {exc}"
+
+        if adapted.get("operation") == "reference_to_video" and "ref_images" in tool_props:
+            ref_images = []
+            ref_images.extend(adapted.get("reference_image_urls") or [])
+            ref_images.extend(adapted.get("reference_image_paths") or [])
+            if ref_images:
+                adapted["ref_images"] = ref_images
+
+        adapted.pop("preferred_provider", None)
+        adapted.pop("allowed_providers", None)
+        return adapted, None
+
     @staticmethod
     def _tool_context_payload(tool: BaseTool) -> dict[str, object]:
         info = safe_tool_info(tool)
@@ -396,6 +514,7 @@ class VideoSelector(BaseTool):
             "required_agent_skills": info.get("agent_skills", []),
             "selected_tool_usage_location": info.get("usage_location"),
             "selected_tool_best_for": info.get("best_for", []),
+            "selected_tool_model_options": info.get("model_options", []),
         }
 
     def _serialize_rankings(self, candidates: list[BaseTool], rankings: list[object]) -> list[dict[str, object]]:
@@ -410,6 +529,7 @@ class VideoSelector(BaseTool):
                 item["usage_location"] = info.get("usage_location")
                 item["best_for"] = info.get("best_for", [])
                 item["supports"] = info.get("supports", {})
+                item["model_options"] = info.get("model_options", [])
                 item["status"] = safe_tool_status(tool).value
             serialized.append(item)
         return serialized
@@ -447,7 +567,11 @@ class VideoSelector(BaseTool):
         inputs: dict[str, object],
         candidates: list[BaseTool],
     ) -> list[BaseTool]:
-        return self._filter_candidates(inputs, candidates)
+        return filter_model_candidates(
+            inputs,
+            self.capability,
+            self._filter_candidates(inputs, candidates),
+        )
 
     @staticmethod
     def _requested_generation_operation(inputs: dict[str, object]) -> str:
@@ -468,3 +592,57 @@ def _allowed_candidates(
         tool for tool in candidates
         if safe_tool_provider(tool) in allowed or tool.name in allowed
     ]
+
+
+def _selector_model_value(inputs: dict[str, object]) -> str | None:
+    for field in ("model_variant", "model"):
+        value = inputs.get(field)
+        if value is not None:
+            value = str(value).strip()
+            if value:
+                return value
+    return None
+
+
+def _model_known_but_incompatible(
+    model: str,
+    operation: str,
+    candidates: list[BaseTool],
+) -> bool:
+    known = False
+    compatible = False
+    for tool in candidates:
+        for option in getattr(tool, "model_options", None) or []:
+            if not isinstance(option, Mapping):
+                continue
+            if str(option.get("field") or "model_variant") not in {
+                "model_variant",
+                "model",
+            }:
+                continue
+            if str(option.get("id")) != model:
+                continue
+            known = True
+            if _model_option_supports_operation(option, operation):
+                compatible = True
+    return known and not compatible
+
+
+def _model_option_supports_operation(
+    option: Mapping[str, object],
+    operation: str,
+) -> bool:
+    option_operation = option.get("operation")
+    if option_operation and str(option_operation) != operation:
+        return False
+
+    supports = option.get("supports")
+    if isinstance(supports, Mapping):
+        if supports.get(operation) is False:
+            return False
+        if operation == "text_to_video" and supports.get("supports_t2v") is False:
+            return False
+        if operation == "image_to_video" and supports.get("supports_i2v") is False:
+            return False
+
+    return True

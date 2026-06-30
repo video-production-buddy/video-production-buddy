@@ -64,6 +64,52 @@ class ElevenLabsTTS(BaseTool):
         "fully offline production",
         "privacy-constrained local-only workflows",
     ]
+    model_options = [
+        {
+            "id": "eleven_v3",
+            "name": "Eleven v3",
+            "field": "model_id",
+            "default": True,
+            "quality": "highest",
+            "speed": "medium",
+            "release_stage": "current_sota",
+            "last_verified": "2026-06-28",
+            "source_url": "https://elevenlabs.io/docs/overview/models",
+        },
+        {
+            "id": "eleven_multilingual_v2",
+            "name": "Eleven Multilingual v2",
+            "field": "model_id",
+            "default": False,
+            "quality": "high",
+            "speed": "medium",
+            "release_stage": "legacy_stable",
+            "last_verified": "2026-06-28",
+            "source_url": "https://elevenlabs.io/docs/overview/models",
+        },
+        {
+            "id": "eleven_flash_v2_5",
+            "name": "Eleven Flash v2.5",
+            "field": "model_id",
+            "default": False,
+            "quality": "good",
+            "speed": "fast",
+            "release_stage": "current_fast",
+            "last_verified": "2026-06-28",
+            "source_url": "https://elevenlabs.io/docs/overview/models",
+        },
+        {
+            "id": "eleven_turbo_v2_5",
+            "name": "Eleven Turbo v2.5",
+            "field": "model_id",
+            "default": False,
+            "quality": "high",
+            "speed": "fast",
+            "release_stage": "current_fast",
+            "last_verified": "2026-06-28",
+            "source_url": "https://elevenlabs.io/docs/overview/models",
+        },
+    ]
 
     input_schema = {
         "type": "object",
@@ -76,7 +122,13 @@ class ElevenLabsTTS(BaseTool):
             },
             "model_id": {
                 "type": "string",
-                "default": "eleven_multilingual_v2",
+                "enum": [
+                    "eleven_v3",
+                    "eleven_multilingual_v2",
+                    "eleven_flash_v2_5",
+                    "eleven_turbo_v2_5",
+                ],
+                "default": "eleven_v3",
                 "description": "TTS model to use",
             },
             "stability": {
@@ -198,7 +250,7 @@ class ElevenLabsTTS(BaseTool):
 
         text = inputs["text"]
         voice_id = inputs.get("voice_id", self.DEFAULT_VOICE_ID)
-        model_id = inputs.get("model_id", "eleven_multilingual_v2")
+        model_id = inputs.get("model_id", "eleven_v3")
         output_format = inputs.get("output_format", "mp3_44100_128")
 
         response = requests.post(

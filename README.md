@@ -56,13 +56,13 @@
   <video src="https://github.com/user-attachments/assets/df481a12-a150-41c6-97fe-24afcbeb85db" width="100%" controls></video>
 </div>
 
-> **MacBook Air ad** - "Please help me design an ad video for MacBook Air."
+> **织影 product ad** - a guided assistant flow for intake, proposal gates, asset generation, composition, and final review before delivery.
 
 <div align="center">
   <video src="https://github.com/user-attachments/assets/c240b2d1-5c65-41f1-8d71-454ae1f43f51" width="100%" controls></video>
 </div>
 
-> **织影 product ad** - a guided assistant flow for intake, proposal gates, asset generation, composition, and final review before delivery.
+> **MacBook Air ad** - "Please help me design an ad video for MacBook Air."
 
 ## Why It Is Different
 
@@ -82,7 +82,7 @@
 | The user must know exactly what to ask for | Chat and GenUI clarify needs before production decisions |
 | Trend and reference work is optional | Hot topics and viral videos add timely audience context during design |
 | Story quality is judged after rendering | Emotion pacing is reviewed in the lightweight text phase |
-| Hidden provider and cost choices | Visible provider routing, budget checks, and approval gates |
+| Hidden provider, model, and cost choices | Visible provider/model routing, budget checks, and approval gates |
 | Segments can drift from each other | Concept maps constrain cross-segment consistency |
 | Hard to resume or audit | Checkpointed artifacts and decision logs |
 | Generate first, fix later | Approve the plan before expensive generation |
@@ -193,7 +193,8 @@ make demo
 
 Success looks like this:
 
-- `make preflight` prints JSON with `composition_runtimes` and provider availability.
+- `make preflight` prints JSON with `composition_runtimes`, provider availability, and selectable model choices.
+- `make models-list` prints model choices in a readable list.
 - `make demo` renders local demo MP4 files under `projects/demos/renders/`.
 - No cloud API key is required for that demo path.
 
@@ -205,6 +206,13 @@ Re-run the local capability/provider summary anytime:
 
 ```bash
 make preflight
+```
+
+List model choices without reading raw JSON:
+
+```bash
+make models-list
+make models-list CAPABILITY=video_generation
 ```
 
 If HyperFrames is unavailable, you can ignore it at first; the zero-key demo mainly relies on Remotion and FFmpeg.
@@ -234,7 +242,32 @@ PEXELS_API_KEY=your-key       # Optional: stock media
 
 New to API keys? Follow [`docs/PROVIDERS.md#where-to-get-api-keys`](docs/PROVIDERS.md#where-to-get-api-keys) for official signup/key links and key-safety rules. Keep keys in `.env`; do not paste them into chat prompts, screenshots, issues, or committed files.
 
-For the full provider list, pricing notes, and free-tier guidance, see [`docs/PROVIDERS.md`](docs/PROVIDERS.md).
+For the full provider list, pricing notes, model-choice guidance, and free-tier
+guidance, see [`docs/PROVIDERS.md`](docs/PROVIDERS.md). `.env.example` now
+groups API keys and optional model defaults together. Copy it to `.env`, add
+the keys you use, then set optional `VPB_*` model defaults next to those keys.
+
+After editing local `.env`, validate it:
+
+```bash
+make models-check ENV_FILE=.env
+```
+
+To see valid provider/model values for the keys you configured:
+
+```bash
+make models-list
+make models-list CAPABILITY=video_generation
+```
+
+If you prefer a command-generated preview instead of editing `.env` manually:
+
+```bash
+make models-configure ENV_FILE=.env CAPABILITY=video_generation PRESET=fast DRY_RUN=1
+make models-configure ENV_FILE=.env CAPABILITY=video_generation PRESET=fast YES=1
+```
+
+Explicit request/tool inputs still win over `.env` defaults.
 
 Have an NVIDIA GPU and want local generation?
 
@@ -263,7 +296,7 @@ Out of the box, the local path can still do useful work:
 | Post-production | FFmpeg | Encoding, stitching, trimming, audio mixing, subtitle burn-in, and validation. |
 | Demos | `make demo` | Renders the checked-in zero-key demo suite under `projects/demos/renders/`. |
 
-For real production briefs, the assistant will present the preflight menu and tell you which providers are available, missing, or optional before spending on generation.
+For real production briefs, the assistant will present the preflight menu and tell you which providers and model options are available, missing, or optional before spending on generation.
 
 ### Start With A Prompt
 
@@ -367,6 +400,9 @@ Useful local commands:
 
 ```bash
 make preflight          # inspect configured provider/runtime availability
+make models-list        # readable model/provider list
+make models-check       # validate .env.example, or ENV_FILE=.env for local settings
+make models-configure   # optional command-generated .env model preference update
 make demo               # render the checked-in zero-key demo suite
 make demo-list          # list available demos
 make hyperframes-doctor # validate the HyperFrames runtime

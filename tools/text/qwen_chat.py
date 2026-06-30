@@ -32,6 +32,7 @@ from tools.base_tool import (
     ToolStatus,
     ToolTier,
 )
+from tools.model_options import build_model_options
 from tools.output_paths import require_optional_project_sidecar_path
 
 _CHAT_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
@@ -106,6 +107,12 @@ class QwenChat(BaseTool):
         "Replacing the agent's own reasoning (the harness is the primary reasoner)",
         "Multimodal image/video understanding (use qwen_vl instead)",
     ]
+    model_options = build_model_options(
+        _MODELS,
+        field="model",
+        default="qwen3.7-plus",
+        include_keys=("quality", "speed", "context", "note"),
+    )
 
     input_schema = {
         "type": "object",

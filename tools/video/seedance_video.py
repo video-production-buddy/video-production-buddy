@@ -72,6 +72,28 @@ class SeedanceVideo(BaseTool):
     # Premium model — beat out "experimental stability" baseline. The scoring
     # engine reads quality_score directly when present (see lib/scoring.py).
     quality_score = 0.95
+    model_options = [
+        {
+            "id": "standard",
+            "name": "Seedance 2.0 Standard",
+            "field": "model_variant",
+            "default": True,
+            "quality": "highest",
+            "speed": "medium",
+            "cost_hint": {"usd": 0.3034, "unit": "per_second"},
+            "note": "Highest quality Seedance route with native audio support.",
+        },
+        {
+            "id": "fast",
+            "name": "Seedance 2.0 Fast",
+            "field": "model_variant",
+            "default": False,
+            "quality": "high",
+            "speed": "fast",
+            "cost_hint": {"usd": 0.2419, "unit": "per_second"},
+            "note": "Lower-latency and lower-cost variant.",
+        },
+    ]
 
     input_schema = {
         "type": "object",

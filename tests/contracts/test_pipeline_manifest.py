@@ -25,6 +25,7 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 MANIFEST_PATH = ROOT / "pipeline_defs" / "ad-video.yaml"
 MANIFEST_SCHEMA_PATH = ROOT / "schemas" / "pipelines" / "pipeline_manifest.schema.json"
 BILLED_TEXT_CHAT_TOOLS = {"qwen_chat", "minimax_chat"}
+GENERATED_MUSIC_PROVIDER_TOOLS = {"music_gen", "minimax_music", "suno_music"}
 PIPELINE_TOOL_FIELDS = (
     "required_tools",
     "optional_tools",
@@ -391,6 +392,29 @@ def test_pipeline_manifests_do_not_auto_wire_billed_text_chat_tools():
                     violations.append(
                         f"{manifest_path.name}:{node_name}:{field}:{','.join(found)}"
                     )
+
+    assert violations == []
+
+
+def test_pipeline_manifests_route_generated_music_through_selector():
+    """Generated music should use selector-level routing so .env model defaults apply."""
+    violations: list[str] = []
+    for manifest_path in sorted((ROOT / "pipeline_defs").glob("*.yaml")):
+        manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+        for node in iter_manifest_dicts(manifest):
+            node_name = node.get("name", "<unnamed>")
+            for field in PIPELINE_TOOL_FIELDS:
+                values = node.get(field)
+                if not isinstance(values, list):
+                    continue
+                value_set = set(map(str, values))
+                found = sorted(GENERATED_MUSIC_PROVIDER_TOOLS.intersection(value_set))
+                if found:
+                    violations.append(
+                        f"{manifest_path.name}:{node_name}:{field}:{','.join(found)}"
+                    )
+                if "music_selector" in value_set:
+                    assert not found
 
     assert violations == []
 

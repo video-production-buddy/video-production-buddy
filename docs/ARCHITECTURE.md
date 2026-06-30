@@ -52,7 +52,7 @@ Video Production Buddy/
 │   ├── character/          # Local character specs, rigs, poses, timelines, QA
 │   ├── compliance/         # Deterministic structural compliance checks
 │   ├── enhancement/        # Upscale, bg removal, face enhance/restore, color grading
-│   ├── graphics/           # Image gen (FLUX, DALL-E, Recraft, local diffusion), stock, diagrams, code snippets, math animation
+│   ├── graphics/           # Image gen (FLUX, OpenAI GPT Image, Recraft, local diffusion), stock, diagrams, code snippets, math animation
 │   ├── interaction/         # GenUI local form tool for dense human gates
 │   ├── publishers/         # (Reserved)
 │   ├── subtitle/           # SRT/VTT generation from timestamps
@@ -203,18 +203,21 @@ Key queries:
 - `get_available()` — tools whose dependencies are satisfied
 - `find_fallback("elevenlabs_tts")` — resolve fallback chain
 - `support_envelope()` — full capability report for agent consumption
-- `provider_menu_summary()` — compact user-facing preflight menu with provider counts and composition runtime availability
+- `provider_menu_summary()` — compact user-facing preflight menu with provider counts, selectable model choices, and composition runtime availability
 - `gpu_required_tools()`, `network_required_tools()`
 
 ### Selector Pattern
 
-Three selector tools abstract multi-provider capabilities:
+Selector tools abstract multi-provider capabilities:
 
 | Selector | Capability | How selection works |
 |----------|-----------|---------------------|
 | `tts_selector` | Text-to-speech | Ranks discovered providers by task fit, quality, control, reliability, cost, latency, and continuity |
 | `image_selector` | Image generation | Ranks discovered providers from the live registry; no hardcoded provider order |
 | `video_selector` | Video generation | Ranks discovered providers from the live registry; user preference is respected when explicitly provided |
+| `music_selector` | Music generation | Ranks discovered music providers and honors `.env` provider/model preferences |
+| `text_selector` | Optional text generation | Routes approved billed text helper calls to configured text providers |
+| `transcription_selector` | Speech-to-text | Ranks discovered transcription providers and honors `.env` provider/model preferences |
 
 Selectors route based on: user preference when explicitly set, then scored ranking across available providers. They adapt input schemas between providers transparently.
 
@@ -226,17 +229,22 @@ The live inventory is intentionally registry-driven. Use:
 python -c "from tools.tool_registry import registry; import json; registry.discover(); print(json.dumps(registry.provider_menu_summary(), indent=2))"
 ```
 
+For user-facing model setup, use `make models-list` for a readable view, then
+copy `.env.example` to `.env` and set optional `VPB_*` model defaults beside
+the matching API keys. Validate local settings with
+`make models-check ENV_FILE=.env`.
+
 Representative capability families:
 
 | Capability | Examples |
 |------------|----------|
-| Analysis and transcription | `transcriber`, `qwen_asr`, `scene_detect`, `frame_sampler`, `video_analyzer`, `video_understand`, `visual_qa`, `audio_probe` |
+| Analysis and transcription | `transcription_selector`, `transcriber`, `qwen_asr`, `scene_detect`, `frame_sampler`, `video_analyzer`, `video_understand`, `visual_qa`, `audio_probe` |
 | TTS and audio | `tts_selector`, `cosyvoice_tts`, `doubao_tts`, `elevenlabs_tts`, `google_tts`, `minimax_tts`, `openai_tts`, `piper_tts`, `audio_mixer`, `audio_enhance` |
-| Music | `music_gen`, `minimax_music`, `suno_music`, plus search helpers such as `pixabay_music` |
+| Music | `music_selector`, `music_gen`, `minimax_music`, `suno_music`, plus search helpers such as `pixabay_music` |
 | Image generation and graphics | `image_selector`, `flux_image`, `grok_image`, `google_imagen`, `openai_image`, `recraft_image`, `wanx_image`, `local_diffusion`, stock image tools, `code_snippet`, `diagram_gen`, `math_animate` |
 | Video generation | `video_selector`, `wan_video_api`, `seedance_video`, `grok_video`, `heygen_video`, `higgsfield_video`, `veo_video`, `kling_video`, `runway_video`, `minimax_video`, local GPU tools, and stock video tools |
 | Video post-production | `video_compose`, `hyperframes_compose`, `video_stitch`, `video_trimmer`, `auto_reframe`, green-screen tools, silence cutting, showcase cards |
-| Text generation | `qwen_chat`, `minimax_chat` for optional ad-hoc script polishing, translation, summarization, and other explicitly routed billed text sub-tasks |
+| Text generation | `text_selector`, `qwen_chat`, `minimax_chat` for optional ad-hoc script polishing, translation, summarization, and other explicitly routed billed text sub-tasks |
 | Subtitles and captions | `subtitle_gen`, `remotion_caption_burn`, and the `tools.audio.subtitle_aligner` forced-alignment utility |
 | Validation and compliance | `provider_consistency_check`, `scene_fidelity_check`, `runtime_consistency_check`, `hallucination_contract_check`, `product_identity_consistency_check`, `sample_product_visibility_check`, `compliance_check` |
 | Interaction and planning support | `genui_interaction`, `genui_session`, `genui_surface`, `ad_knowledge_retriever`, source/clip acquisition tools, screen capture selectors, character-animation tools |
@@ -584,7 +592,7 @@ All config is validated via Pydantic models in `lib/config_model.py`.
 | Variable | Used By | Purpose |
 |----------|---------|---------|
 | `ELEVENLABS_API_KEY` | elevenlabs_tts, music_gen | TTS, music, sound effects |
-| `OPENAI_API_KEY` | openai_tts, openai_image | TTS fallback, DALL-E 3 |
+| `OPENAI_API_KEY` | openai_tts, openai_image | TTS fallback, OpenAI GPT Image |
 | `XAI_API_KEY` | grok_image, grok_video | Grok image editing/generation, Grok video generation |
 | `FAL_KEY` / `FAL_AI_API_KEY` | flux_image, recraft_image, seedance_video, kling_video, veo_video | fal.ai hosted image/video models |
 | `DASHSCOPE_API_KEY` | cosyvoice_tts, qwen_asr, wan_video_api, wanx_image, qwen_chat, qwen_vl | Alibaba Cloud Bailian / DashScope — Qwen3.7/CosyVoice TTS, Qwen ASR, HappyHorse/Wan video, Wanxiang image, Qwen LLM chat, Qwen-VL vision |
@@ -594,18 +602,19 @@ All config is validated via Pydantic models in `lib/config_model.py`.
 | `PIXABAY_API_KEY` | pixabay_image, pixabay_video | Stock media |
 | `UNSPLASH_ACCESS_KEY`, `COVERR_API_KEY`, `VIDEVO_API_KEY`, `NASA_API_KEY`, `NARA_API_KEY`, `POND5_API_KEY` | source/clip acquisition | Optional stock-source search keys and higher-rate public-media access |
 | `FREESOUND_API_KEY` | freesound_music | Freesound music and sound search |
-| `GOOGLE_API_KEY` / `GEMINI_API_KEY` | google_imagen, google_tts | Google Imagen images, Google Cloud TTS |
+| `GOOGLE_API_KEY` / `GEMINI_API_KEY` | google_imagen, google_tts | Google Gemini/Imagen images, Google Cloud TTS |
 | `RUNWAY_API_KEY` / `RUNWAYML_API_SECRET` | runway_video | Runway direct video generation |
 | `REPLICATE_API_TOKEN` | seedance_replicate | Replicate-hosted Seedance video |
 | `HIGGSFIELD_API_KEY` + `HIGGSFIELD_API_SECRET` / `HIGGSFIELD_KEY` | higgsfield_video | Higgsfield multi-model video |
 | `MINIMAX_API_KEY` | minimax_music, minimax_video, minimax_tts, minimax_chat | MiniMax native platform — Music 2.6, Hailuo 2.3 video, Speech 2.8 TTS, MiniMax-M3 chat. Set `MINIMAX_API_BASE=https://api.minimax.io/v1` for the overseas host (default is the China-mainland `api.minimaxi.com`). |
 | `SUNO_API_KEY` | suno_music | Suno music generation |
+| `VPB_*_PROVIDER`, `VPB_*_MODEL`, `VPB_*_ALLOWED_PROVIDERS` | selector tools | Optional local provider/model defaults and provider shortlists in `.env`, copied from `.env.example`; examples include `VPB_VIDEO_GENERATION_MODEL`, `VPB_TTS_MODEL`, and `VPB_VIDEO_GENERATION_ALLOWED_PROVIDERS` |
 | `MODAL_LTX2_ENDPOINT_URL` | ltx_video_modal | Self-hosted LTX-2 |
 | `VIDEO_GEN_LOCAL_ENABLED` | local video tools | Enable local GPU generation |
 | `VIDEO_GEN_LOCAL_MODEL` | wan, hunyuan, ltx, cogvideo | Select local model |
 | `HF_TOKEN` | transcriber | Optional HuggingFace token for speaker diarization |
 | `SADTALKER_PATH`, `WAV2LIP_PATH` | talking_head, lip_sync | Local avatar/lip-sync repository locations |
-| `VIDEO_PRODUCTION_BUDDY_CACHE_DIR`, `VIDEO_PRODUCTION_BUDDY_CACHE_MAX_GB`, `SUBTITLE_ALIGNER_DEVICE` | cache and subtitle alignment utilities | Optional local runtime tuning |
+| `VIDEO_PRODUCTION_BUDDY_CACHE_DIR`, `VIDEO_PRODUCTION_BUDDY_CACHE_MAX_GB`, `SUBTITLE_ALIGNER_DEVICE`, `VPB_ALLOW_BROWSER_OPEN` | cache, subtitle alignment, and GenUI browser utilities | Optional local runtime tuning |
 
 ---
 

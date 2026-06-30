@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from lib.model_preferences import apply_model_preferences, filter_model_candidates
 from tools.base_tool import BaseTool, ToolResult, ToolRuntime, ToolStability, ToolTier, ToolStatus
 from tools.status_utils import (
     is_tool_available,
@@ -74,7 +75,7 @@ class TTSSelector(BaseTool):
             },
             "model_id": {
                 "type": "string",
-                "description": "TTS model to use (e.g. eleven_multilingual_v2). Passed through to provider.",
+                "description": "TTS model to use (e.g. eleven_v3). Passed through to provider.",
             },
             "stability": {
                 "type": "number", "minimum": 0, "maximum": 1,
@@ -146,6 +147,10 @@ class TTSSelector(BaseTool):
                 "type": "array",
                 "items": {"type": "string"},
             },
+            "selected_tool_model_options": {
+                "type": "array",
+                "items": {"type": "object"},
+            },
             "alternatives_considered": {
                 "type": "array",
                 "items": {"type": "string"},
@@ -206,15 +211,22 @@ class TTSSelector(BaseTool):
         return ToolStatus.UNAVAILABLE
 
     def estimate_cost(self, inputs: dict[str, Any]) -> float:
+        inputs = apply_model_preferences(dict(inputs), self.capability)
         candidates = self._providers()
         if not candidates:
             return 0.0
         tool, _ = self._select_best_tool(inputs, candidates, self._prepare_task_context(inputs))
-        return tool.estimate_cost(inputs) if tool else 0.0
+        return tool.estimate_cost(self._provider_inputs(inputs, tool)) if tool else 0.0
+
+    def idempotency_key(self, inputs: dict[str, Any]) -> str:
+        return super().idempotency_key(
+            apply_model_preferences(dict(inputs), self.capability)
+        )
 
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
         from lib.scoring import rank_providers
 
+        inputs = apply_model_preferences(dict(inputs), self.capability)
         if inputs.get("operation") != "rank":
             _, output_error = require_explicit_output_path(
                 inputs, self.name, artifact_label="generated speech audio"
@@ -227,7 +239,11 @@ class TTSSelector(BaseTool):
 
         # Rank mode — return scored provider rankings without generating
         if inputs.get("operation") == "rank":
-            candidates = _allowed_candidates(inputs, candidates)
+            candidates = filter_model_candidates(
+                inputs,
+                self.capability,
+                _allowed_candidates(inputs, candidates),
+            )
             rankings = rank_providers(candidates, task_context)
             return ToolResult(
                 success=True,
@@ -274,7 +290,11 @@ class TTSSelector(BaseTool):
         from lib.scoring import rank_providers
 
         preferred = inputs.get("preferred_provider", "auto")
-        candidates = _allowed_candidates(inputs, candidates)
+        candidates = filter_model_candidates(
+            inputs,
+            self.capability,
+            _allowed_candidates(inputs, candidates),
+        )
 
         rankings = rank_providers(candidates, task_context)
 
@@ -289,6 +309,7 @@ class TTSSelector(BaseTool):
                     tool = available_by_name.get(score_item.tool_name)
                     if tool is not None:
                         return tool, score_item
+            return None, None
 
         for score_item in rankings:
             tool = available_by_name.get(score_item.tool_name)
@@ -336,6 +357,7 @@ class TTSSelector(BaseTool):
             "required_agent_skills": info.get("agent_skills", []),
             "selected_tool_usage_location": info.get("usage_location"),
             "selected_tool_best_for": info.get("best_for", []),
+            "selected_tool_model_options": info.get("model_options", []),
         }
 
     def _serialize_rankings(self, candidates: list[BaseTool], rankings: list[object]) -> list[dict[str, Any]]:
@@ -349,6 +371,7 @@ class TTSSelector(BaseTool):
                 item["agent_skills"] = info.get("agent_skills", [])
                 item["usage_location"] = info.get("usage_location")
                 item["best_for"] = info.get("best_for", [])
+                item["model_options"] = info.get("model_options", [])
                 item["status"] = safe_tool_status(tool).value
             serialized.append(item)
         return serialized

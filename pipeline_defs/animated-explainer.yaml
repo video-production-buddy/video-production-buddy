@@ -185,14 +185,14 @@ stages:
       - math_animate
       - diagram_gen
       - code_snippet
-      - music_gen
+      - music_selector
     tools_available:
       - tts_selector
       - image_selector
       - video_selector
       - diagram_gen
       - code_snippet
-      - music_gen
+      - music_selector
       - math_animate
     checkpoint_required: true
     human_approval_default: false

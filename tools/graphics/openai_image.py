@@ -1,4 +1,4 @@
-"""OpenAI GPT Image generation (gpt-image-1 / DALL-E 3)."""
+"""OpenAI GPT Image generation (GPT Image 2 / GPT Image 1 / DALL-E 3)."""
 
 from __future__ import annotations
 
@@ -53,6 +53,41 @@ class OpenAIImage(BaseTool):
         "following detailed instructions accurately",
     ]
     not_good_for = ["offline generation", "budget-constrained projects at high quality"]
+    model_options = [
+        {
+            "id": "gpt-image-2",
+            "name": "GPT Image 2",
+            "field": "model",
+            "default": True,
+            "quality": "highest",
+            "speed": "medium",
+            "release_stage": "current_sota",
+            "last_verified": "2026-06-28",
+            "source_url": "https://developers.openai.com/api/docs/guides/image-generation",
+        },
+        {
+            "id": "gpt-image-1",
+            "name": "GPT Image 1",
+            "field": "model",
+            "default": False,
+            "quality": "high",
+            "speed": "medium",
+            "release_stage": "legacy",
+            "last_verified": "2026-06-28",
+            "source_url": "https://developers.openai.com/api/docs/guides/image-generation",
+        },
+        {
+            "id": "dall-e-3",
+            "name": "DALL-E 3",
+            "field": "model",
+            "default": False,
+            "quality": "legacy_high",
+            "speed": "medium",
+            "release_stage": "legacy",
+            "last_verified": "2026-06-28",
+            "source_url": "https://platform.openai.com/docs/models",
+        },
+    ]
 
     input_schema = {
         "type": "object",
@@ -61,8 +96,8 @@ class OpenAIImage(BaseTool):
             "prompt": {"type": "string"},
             "model": {
                 "type": "string",
-                "enum": ["gpt-image-1", "dall-e-3"],
-                "default": "gpt-image-1",
+                "enum": ["gpt-image-2", "gpt-image-1", "dall-e-3"],
+                "default": "gpt-image-2",
             },
             "size": {
                 "type": "string",
@@ -120,9 +155,12 @@ class OpenAIImage(BaseTool):
         return ToolStatus.UNAVAILABLE
 
     def estimate_cost(self, inputs: dict[str, Any]) -> float:
-        model = inputs.get("model", "gpt-image-1")
+        model = inputs.get("model", "gpt-image-2")
         quality = inputs.get("quality", "high")
         n = inputs.get("n", 1)
+        if model == "gpt-image-2":
+            cost_map = {"low": 0.016, "medium": 0.063, "high": 0.25, "auto": 0.063}
+            return cost_map.get(quality, 0.063) * n
         if model == "gpt-image-1":
             cost_map = {"low": 0.011, "medium": 0.042, "high": 0.167, "auto": 0.042}
             return cost_map.get(quality, 0.042) * n
@@ -147,13 +185,13 @@ class OpenAIImage(BaseTool):
 
         start = time.time()
         client = OpenAI()
-        model = inputs.get("model", "gpt-image-1")
+        model = inputs.get("model", "gpt-image-2")
         prompt = inputs["prompt"]
         size = inputs.get("size", "1024x1024")
         n = inputs.get("n", 1)
 
         try:
-            if model == "gpt-image-1":
+            if model in {"gpt-image-2", "gpt-image-1"}:
                 quality = inputs.get("quality", "high")
                 output_format = inputs.get("output_format", "png")
                 response = client.images.generate(

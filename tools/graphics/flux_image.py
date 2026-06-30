@@ -52,6 +52,74 @@ class FluxImage(BaseTool):
         "high quality at low cost (~$0.03/image)",
     ]
     not_good_for = ["text rendering in images", "offline generation"]
+    model_options = [
+        {
+            "id": "flux-2-pro",
+            "name": "FLUX.2 Pro",
+            "field": "model",
+            "default": True,
+            "quality": "highest",
+            "speed": "medium",
+            "release_stage": "current_sota",
+            "last_verified": "2026-06-28",
+            "source_url": "https://fal.ai/flux-2",
+        },
+        {
+            "id": "flux-2",
+            "name": "FLUX.2",
+            "field": "model",
+            "default": False,
+            "quality": "high",
+            "speed": "medium",
+            "release_stage": "current",
+            "last_verified": "2026-06-28",
+            "source_url": "https://fal.ai/flux-2",
+        },
+        {
+            "id": "flux-2/turbo",
+            "name": "FLUX.2 Turbo",
+            "field": "model",
+            "default": False,
+            "quality": "high",
+            "speed": "fast",
+            "release_stage": "current",
+            "last_verified": "2026-06-28",
+            "source_url": "https://fal.ai/flux-2",
+        },
+        {
+            "id": "flux-pro/v1.1",
+            "name": "FLUX.1.1 Pro",
+            "field": "model",
+            "default": False,
+            "quality": "legacy_high",
+            "speed": "medium",
+            "release_stage": "legacy",
+            "last_verified": "2026-06-28",
+            "source_url": "https://fal.ai/models/fal-ai/flux-pro/v1.1",
+        },
+        {
+            "id": "flux/dev",
+            "name": "FLUX.1 Dev",
+            "field": "model",
+            "default": False,
+            "quality": "legacy_good",
+            "speed": "medium",
+            "release_stage": "legacy",
+            "last_verified": "2026-06-28",
+            "source_url": "https://fal.ai/models/fal-ai/flux/dev",
+        },
+        {
+            "id": "flux-pro",
+            "name": "FLUX.1 Pro",
+            "field": "model",
+            "default": False,
+            "quality": "legacy_high",
+            "speed": "medium",
+            "release_stage": "legacy",
+            "last_verified": "2026-06-28",
+            "source_url": "https://fal.ai/models/fal-ai/flux-pro",
+        },
+    ]
 
     input_schema = {
         "type": "object",
@@ -63,8 +131,15 @@ class FluxImage(BaseTool):
             "height": {"type": "integer", "default": 1024},
             "model": {
                 "type": "string",
-                "enum": ["flux-pro/v1.1", "flux/dev", "flux-pro"],
-                "default": "flux-pro/v1.1",
+                "enum": [
+                    "flux-2-pro",
+                    "flux-2",
+                    "flux-2/turbo",
+                    "flux-pro/v1.1",
+                    "flux/dev",
+                    "flux-pro",
+                ],
+                "default": "flux-2-pro",
             },
             "seed": {"type": "integer"},
             "num_inference_steps": {"type": "integer"},
@@ -112,7 +187,9 @@ class FluxImage(BaseTool):
         return ToolStatus.UNAVAILABLE
 
     def estimate_cost(self, inputs: dict[str, Any]) -> float:
-        model = inputs.get("model", "flux-pro/v1.1")
+        model = inputs.get("model", "flux-2-pro")
+        if model == "flux-2/turbo":
+            return 0.025
         if "pro" in model:
             return 0.05
         return 0.03  # dev tier
@@ -134,7 +211,7 @@ class FluxImage(BaseTool):
         import requests
 
         start = time.time()
-        model = inputs.get("model", "flux-pro/v1.1")
+        model = inputs.get("model", "flux-2-pro")
         prompt = inputs["prompt"]
         width = inputs.get("width", 1024)
         height = inputs.get("height", 1024)

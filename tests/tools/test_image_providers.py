@@ -272,7 +272,203 @@ def test_google_imagen_service_account_file_is_advertised_available(
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", str(key_file))
 
-    assert GoogleImagen().get_status() == ToolStatus.AVAILABLE
+    tool = GoogleImagen()
+    assert tool.get_status() == ToolStatus.AVAILABLE
+    info = tool.get_info()
+    assert (
+        info["input_schema"]["properties"]["model"]["default"]
+        == "imagen-4.0-generate-001"
+    )
+    defaults = [
+        option["id"]
+        for option in info["model_options"]
+        if option.get("default") is True
+    ]
+    assert defaults == ["imagen-4.0-generate-001"]
+    model_ids = [option["id"] for option in info["model_options"]]
+    assert model_ids == [
+        "imagen-4.0-ultra-generate-001",
+        "imagen-4.0-generate-001",
+        "imagen-4.0-fast-generate-001",
+    ]
+    assert info["input_schema"]["properties"]["model"]["enum"] == model_ids
+
+
+def test_google_imagen_service_account_default_uses_vertex_model(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    key_file = tmp_path / "service-account.json"
+    key_file.write_text("{}", encoding="utf-8")
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", str(key_file))
+    monkeypatch.setattr(
+        "tools.graphics.google_imagen.get_access_token",
+        lambda: ("test-token", "test-project"),
+    )
+    captured: dict[str, object] = {}
+
+    def fake_post(*args: object, **kwargs: object) -> SimpleNamespace:
+        captured["url"] = args[0]
+        captured["headers"] = kwargs["headers"]
+        captured["json"] = kwargs["json"]
+        return SimpleNamespace(
+            json=lambda: {"predictions": [{"bytesBase64Encoded": _image_bytes_b64()}]},
+            raise_for_status=lambda: None,
+        )
+
+    monkeypatch.setattr("requests.post", fake_post)
+
+    result = GoogleImagen().execute(
+        {
+            "prompt": "product hero image",
+            "output_path": "projects/demo/assets/images/google-vertex.png",
+        }
+    )
+
+    assert result.success
+    assert result.data["model"] == "imagen-4.0-generate-001"
+    assert "aiplatform.googleapis.com" in str(captured["url"])
+    assert captured["json"] == {
+        "instances": [{"prompt": "product hero image"}],
+        "parameters": {"sampleCount": 1, "aspectRatio": "1:1"},
+    }
+
+
+def test_google_imagen_gemini_request_carries_image_parameters(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    calls: list[dict[str, object]] = []
+
+    def fake_post(*args: object, **kwargs: object) -> SimpleNamespace:
+        calls.append(
+            {
+                "url": args[0],
+                "headers": kwargs["headers"],
+                "json": kwargs["json"],
+            }
+        )
+        return SimpleNamespace(
+            json=lambda: {
+                "candidates": [
+                    {
+                        "content": {
+                            "parts": [
+                                {
+                                    "inlineData": {
+                                        "data": _image_bytes_b64(),
+                                        "mimeType": "image/png",
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ]
+            },
+            raise_for_status=lambda: None,
+        )
+
+    monkeypatch.setattr("requests.post", fake_post)
+
+    result = GoogleImagen().execute(
+        {
+            "prompt": "product hero image",
+            "aspect_ratio": "16:9",
+            "output_path": "projects/demo/assets/images/google-gemini.png",
+        }
+    )
+
+    assert result.success
+    assert result.data["images_generated"] == 1
+    assert len(calls) == 1
+    assert calls[0]["url"] == "https://generativelanguage.googleapis.com/v1beta/interactions"
+    assert calls[0]["json"] == {
+        "model": "gemini-3-pro-image",
+        "input": "product hero image",
+        "response_format": {
+            "type": "image",
+            "mime_type": "image/png",
+            "aspect_ratio": "16:9",
+        },
+    }
+
+
+def test_google_imagen_gemini_rejects_multiple_images_before_network(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+    def fail_post(*_args: object, **_kwargs: object) -> SimpleNamespace:
+        raise AssertionError("Gemini multi-image validation should run before HTTP")
+
+    monkeypatch.setattr("requests.post", fail_post)
+
+    result = GoogleImagen().execute(
+        {
+            "prompt": "product hero image",
+            "number_of_images": 2,
+            "output_path": "projects/demo/assets/images/google-gemini.png",
+        }
+    )
+
+    assert not result.success
+    assert "number_of_images=1" in (result.error or "")
+
+
+def test_google_imagen_gemini_interactions_steps_response_writes_image(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+    def fake_post(*_args: object, **_kwargs: object) -> SimpleNamespace:
+        return SimpleNamespace(
+            json=lambda: {
+                "id": "interaction-1",
+                "status": "completed",
+                "steps": [
+                    {
+                        "type": "model_output",
+                        "content": [
+                            {
+                                "type": "image",
+                                "data": _image_bytes_b64(),
+                                "mime_type": "image/png",
+                            }
+                        ],
+                    }
+                ],
+                "object": "interaction",
+                "model": "gemini-3-pro-image",
+            },
+            raise_for_status=lambda: None,
+        )
+
+    monkeypatch.setattr("requests.post", fake_post)
+
+    output_path = "projects/demo/assets/images/google-gemini-steps.png"
+    result = GoogleImagen().execute(
+        {
+            "prompt": "product hero image",
+            "output_path": output_path,
+        }
+    )
+
+    assert result.success, result.error
+    assert result.data["images_generated"] == 1
+    assert result.data["output_path"] == output_path
+    assert (tmp_path / output_path).read_bytes() == b"png"
 
 
 @pytest.mark.parametrize(
@@ -980,13 +1176,126 @@ def test_wanx_success_payload_includes_output_path(
     output_path = "projects/demo/assets/images/wanx.png"
 
     monkeypatch.setenv("DASHSCOPE_API_KEY", "test-key")
-    monkeypatch.setattr(
-        "requests.post",
-        lambda *args, **kwargs: SimpleNamespace(
+    monkeypatch.setenv("DASHSCOPE_WORKSPACE_ID", "ws-test")
+    monkeypatch.setenv("DASHSCOPE_REGION", "ap-southeast-1")
+    captured: dict[str, object] = {}
+
+    def fake_post(*args, **kwargs):
+        captured["url"] = args[0]
+        captured["headers"] = kwargs["headers"]
+        captured["json"] = kwargs["json"]
+        return SimpleNamespace(
+            json=lambda: {
+                "output": {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": [
+                                    {"image": "https://example.test/wanx.png"}
+                                ]
+                            }
+                        }
+                    ],
+                    "seed": 123,
+                }
+            },
+            raise_for_status=lambda: None,
+        )
+
+    monkeypatch.setattr("requests.post", fake_post)
+
+    def fake_download(
+        self: WanxImage,
+        results: list[dict[str, object]],
+        base_output_path: str,
+        model: str,
+    ) -> list[str]:
+        path = Path(base_output_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"png")
+        return [str(path)]
+
+    monkeypatch.setattr(WanxImage, "_download_images", fake_download)
+
+    result = WanxImage().execute({"prompt": "product hero", "output_path": output_path})
+
+    assert result.success
+    assert result.data["output_path"] == output_path
+    assert result.artifacts == [output_path]
+    assert captured["url"] == (
+        "https://ws-test.ap-southeast-1.maas.aliyuncs.com"
+        "/api/v1/services/aigc/multimodal-generation/generation"
+    )
+    assert "X-DashScope-Async" not in captured["headers"]
+    assert captured["json"]["model"] == "qwen-image-2.0-pro"
+
+
+def test_wanx_explicit_qwen_requires_workspace_endpoint_before_network(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "test-key")
+    for env_var in (
+        "DASHSCOPE_WORKSPACE_ID",
+        "BAILIAN_WORKSPACE_ID",
+        "DASHSCOPE_QWEN_IMAGE_ENDPOINT",
+        "BAILIAN_QWEN_IMAGE_ENDPOINT",
+        "DASHSCOPE_QWEN_IMAGE_BASE_URL",
+        "DASHSCOPE_BASE_HTTP_API_URL",
+        "BAILIAN_BASE_HTTP_API_URL",
+    ):
+        monkeypatch.delenv(env_var, raising=False)
+    calls: list[object] = []
+
+    def fake_post(*args: object, **kwargs: object) -> object:
+        calls.append((args, kwargs))
+        raise AssertionError("network should not be called without Qwen workspace")
+
+    monkeypatch.setattr("requests.post", fake_post)
+
+    result = WanxImage().execute(
+        {
+            "prompt": "product hero",
+            "model": "qwen-image-2.0-pro",
+            "output_path": "projects/demo/assets/images/wanx.png",
+        }
+    )
+
+    assert not result.success
+    assert "DASHSCOPE_WORKSPACE_ID" in (result.error or "")
+    assert calls == []
+
+
+def test_wanx_key_only_default_uses_wan27_endpoint(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    output_path = "projects/demo/assets/images/wanx-key-only.png"
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "test-key")
+    for env_var in (
+        "DASHSCOPE_WORKSPACE_ID",
+        "BAILIAN_WORKSPACE_ID",
+        "DASHSCOPE_QWEN_IMAGE_ENDPOINT",
+        "BAILIAN_QWEN_IMAGE_ENDPOINT",
+        "DASHSCOPE_QWEN_IMAGE_BASE_URL",
+        "DASHSCOPE_BASE_HTTP_API_URL",
+        "BAILIAN_BASE_HTTP_API_URL",
+    ):
+        monkeypatch.delenv(env_var, raising=False)
+    captured: dict[str, object] = {}
+
+    def fake_post(*args: object, **kwargs: object) -> SimpleNamespace:
+        captured["url"] = args[0]
+        captured["headers"] = kwargs["headers"]
+        captured["json"] = kwargs["json"]
+        return SimpleNamespace(
             json=lambda: {"output": {"task_id": "task-1"}},
             raise_for_status=lambda: None,
-        ),
-    )
+        )
+
+    monkeypatch.setattr("requests.post", fake_post)
     monkeypatch.setattr(
         WanxImage,
         "_poll_task",
@@ -1012,8 +1321,9 @@ def test_wanx_success_payload_includes_output_path(
     result = WanxImage().execute({"prompt": "product hero", "output_path": output_path})
 
     assert result.success
-    assert result.data["output_path"] == output_path
-    assert result.artifacts == [output_path]
+    assert result.data["model"] == "wan2.7-image-pro"
+    assert captured["url"].endswith("/services/aigc/image-generation/generation")
+    assert captured["json"]["model"] == "wan2.7-image-pro"
 
 
 def test_wanx_success_payload_matches_output_schema(
@@ -1024,19 +1334,25 @@ def test_wanx_success_payload_matches_output_schema(
     output_path = "projects/demo/assets/images/wanx-schema.png"
 
     monkeypatch.setenv("DASHSCOPE_API_KEY", "test-key")
+    monkeypatch.setenv("DASHSCOPE_WORKSPACE_ID", "ws-test")
     monkeypatch.setattr(
         "requests.post",
         lambda *args, **kwargs: SimpleNamespace(
-            json=lambda: {"output": {"task_id": "task-1"}},
+            json=lambda: {
+                "output": {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": [
+                                    {"image": "https://example.test/wanx.png"}
+                                ]
+                            }
+                        }
+                    ],
+                    "seed": 123,
+                }
+            },
             raise_for_status=lambda: None,
-        ),
-    )
-    monkeypatch.setattr(
-        WanxImage,
-        "_poll_task",
-        lambda self, task_id, api_key, api_style: (
-            "SUCCEEDED",
-            [{"url": "https://example.test/wanx.png", "seed": 123}],
         ),
     )
 

@@ -1,4 +1,4 @@
-"""Recraft V4 image generation via fal.ai API.
+"""Recraft V4.1 image generation via fal.ai API.
 
 Best for logos, brand assets, SVG vectors, and images with accurate text rendering.
 """
@@ -23,6 +23,15 @@ from tools.base_tool import (
     ToolTier,
 )
 from tools.output_paths import require_explicit_output_path
+
+_MODEL_PATHS = {
+    "v4.1": "recraft/v4.1/text-to-image",
+    "v4.1-pro": "recraft/v4.1/pro/text-to-image",
+    "v4.1-utility": "recraft/v4.1/utility/text-to-image",
+    "v4.1-utility-pro": "recraft/v4.1/utility/pro/text-to-image",
+    "v4": "recraft/v4/text-to-image",
+    "v4-pro": "recraft/v4/pro/text-to-image",
+}
 
 
 class RecraftImage(BaseTool):
@@ -62,6 +71,74 @@ class RecraftImage(BaseTool):
         "clean professional graphics",
     ]
     not_good_for = ["photorealistic images", "offline generation"]
+    model_options = [
+        {
+            "id": "v4.1",
+            "name": "Recraft V4.1",
+            "field": "model",
+            "default": True,
+            "quality": "highest",
+            "speed": "medium",
+            "release_stage": "current_sota",
+            "last_verified": "2026-06-28",
+            "source_url": "https://www.recraft.ai/blog/recraft-v4-1-more-beautiful-by-nature",
+        },
+        {
+            "id": "v4.1-pro",
+            "name": "Recraft V4.1 Pro",
+            "field": "model",
+            "default": False,
+            "quality": "highest",
+            "speed": "medium",
+            "release_stage": "current",
+            "last_verified": "2026-06-28",
+            "source_url": "https://www.recraft.ai/blog/recraft-v4-1-more-beautiful-by-nature",
+        },
+        {
+            "id": "v4.1-utility",
+            "name": "Recraft V4.1 Utility",
+            "field": "model",
+            "default": False,
+            "quality": "high",
+            "speed": "fast",
+            "release_stage": "current",
+            "last_verified": "2026-06-28",
+            "source_url": "https://www.recraft.ai/blog/recraft-v4-1-more-beautiful-by-nature",
+        },
+        {
+            "id": "v4.1-utility-pro",
+            "name": "Recraft V4.1 Utility Pro",
+            "field": "model",
+            "default": False,
+            "quality": "high",
+            "speed": "fast",
+            "release_stage": "current",
+            "last_verified": "2026-06-28",
+            "source_url": "https://www.recraft.ai/blog/recraft-v4-1-more-beautiful-by-nature",
+        },
+        {
+            "id": "v4",
+            "name": "Recraft V4",
+            "field": "model",
+            "default": False,
+            "quality": "legacy_high",
+            "speed": "medium",
+            "release_stage": "legacy",
+            "last_verified": "2026-06-28",
+            "source_url": "https://www.recraft.ai/docs/api-reference",
+        },
+        {
+            "id": "v4-pro",
+            "name": "Recraft V4 Pro",
+            "field": "model",
+            "default": False,
+            "quality": "legacy_high",
+            "speed": "medium",
+            "release_stage": "legacy",
+            "last_verified": "2026-06-28",
+            "source_url": "https://www.recraft.ai/docs/api-reference",
+        },
+    ]
 
     input_schema = {
         "type": "object",
@@ -70,8 +147,15 @@ class RecraftImage(BaseTool):
             "prompt": {"type": "string"},
             "model": {
                 "type": "string",
-                "enum": ["v4", "v4-pro"],
-                "default": "v4",
+                "enum": [
+                    "v4.1",
+                    "v4.1-pro",
+                    "v4.1-utility",
+                    "v4.1-utility-pro",
+                    "v4",
+                    "v4-pro",
+                ],
+                "default": "v4.1",
             },
             "image_size": {
                 "type": "string",
@@ -134,9 +218,11 @@ class RecraftImage(BaseTool):
         return ToolStatus.UNAVAILABLE
 
     def estimate_cost(self, inputs: dict[str, Any]) -> float:
-        model = inputs.get("model", "v4")
-        if model == "v4-pro":
+        model = inputs.get("model", "v4.1")
+        if model in {"v4.1-pro", "v4.1-utility-pro", "v4-pro"}:
             return 0.25
+        if model == "v4.1-utility":
+            return 0.02
         return 0.04
 
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
@@ -156,14 +242,10 @@ class RecraftImage(BaseTool):
         import requests
 
         start = time.time()
-        model = inputs.get("model", "v4")
+        model = inputs.get("model", "v4.1")
         prompt = inputs["prompt"]
 
-        model_path = f"recraft/{model}/text-to-image"
-        if model == "v4-pro":
-            model_path = "recraft/v4/pro/text-to-image"
-        elif model == "v4":
-            model_path = "recraft/v4/text-to-image"
+        model_path = _MODEL_PATHS.get(model, _MODEL_PATHS["v4.1"])
 
         payload: dict[str, Any] = {"prompt": prompt}
         if inputs.get("image_size"):

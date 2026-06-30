@@ -196,6 +196,7 @@ class BaseTool(ABC):
         "supports",
         "best_for",
         "not_good_for",
+        "model_options",
         "provider_matrix",
         "resource_profile",
         "retry_policy",
@@ -231,6 +232,7 @@ class BaseTool(ABC):
     supports: dict[str, Any] = {}
     best_for: list[str] = []
     not_good_for: list[str] = []
+    model_options: list[dict[str, Any]] = []
     provider_matrix: dict[str, Any] = {}
 
     # --- Resource & retry ---
@@ -359,6 +361,7 @@ class BaseTool(ABC):
             "supports": copy.deepcopy(self.supports),
             "best_for": copy.deepcopy(self.best_for),
             "not_good_for": copy.deepcopy(self.not_good_for),
+            "model_options": copy.deepcopy(self.model_options),
             "provider_matrix": copy.deepcopy(self.provider_matrix),
             "resource_profile": {
                 "cpu_cores": self.resource_profile.cpu_cores,

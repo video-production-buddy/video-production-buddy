@@ -37,7 +37,7 @@ Every tool declares a `capability` (what it does) and a `provider` (who/what pow
 ### Selector / Provider Pattern
 
 For capability families with multiple providers (TTS, video generation), the architecture uses:
-- **Selector tool** (`tts_selector`, `video_selector`, `image_selector`) — routes to the best available provider based on requirements, API key availability, and cost. Selectors auto-discover providers from the registry. Agents should default to selectors when the user hasn't specified a provider.
+- **Selector tool** (`tts_selector`, `video_selector`, `image_selector`, `music_selector`, `text_selector`, `transcription_selector`) — routes to the best available provider based on requirements, API key availability, and cost. Selectors auto-discover providers from the registry. Agents should default to selectors when the user hasn't specified a provider.
 - **Provider tools** — call a specific provider directly. Agents use these when the user explicitly requests a provider or when the selector's routing isn't appropriate.
 - **Dynamic interaction router** (`genui_interaction`) — before each substantive human interaction, decide whether linear chat is sufficient; when visual demonstration, multi-axis selection, media review, or structured revision capture is needed, route to the GenUI A2UI/CopilotKit browser path.
 
@@ -60,6 +60,9 @@ Key capability families to look for in the output:
 | `tts` | `tts_selector` | Auto-discovers all `capability="tts"` tools |
 | `video_generation` | `video_selector` | Auto-discovers all `capability="video_generation"` tools |
 | `image_generation` | `image_selector` | Auto-discovers all `capability="image_generation"` tools |
+| `music_generation` | `music_selector` | Auto-discovers all `capability="music_generation"` tools |
+| `text_generation` | `text_selector` | Auto-discovers optional billed `capability="text_generation"` tools |
+| `transcription` | `transcription_selector` | Auto-discovers all `capability="transcription"` tools |
 | `audio_processing` | — | FFmpeg-based local tools |
 | `enhancement` | — | Mixed providers |
 | `analysis` | — | Mixed providers |
@@ -71,12 +74,12 @@ Key capability families to look for in the output:
 | `graphics` | — | Local rendering tools |
 | `interaction` | — | GenUI routing/session/surface tools; local UI is opt-in and response-only |
 | `knowledge_retrieval` | — | Local curated knowledge retrieval for planning and review |
-| `music_generation` | — | Registry-discovered providers (`minimax_music`, `music_gen`, `suno_music`, etc.) |
+| `music_generation` | `music_selector` | Registry-discovered providers (`minimax_music`, `music_gen`, `suno_music`, etc.) |
 | `music_search` | — | Royalty-free/background music search providers (`pixabay_music`, `freesound_music`) |
 | `screen_capture` | `screen_capture_selector` | FFmpeg/Cap screen recording providers for screen-demo pipelines |
 | `source_ingest` | — | Source URL download/metadata ingestion (`video_downloader`) |
-| `transcription` | — | Speech-to-text providers such as `qwen_asr`; check supports before using for subtitles |
-| `text_generation` | `text-generation` | LLM chat providers (`qwen_chat`, `minimax_chat`); standalone ad-hoc text tools, not auto-wired into pipeline stages |
+| `transcription` | `transcription_selector` | Speech-to-text providers such as `qwen_asr`; check supports before using for subtitles |
+| `text_generation` | `text_selector` | LLM chat providers (`qwen_chat`, `minimax_chat`); standalone ad-hoc text tools, not auto-wired into pipeline stages |
 | `validation` | — | Cross-artifact planning, runtime, provider, identity, fidelity, and GenUI evidence validators |
 | `vision_understanding` | — | Image/video understanding (`qwen_vl`); for reference analysis, frame QA, hallucination review |
 | `subtitle` | — | Pure Python |

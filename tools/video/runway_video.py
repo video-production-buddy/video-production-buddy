@@ -1,7 +1,7 @@
-"""Runway Gen-4 video generation via Runway API.
+"""Runway video generation via Runway API.
 
-Highest Elo-rated video generation model — professional quality and control.
-Supports Gen-3 Alpha Turbo, Gen-4 Turbo, and Gen-4 Aleph (highest fidelity).
+Supports current Runway-hosted generation models such as Seedance 2, Gen-4.5,
+Veo 3.1, HappyHorse 1.0, plus legacy Gen-4 options where still accepted.
 """
 
 from __future__ import annotations
@@ -30,21 +30,149 @@ _RATIO_MAP = {
     "1:1": "720:720",
 }
 
+_MODEL_OPTIONS = [
+    {
+        "id": "seedance2",
+        "name": "Seedance 2",
+        "field": "model",
+        "default": True,
+        "quality": "highest",
+        "speed": "medium",
+        "release_stage": "current",
+        "last_verified": "2026-06-28",
+        "source_url": "https://docs.dev.runwayml.com/guides/models/",
+        "note": "Runway-hosted Seedance 2 route with broad text/image/video generation coverage.",
+    },
+    {
+        "id": "seedance2_fast",
+        "name": "Seedance 2 Fast",
+        "field": "model",
+        "default": False,
+        "quality": "high",
+        "speed": "fast",
+        "release_stage": "current",
+        "last_verified": "2026-06-28",
+        "source_url": "https://docs.dev.runwayml.com/guides/models/",
+    },
+    {
+        "id": "seedance2_mini",
+        "name": "Seedance 2 Mini",
+        "field": "model",
+        "default": False,
+        "quality": "good",
+        "speed": "fast",
+        "release_stage": "current",
+        "last_verified": "2026-06-28",
+        "source_url": "https://docs.dev.runwayml.com/guides/models/",
+    },
+    {
+        "id": "gen4.5",
+        "name": "Runway Gen-4.5",
+        "field": "model",
+        "default": False,
+        "quality": "highest",
+        "speed": "medium",
+        "release_stage": "current_sota",
+        "last_verified": "2026-06-28",
+        "source_url": "https://docs.dev.runwayml.com/guides/models/",
+    },
+    {
+        "id": "veo3.1",
+        "name": "Veo 3.1 via Runway",
+        "field": "model",
+        "default": False,
+        "quality": "highest",
+        "speed": "medium",
+        "release_stage": "current",
+        "last_verified": "2026-06-28",
+        "source_url": "https://docs.dev.runwayml.com/guides/models/",
+    },
+    {
+        "id": "veo3.1_fast",
+        "name": "Veo 3.1 Fast via Runway",
+        "field": "model",
+        "default": False,
+        "quality": "high",
+        "speed": "fast",
+        "release_stage": "current",
+        "last_verified": "2026-06-28",
+        "source_url": "https://docs.dev.runwayml.com/guides/models/",
+    },
+    {
+        "id": "happyhorse_1_0",
+        "name": "HappyHorse 1.0 via Runway",
+        "field": "model",
+        "default": False,
+        "quality": "highest",
+        "speed": "medium",
+        "release_stage": "current",
+        "last_verified": "2026-06-28",
+        "source_url": "https://docs.dev.runwayml.com/guides/models/",
+    },
+    {
+        "id": "gen4_turbo",
+        "name": "Runway Gen-4 Turbo",
+        "field": "model",
+        "default": False,
+        "quality": "high",
+        "speed": "fast",
+        "release_stage": "legacy_current",
+        "last_verified": "2026-06-28",
+        "source_url": "https://docs.dev.runwayml.com/guides/models/",
+    },
+    {
+        "id": "gen4_aleph",
+        "name": "Runway Gen-4 Aleph",
+        "field": "model",
+        "default": False,
+        "quality": "legacy_high",
+        "speed": "medium",
+        "release_stage": "deprecated",
+        "deprecated": True,
+        "last_verified": "2026-06-28",
+        "source_url": "https://docs.dev.runwayml.com/guides/models/",
+    },
+    {
+        "id": "gen3a_turbo",
+        "name": "Runway Gen-3 Alpha Turbo",
+        "field": "model",
+        "default": False,
+        "quality": "legacy_good",
+        "speed": "fast",
+        "release_stage": "legacy",
+        "last_verified": "2026-06-28",
+        "source_url": "https://docs.dev.runwayml.com/guides/models/",
+    },
+]
+
+_MODEL_IDS = [str(option["id"]) for option in _MODEL_OPTIONS]
+
+_MODELS_WITHOUT_WATERMARK = {"seedance2", "seedance2_fast", "happyhorse_1_0"}
+
 _COST_PER_SECOND = {
-    "gen3a_turbo": 0.05,
+    "seedance2": 0.30,
+    "seedance2_fast": 0.24,
+    "seedance2_mini": 0.12,
+    "gen4.5": 0.15,
+    "veo3.1": 0.20,
+    "veo3.1_fast": 0.10,
+    "happyhorse_1_0": 0.30,
     "gen4_turbo": 0.05,
     "gen4_aleph": 0.15,
-    # Third-party Seedance 2.0 inside Runway (Enterprise/Unlimited, non-US).
-    "seedance_2.0": 0.30,
-    "seedance_2.0_fast": 0.24,
+    "gen3a_turbo": 0.05,
 }
 
 _RUNTIME_SECONDS = {
-    "gen3a_turbo": 25.0,
+    "seedance2": 120.0,
+    "seedance2_fast": 60.0,
+    "seedance2_mini": 45.0,
+    "gen4.5": 90.0,
+    "veo3.1": 120.0,
+    "veo3.1_fast": 60.0,
+    "happyhorse_1_0": 120.0,
     "gen4_turbo": 30.0,
     "gen4_aleph": 60.0,
-    "seedance_2.0": 120.0,
-    "seedance_2.0_fast": 60.0,
+    "gen3a_turbo": 25.0,
 }
 
 
@@ -65,6 +193,7 @@ class RunwayVideo(BaseTool):
         "  Get one at https://dev.runwayml.com/"
     )
     agent_skills = ["seedance-2-0", "ai-video-gen"]
+    model_options = _MODEL_OPTIONS
 
     capabilities = ["text_to_video", "image_to_video"]
     supports = {
@@ -78,10 +207,9 @@ class RunwayVideo(BaseTool):
         "multi_shot": True,
     }
     best_for = [
-        "preferred premium video gen on Runway when Seedance 2.0 model is selected",
-        "cinematic trailers, teasers, and high-fidelity clips with native synchronized audio (Seedance 2.0 path)",
-        "director-level camera control and multi-shot editing (Seedance 2.0) or Runway Gen-4 professional control",
-        "lip-sync from quoted dialogue in prompts (Seedance 2.0)",
+        "preferred premium video gen on Runway when Seedance 2 or Gen-4.5 model is selected",
+        "cinematic trailers, teasers, and high-fidelity clips",
+        "director-level camera control and professional Runway-hosted generation",
         "professional video production",
     ]
     not_good_for = ["budget projects", "offline generation", "very long clips"]
@@ -100,15 +228,13 @@ class RunwayVideo(BaseTool):
             },
             "model": {
                 "type": "string",
-                "enum": ["seedance_2.0", "seedance_2.0_fast", "gen4_turbo", "gen4_aleph", "gen3a_turbo"],
-                "default": "seedance_2.0",
+                "enum": _MODEL_IDS,
+                "default": "seedance2",
                 "description": (
-                    "seedance_2.0 = preferred premium default (single-pass synced audio, multi-shot, lip-sync — "
-                    "Runway Unlimited/Enterprise plan, non-US only). "
-                    "seedance_2.0_fast = lower-cost Seedance variant. "
-                    "gen4_aleph = Runway's highest-fidelity native model. "
-                    "gen4_turbo = balanced Runway native. "
-                    "gen3a_turbo = cheapest Runway native."
+                    "seedance2 = preferred premium default. "
+                    "gen4.5 = current Runway-native SOTA option. "
+                    "veo3.1 / veo3.1_fast and happyhorse_1_0 are Runway-hosted routes. "
+                    "gen4_aleph is deprecated."
                 ),
             },
             "duration": {
@@ -190,16 +316,16 @@ class RunwayVideo(BaseTool):
         return os.environ.get("RUNWAY_API_KEY") or os.environ.get("RUNWAYML_API_SECRET")
 
     def estimate_cost(self, inputs: dict[str, Any]) -> float:
-        model = inputs.get("model", "gen4_turbo")
+        model = inputs.get("model", "seedance2")
         duration = inputs.get("duration", 5)
         return _COST_PER_SECOND.get(model, 0.05) * duration
 
     def estimate_runtime(self, inputs: dict[str, Any]) -> float:
-        model = inputs.get("model", "gen4_turbo")
+        model = inputs.get("model", "seedance2")
         return _RUNTIME_SECONDS.get(model, 30.0)
 
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
-        model = inputs.get("model", "gen4_turbo")
+        model = inputs.get("model", "seedance2")
         operation = inputs.get("operation", "text_to_video")
         operation_error = validate_video_operation(operation, {"text_to_video", "image_to_video"})
         if operation_error:
@@ -228,8 +354,9 @@ class RunwayVideo(BaseTool):
             "promptText": inputs["prompt"],
             "duration": inputs.get("duration", 5),
             "ratio": ratio_pixels,
-            "watermark": inputs.get("watermark", False),
         }
+        if model not in _MODELS_WITHOUT_WATERMARK and "watermark" in inputs:
+            task_payload["watermark"] = bool(inputs["watermark"])
         if operation == "image_to_video":
             task_payload["promptImage"] = inputs["image_url"]
 

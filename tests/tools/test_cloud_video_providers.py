@@ -3,6 +3,7 @@ from __future__ import annotations
 import jsonschema
 import pytest
 
+from lib.scoring import ProviderScore
 from tools.base_tool import ToolResult
 from tools.video.grok_video import GrokVideo
 from tools.video.heygen_video import HeyGenVideo
@@ -15,6 +16,7 @@ from tools.video.pixabay_video import PixabayVideo
 from tools.video.runway_video import RunwayVideo
 from tools.video.seedance_replicate import SeedanceReplicate
 from tools.video.seedance_video import SeedanceVideo
+from tools.video.video_selector import VideoSelector
 from tools.video.veo_video import VeoVideo
 from tools.video.wan_video_api import WanVideoAPI
 
@@ -410,6 +412,59 @@ def test_seedance_replicate_success_payload_includes_operation(
     )
 
 
+def test_grok_text_defaults_use_supported_legacy_model_and_720p_cost() -> None:
+    tool = GrokVideo()
+
+    payload = tool._build_payload({"prompt": "A product hero shot"})
+
+    assert payload["model"] == "grok-imagine-video"
+    assert payload["aspect_ratio"] == "16:9"
+    assert payload["resolution"] == "720p"
+    assert tool.estimate_cost({"prompt": "A product hero shot"}) == pytest.approx(0.4)
+
+
+def test_grok_image_to_video_defaults_to_15_at_1080p() -> None:
+    tool = GrokVideo()
+
+    payload = tool._build_payload(
+        {
+            "prompt": "Animate the approved product frame",
+            "operation": "image_to_video",
+            "image_url": "https://example.test/product.png",
+        }
+    )
+
+    assert payload["model"] == "grok-imagine-video-1.5"
+    assert payload["resolution"] == "1080p"
+
+
+def test_grok_rejects_15_for_text_to_video_before_network(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    _configure_provider_env(monkeypatch)
+    monkeypatch.chdir(tmp_path)
+    calls: list[object] = []
+
+    def fake_post(*args, **kwargs):
+        calls.append((args, kwargs))
+        raise AssertionError("network should not be called for unsupported Grok model")
+
+    monkeypatch.setattr("requests.post", fake_post)
+
+    result = GrokVideo().execute(
+        {
+            "prompt": "A product hero shot",
+            "model": "grok-imagine-video-1.5",
+            "output_path": "projects/demo/assets/video/grok-text.mp4",
+        }
+    )
+
+    assert not result.success
+    assert "text_to_video requires model='grok-imagine-video'" in (result.error or "")
+    assert calls == []
+
+
 @pytest.mark.parametrize("tool", [KlingVideo(), RunwayVideo(), HiggsFieldVideo(), GrokVideo()])
 def test_direct_cloud_video_success_payload_matches_output_schema(
     monkeypatch: pytest.MonkeyPatch,
@@ -474,6 +529,150 @@ def test_direct_cloud_video_success_payload_matches_output_schema(
     else:
         expected_properties |= {"request_id"}
     _assert_output_schema_matches_payload(tool, result.data, expected_properties)
+
+
+def test_grok_reference_to_video_uses_legacy_reference_model_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    _configure_provider_env(monkeypatch)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("time.sleep", lambda _seconds: None)
+    captured: dict[str, object] = {}
+    download_url = "https://cdn.example.test/grok-reference.mp4"
+
+    def fake_post(*args, **kwargs):
+        captured["url"] = args[0]
+        captured["json"] = kwargs["json"]
+        return _FakeResponse({"request_id": "request-1"})
+
+    def fake_get(url, *_args, **_kwargs):
+        if url == "https://api.x.ai/v1/videos/request-1":
+            return _FakeResponse({"status": "done", "video": {"url": download_url}})
+        if url == download_url:
+            return _FakeResponse(content=b"fake grok reference mp4")
+        raise AssertionError(f"unexpected GET {url}")
+
+    monkeypatch.setattr("requests.post", fake_post)
+    monkeypatch.setattr("requests.get", fake_get)
+
+    output_path = "projects/demo/assets/video/grok-reference.mp4"
+    result = GrokVideo().execute(
+        {
+            "prompt": "Keep the product identity consistent",
+            "operation": "reference_to_video",
+            "reference_image_urls": ["https://example.test/product.png"],
+            "output_path": output_path,
+        }
+    )
+
+    assert result.success, result.error
+    assert result.data["model"] == "grok-imagine-video"
+    assert captured["json"]["model"] == "grok-imagine-video"
+    assert captured["json"]["reference_images"] == [
+        {"url": "https://example.test/product.png"}
+    ]
+
+
+def test_grok_model_options_expose_reference_operation_support() -> None:
+    options = {option["id"]: option for option in GrokVideo.model_options}
+
+    assert options["grok-imagine-video-1.5"]["supports"] == {
+        "text_to_video": False,
+        "image_to_video": True,
+        "reference_to_video": False,
+    }
+    assert options["grok-imagine-video"]["supports"]["reference_to_video"] is True
+
+
+def test_runway_seedance_default_omits_unsupported_watermark(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    _configure_provider_env(monkeypatch)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("time.sleep", lambda _seconds: None)
+    captured: dict[str, object] = {}
+    download_url = "https://cdn.example.test/runway.mp4"
+
+    def fake_post(*args, **kwargs):
+        captured["url"] = args[0]
+        captured["json"] = kwargs["json"]
+        return _FakeResponse({"id": "task-1"})
+
+    def fake_get(url, *_args, **_kwargs):
+        if url == "https://api.dev.runwayml.com/v1/tasks/task-1":
+            return _FakeResponse({"status": "SUCCEEDED", "output": [download_url]})
+        if url == download_url:
+            return _FakeResponse(content=b"fake runway mp4")
+        raise AssertionError(f"unexpected GET {url}")
+
+    monkeypatch.setattr("requests.post", fake_post)
+    monkeypatch.setattr("requests.get", fake_get)
+
+    result = RunwayVideo().execute(
+        {
+            "prompt": "A product hero shot",
+            "output_path": "projects/demo/assets/video/runway.mp4",
+        }
+    )
+
+    assert result.success, result.error
+    assert captured["json"]["model"] == "seedance2"
+    assert "watermark" not in captured["json"]
+
+
+def test_video_selector_uses_grok_reference_default_when_env_t2v_model_conflicts(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    _configure_provider_env(monkeypatch)
+    monkeypatch.setenv("VPB_VIDEO_GENERATION_PROVIDER", "grok")
+    monkeypatch.setenv("VPB_VIDEO_GENERATION_MODEL", "grok-imagine-video-1.5")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("time.sleep", lambda _seconds: None)
+
+    selector = VideoSelector()
+    monkeypatch.setattr(selector, "_providers", lambda: [GrokVideo()])
+    monkeypatch.setattr(
+        "lib.scoring.rank_providers",
+        lambda candidates, _ctx: [
+            ProviderScore(tool_name=tool.name, provider=tool.provider, task_fit=1.0)
+            for tool in candidates
+        ],
+    )
+
+    captured: dict[str, object] = {}
+    download_url = "https://cdn.example.test/grok-reference.mp4"
+
+    def fake_post(*args, **kwargs):
+        captured["url"] = args[0]
+        captured["json"] = kwargs["json"]
+        return _FakeResponse({"request_id": "request-1"})
+
+    def fake_get(url, *_args, **_kwargs):
+        if url == "https://api.x.ai/v1/videos/request-1":
+            return _FakeResponse({"status": "done", "video": {"url": download_url}})
+        if url == download_url:
+            return _FakeResponse(content=b"fake grok reference mp4")
+        raise AssertionError(f"unexpected GET {url}")
+
+    monkeypatch.setattr("requests.post", fake_post)
+    monkeypatch.setattr("requests.get", fake_get)
+
+    output_path = "projects/demo/assets/video/grok-reference.mp4"
+    result = selector.execute(
+        {
+            "prompt": "Keep the product identity consistent",
+            "operation": "reference_to_video",
+            "reference_image_urls": ["https://example.test/product.png"],
+            "output_path": output_path,
+        }
+    )
+
+    assert result.success, result.error
+    assert result.data["model"] == "grok-imagine-video"
+    assert captured["json"]["model"] == "grok-imagine-video"
 
 
 @pytest.mark.parametrize(

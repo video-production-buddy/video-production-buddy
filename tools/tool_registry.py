@@ -68,6 +68,7 @@ _LIST_INFO_FIELDS = (
     "capabilities",
     "best_for",
     "not_good_for",
+    "model_options",
     "idempotency_key_fields",
     "side_effects",
     "fallback_tools",
@@ -83,6 +84,9 @@ _DICT_INFO_FIELDS = (
     "supports",
     "provider_matrix",
 )
+
+
+_MODEL_FIELD_NAMES = ("model_variant", "model_id", "model", "resource_id")
 
 
 def _normalize_info_shape(info: dict[str, Any]) -> dict[str, Any]:
@@ -102,6 +106,74 @@ def _normalize_info_shape(info: dict[str, Any]) -> dict[str, Any]:
         )
     normalized["retry_policy"] = retry_policy
     return normalized
+
+
+def _schema_model_options(input_schema: Mapping[str, Any]) -> list[dict[str, Any]]:
+    properties = input_schema.get("properties")
+    if not isinstance(properties, Mapping):
+        return []
+
+    for field in _MODEL_FIELD_NAMES:
+        prop = properties.get(field)
+        if not isinstance(prop, Mapping):
+            continue
+
+        default = prop.get("default")
+        description = prop.get("description")
+        enum_values = prop.get("enum")
+        if isinstance(enum_values, list) and enum_values:
+            options: list[dict[str, Any]] = []
+            for raw_value in enum_values:
+                option: dict[str, Any] = {
+                    "id": raw_value,
+                    "field": field,
+                    "default": raw_value == default,
+                }
+                if description:
+                    option["description"] = description
+                options.append(option)
+            return options
+
+        if default is not None:
+            option = {
+                "id": default,
+                "field": field,
+                "default": True,
+            }
+            if description:
+                option["description"] = description
+            return [option]
+
+    return []
+
+
+def _model_options_for_info(info: Mapping[str, Any]) -> list[dict[str, Any]]:
+    explicit = _safe_list(info.get("model_options"))
+    if explicit:
+        return explicit
+    return _schema_model_options(_safe_dict(info.get("input_schema")))
+
+
+def _model_choice_field(options: list[dict[str, Any]]) -> str | None:
+    for option in options:
+        field = option.get("field")
+        if field:
+            return str(field)
+    return None
+
+
+def _model_choice_default(options: list[dict[str, Any]]) -> Any:
+    for option in options:
+        if option.get("default") is True:
+            return option.get("id")
+    defaults_by_operation = [
+        option.get("id")
+        for option in options
+        if option.get("default_for_operations")
+    ]
+    if defaults_by_operation:
+        return defaults_by_operation
+    return None
 
 
 # Unicode punctuation that breaks on Windows cp1252 stdout. Map each to an
@@ -334,6 +406,7 @@ class ToolRegistry:
             "supports": _safe_dict(_safe_attr(tool, "supports", {})),
             "best_for": _safe_list(_safe_attr(tool, "best_for", [])),
             "not_good_for": _safe_list(_safe_attr(tool, "not_good_for", [])),
+            "model_options": _safe_list(_safe_attr(tool, "model_options", [])),
             "provider_matrix": _safe_dict(_safe_attr(tool, "provider_matrix", {})),
             "resource_profile": {
                 "cpu_cores": _safe_attr(resource_profile, "cpu_cores", 0),
@@ -376,7 +449,12 @@ class ToolRegistry:
                 )
             defaults = self._fallback_info(tool, None)
             defaults.update(info)
-            return _json_safe(_normalize_info_shape(defaults))
+            normalized = _normalize_info_shape(defaults)
+            if not normalized.get("model_options"):
+                normalized["model_options"] = _schema_model_options(
+                    normalized.get("input_schema", {})
+                )
+            return _json_safe(normalized)
         except Exception as exc:
             return self._fallback_info(tool, exc)
 
@@ -477,6 +555,9 @@ class ToolRegistry:
                 "dependencies": info["dependencies"],
                 "status": status.value,
             }
+            model_options = _model_options_for_info(info)
+            if model_options:
+                entry["model_options"] = model_options
             if info.get("status_error"):
                 entry["status_error"] = info["status_error"]
             for extra_key in (
@@ -586,6 +667,35 @@ class ToolRegistry:
                 }
             )
 
+        # Model choices — keep explicit provider/model variants visible in the
+        # same preflight payload users already inspect after setting API keys.
+        model_choices: list[dict[str, Any]] = []
+        for cap, bucket in menu.items():
+            entries = list(bucket.get("available", [])) + list(
+                bucket.get("unavailable", [])
+            )
+            for entry in entries:
+                options = _safe_list(entry.get("model_options"))
+                if not options:
+                    continue
+                choice: dict[str, Any] = {
+                    "capability": cap,
+                    "tool": entry.get("name"),
+                    "provider": entry.get("provider"),
+                    "status": entry.get("status"),
+                    "field": _model_choice_field(options),
+                    "default": _model_choice_default(options),
+                    "options": options,
+                }
+                model_choices.append(choice)
+        model_choices.sort(
+            key=lambda choice: (
+                str(choice.get("capability") or ""),
+                str(choice.get("provider") or ""),
+                str(choice.get("tool") or ""),
+            )
+        )
+
         # Setup offers — unavailable tools that would be 1-minute env-var fixes.
         # Filter for short install instructions referencing an env var so the
         # agent can lead with the easy wins.
@@ -621,6 +731,7 @@ class ToolRegistry:
         result = {
             "composition_runtimes": comp_runtimes,
             "capabilities": capabilities,
+            "model_choices": model_choices,
             "setup_offers": setup_offers,
             "runtime_warnings": runtime_warnings,
         }

@@ -316,7 +316,7 @@ stages:
       - cosyvoice_tts
       - wanx_image
       - wan_video_api
-      - minimax_music
+      - music_selector
       - audio_mixer
     optional_tools:
       - openai_tts
@@ -334,7 +334,7 @@ stages:
       - openai_tts
       - wanx_image
       - wan_video_api
-      - minimax_music
+      - music_selector
       - audio_mixer
       - pexels_video
       - pixabay_video

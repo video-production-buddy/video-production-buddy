@@ -1,6 +1,6 @@
 PYTHON ?= python3
 
-.PHONY: setup install install-dev install-gpu install-remotion test test-contracts test-integration test-qa genui-verify genui-evidence-check lint clean preflight preflight-full demo demo-list hyperframes-doctor hyperframes-warm
+.PHONY: setup install install-dev install-gpu install-remotion test test-contracts test-integration test-qa genui-verify genui-evidence-check lint clean preflight preflight-full models-list models-check models-configure demo demo-list hyperframes-doctor hyperframes-warm
 
 DEFAULT_TEST_MARKERS := not integration and not qa and not browser and not ffmpeg and not node and not hyperframes and not slow and not live_provider
 
@@ -96,6 +96,19 @@ preflight:
 preflight-full:
 	$(PYTHON) -B -c "from tools.tool_registry import registry; import json; registry.discover(); print(json.dumps(registry.provider_menu(), indent=2))"
 
+models-list:
+	$(PYTHON) -B -m lib.model_settings_wizard --list $(if $(CAPABILITY),--capability $(CAPABILITY),)
+
+models-check:
+	$(PYTHON) -B -m lib.model_settings_wizard --check $(if $(ENV_FILE),--env $(ENV_FILE),)
+
+models-configure:
+	@if [ -z "$(ENV_FILE)" ]; then \
+		echo "usage: make models-configure ENV_FILE=.env CAPABILITY=video_generation [PRESET=fast] [DRY_RUN=1]"; \
+		exit 2; \
+	fi
+	$(PYTHON) -B -m lib.model_settings_wizard --env $(ENV_FILE) $(if $(CAPABILITY),--capability $(CAPABILITY),) $(if $(PRESET),--preset $(PRESET),) $(if $(PROVIDER),--provider $(PROVIDER),) $(if $(MODEL),--model $(MODEL),) $(if $(DRY_RUN),--dry-run,) $(if $(YES),--yes,)
+
 hyperframes-doctor:
 	@echo "==> Probing HyperFrames runtime (node/ffmpeg/npx + hyperframes doctor)..."
 	$(PYTHON) -B -c "from tools.video.hyperframes_compose import HyperFramesCompose; import json; r=HyperFramesCompose().execute({'operation':'doctor'}); print(json.dumps(r.data, indent=2)); print('OK' if r.success else f'FAIL: {r.error}'); raise SystemExit(0 if r.success else 1)"
@@ -122,6 +135,8 @@ lint:
 	PYTHONPYCACHEPREFIX="$$cache_dir" $(PYTHON) -m py_compile tools/base_tool.py; \
 	PYTHONPYCACHEPREFIX="$$cache_dir" $(PYTHON) -m py_compile tools/tool_registry.py; \
 	PYTHONPYCACHEPREFIX="$$cache_dir" $(PYTHON) -m py_compile tools/cost_tracker.py; \
+	PYTHONPYCACHEPREFIX="$$cache_dir" $(PYTHON) -m py_compile lib/model_preferences.py; \
+	PYTHONPYCACHEPREFIX="$$cache_dir" $(PYTHON) -m py_compile lib/model_settings_wizard.py; \
 	PYTHONPYCACHEPREFIX="$$cache_dir" $(PYTHON) -m py_compile tools/output_paths.py; \
 	PYTHONPYCACHEPREFIX="$$cache_dir" $(PYTHON) -m py_compile tools/status_utils.py; \
 	PYTHONPYCACHEPREFIX="$$cache_dir" $(PYTHON) -m py_compile tools/analysis/composition_validator.py

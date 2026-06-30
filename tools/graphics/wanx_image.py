@@ -1,7 +1,7 @@
-"""Wanxiang image generation and editing via Alibaba Cloud Bailian / DashScope API.
+"""Bailian / DashScope image generation and editing.
 
-Supports Wanxiang 2.1 (default) and legacy Wanx 2.0 / v1 models.
-Uses the DashScope async task pattern: submit → poll → download.
+Supports Qwen Image 2.0 Pro, Wan 2.7, Wanxiang 2.1, and legacy Wanx models.
+Uses the provider-specific DashScope route for each model family.
 
 Endpoint: /api/v1/services/aigc/text2image/image-synthesis (all operations)
   Image editing is via the same endpoint with base_image_url in input.
@@ -29,17 +29,37 @@ from tools.base_tool import (
     ToolStatus,
     ToolTier,
 )
+from tools.model_options import build_model_options
 from tools.output_paths import require_explicit_output_path
 
 _API_BASE = "https://dashscope.aliyuncs.com/api/v1"
 # wanx2.x models: text2image/image-synthesis
 _WANX_URL = f"{_API_BASE}/services/aigc/text2image/image-synthesis"
+# qwen-image models: multimodal-generation/generation (sync messages response)
+_QWEN_IMAGE_PATH = "/services/aigc/multimodal-generation/generation"
 # wan2.7-image-pro: image-generation/generation (messages format, different result path)
 _WAN27_URL = f"{_API_BASE}/services/aigc/image-generation/generation"
 _TASK_URL = f"{_API_BASE}/tasks/{{task_id}}"
+_QWEN_IMAGE_DEFAULT_REGION = "cn-beijing"
+_QWEN_IMAGE_DEFAULT_MODEL = "qwen-image-2.0-pro"
+_KEY_ONLY_DEFAULT_MODEL = "wan2.7-image-pro"
 
 # ── Model registry ─────────────────────────────────────────────────────────────
 _MODELS: dict[str, dict[str, Any]] = {
+    # ── Qwen Image 2.0 Pro (current recommended image model) ──────────────────
+    "qwen-image-2.0-pro": {
+        "name": "Qwen Image 2.0 Pro",
+        "quality": "highest",
+        "speed": "medium",
+        "cost_per_image": 0.025,
+        "max_n": 4,
+        "supports_editing": True,
+        "supports_ref": True,
+        "api_style": "qwen_image",
+        "release_stage": "current_sota",
+        "last_verified": "2026-06-30",
+        "source_url": "https://help.aliyun.com/en/model-studio/qwen-image-api",
+    },
     # ── Wan 2.7 image-pro (latest, messages API, /image-generation/generation) ─
     "wan2.7-image-pro": {
         "name": "Wan 2.7 Image Pro",
@@ -50,6 +70,9 @@ _MODELS: dict[str, dict[str, Any]] = {
         "supports_editing": True,
         "supports_ref": True,
         "api_style": "wan27",  # messages format, different endpoint + result path
+        "release_stage": "current",
+        "last_verified": "2026-06-28",
+        "source_url": "https://www.alibabacloud.com/help/en/model-studio/models",
     },
     # ── Wan 2.7 image (general/accelerated variant, same messages API) ─────────
     "wan2.7-image": {
@@ -61,6 +84,9 @@ _MODELS: dict[str, dict[str, Any]] = {
         "supports_editing": True,
         "supports_ref": True,
         "api_style": "wan27",
+        "release_stage": "current",
+        "last_verified": "2026-06-28",
+        "source_url": "https://www.alibabacloud.com/help/en/model-studio/models",
     },
     # ── Wanxiang 2.1 (confirmed available, /text2image/image-synthesis) ───────
     "wanx2.1-t2i-turbo": {
@@ -145,6 +171,17 @@ def _is_windows_drive_path(value: str) -> bool:
     )
 
 
+def _env_first(*names: str) -> str | None:
+    for name in names:
+        value = os.environ.get(name)
+        if value is None:
+            continue
+        value = value.strip()
+        if value:
+            return value
+    return None
+
+
 class WanxImage(BaseTool):
     name = "wanx_image"
     version = "0.3.0"
@@ -160,6 +197,8 @@ class WanxImage(BaseTool):
     install_instructions = (
         "Set the DASHSCOPE_API_KEY environment variable:\n"
         "  export DASHSCOPE_API_KEY=your_key_here\n"
+        "For qwen-image-2.0-pro, also set DASHSCOPE_WORKSPACE_ID and "
+        "optionally DASHSCOPE_REGION (cn-beijing or ap-southeast-1).\n"
         "Get a key at https://bailian.console.aliyun.com/\n"
         "Enable Wanxiang in the Bailian console model list."
     )
@@ -197,6 +236,13 @@ class WanxImage(BaseTool):
         "photorealistic Western faces (FLUX or Recraft preferred)",
     ]
     fallback_tools = ["flux_image", "openai_image", "recraft_image"]
+    model_options = build_model_options(
+        _MODELS,
+        field="model",
+        default=_KEY_ONLY_DEFAULT_MODEL,
+        cost_units={"cost_per_image": "per_image"},
+        support_keys=("supports_editing", "supports_ref"),
+    )
 
     input_schema = {
         "type": "object",
@@ -253,8 +299,8 @@ class WanxImage(BaseTool):
             "model": {
                 "type": "string",
                 "enum": list(_MODELS.keys()),
-                "default": "wan2.7-image-pro",
-                "description": "wan2.7-image-pro: highest quality (default). wan2.7-image: faster general variant. wanx2.1-t2i-turbo: fastest/cheapest.",
+                "default": _KEY_ONLY_DEFAULT_MODEL,
+                "description": "wan2.7-image-pro is the key-only default. qwen-image-2.0-pro is used by default when Qwen workspace endpoint settings are present.",
             },
             "size": {
                 "type": "string",
@@ -372,19 +418,81 @@ class WanxImage(BaseTool):
     def _get_api_key(self) -> str | None:
         return os.environ.get("DASHSCOPE_API_KEY")
 
+    def _qwen_image_endpoint(self) -> tuple[str | None, str | None]:
+        endpoint = _env_first(
+            "DASHSCOPE_QWEN_IMAGE_ENDPOINT",
+            "BAILIAN_QWEN_IMAGE_ENDPOINT",
+        )
+        if endpoint:
+            return endpoint.rstrip("/"), None
+
+        base_url = _env_first(
+            "DASHSCOPE_QWEN_IMAGE_BASE_URL",
+            "DASHSCOPE_BASE_HTTP_API_URL",
+            "BAILIAN_BASE_HTTP_API_URL",
+        )
+        if base_url:
+            base_url = base_url.rstrip("/")
+            if base_url.endswith(_QWEN_IMAGE_PATH):
+                return base_url, None
+            if base_url.endswith("/api/v1"):
+                return f"{base_url}{_QWEN_IMAGE_PATH}", None
+            return f"{base_url}/api/v1{_QWEN_IMAGE_PATH}", None
+
+        workspace_id = _env_first("DASHSCOPE_WORKSPACE_ID", "BAILIAN_WORKSPACE_ID")
+        if not workspace_id:
+            return (
+                None,
+                "qwen-image-2.0-pro requires DASHSCOPE_WORKSPACE_ID "
+                "(or DASHSCOPE_QWEN_IMAGE_ENDPOINT). The Qwen Image 2.0 API "
+                "uses workspace-scoped Model Studio endpoints such as "
+                "https://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/api/v1/...",
+            )
+
+        region = (
+            _env_first("DASHSCOPE_REGION", "BAILIAN_REGION")
+            or _QWEN_IMAGE_DEFAULT_REGION
+        )
+        return (
+            f"https://{workspace_id}.{region}.maas.aliyuncs.com"
+            f"/api/v1{_QWEN_IMAGE_PATH}",
+            None,
+        )
+
+    def _default_model(self) -> str:
+        endpoint, _error = self._qwen_image_endpoint()
+        if endpoint:
+            return _QWEN_IMAGE_DEFAULT_MODEL
+        return _KEY_ONLY_DEFAULT_MODEL
+
+    def get_info(self) -> dict[str, Any]:
+        info = super().get_info()
+        default_model = self._default_model()
+        model_schema = (
+            info.get("input_schema", {})
+            .get("properties", {})
+            .get("model", {})
+        )
+        if isinstance(model_schema, dict):
+            model_schema["default"] = default_model
+        for option in info.get("model_options", []):
+            if isinstance(option, dict):
+                option["default"] = option.get("id") == default_model
+        return info
+
     def get_status(self) -> ToolStatus:
         if self._get_api_key():
             return ToolStatus.AVAILABLE
         return ToolStatus.UNAVAILABLE
 
     def estimate_cost(self, inputs: dict[str, Any]) -> float:
-        model = inputs.get("model", "wan2.7-image-pro")
+        model = inputs.get("model", self._default_model())
         n = int(inputs.get("n", 1))
-        cost_per = _MODELS.get(model, _MODELS["wan2.7-image-pro"])["cost_per_image"]
+        cost_per = _MODELS.get(model, _MODELS[self._default_model()])["cost_per_image"]
         return round(cost_per * n, 4)
 
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
-        model = inputs.get("model", "wan2.7-image-pro")
+        model = inputs.get("model", self._default_model())
         operation = inputs.get("operation", "text_to_image")
         if operation not in _VALID_OPERATIONS:
             return ToolResult(success=False, error=f"Unsupported operation '{operation}'.")
@@ -409,7 +517,7 @@ class WanxImage(BaseTool):
         import requests
 
         start = time.time()
-        model_meta = _MODELS.get(model, _MODELS["wan2.7-image-pro"])
+        model_meta = _MODELS.get(model, _MODELS[self._default_model()])
         n = min(int(inputs.get("n", 1)), model_meta["max_n"])
 
         # Guard: editing/reference ops require a capable model
@@ -433,7 +541,9 @@ class WanxImage(BaseTool):
 
         api_style = model_meta.get("api_style", "standard")
 
-        if api_style == "wan27":
+        if api_style == "qwen_image":
+            payload, err = self._build_qwen_payload(inputs, model, operation, n)
+        elif api_style == "wan27":
             payload, err = self._build_wan27_payload(inputs, model, operation, n)
         else:
             payload, err = self._build_standard_payload(inputs, model, operation, n)
@@ -441,26 +551,52 @@ class WanxImage(BaseTool):
         if err:
             return ToolResult(success=False, error=err)
 
-        endpoint = _WAN27_URL if api_style == "wan27" else _WANX_URL
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            "X-DashScope-Async": "enable",
-        }
-
         try:
-            submit_resp = requests.post(
-                endpoint, headers=headers, json=payload, timeout=30
-            )
-            submit_resp.raise_for_status()
-            task_id = submit_resp.json()["output"]["task_id"]
-
-            task_status, results = self._poll_task(task_id, api_key, api_style=api_style)
-            if task_status != "SUCCEEDED" or not results:
-                return ToolResult(
-                    success=False,
-                    error=f"Wanxiang image task {task_status.lower()}",
+            if api_style == "qwen_image":
+                endpoint, endpoint_error = self._qwen_image_endpoint()
+                if endpoint_error:
+                    return ToolResult(success=False, error=endpoint_error)
+                submit_resp = requests.post(
+                    endpoint,
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json=payload,
+                    timeout=60,
                 )
+                submit_resp.raise_for_status()
+                results = self._extract_message_image_results(
+                    submit_resp.json().get("output", {})
+                )
+                if not results:
+                    return ToolResult(
+                        success=False,
+                        error="Qwen image generation returned no image results",
+                    )
+            else:
+                endpoint = _WAN27_URL if api_style == "wan27" else _WANX_URL
+                headers = {
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                    "X-DashScope-Async": "enable",
+                }
+                submit_resp = requests.post(
+                    endpoint, headers=headers, json=payload, timeout=30
+                )
+                submit_resp.raise_for_status()
+                task_id = submit_resp.json()["output"]["task_id"]
+
+                task_status, results = self._poll_task(
+                    task_id,
+                    api_key,
+                    api_style=api_style,
+                )
+                if task_status != "SUCCEEDED" or not results:
+                    return ToolResult(
+                        success=False,
+                        error=f"Wanxiang image task {task_status.lower()}",
+                    )
 
             output_paths = self._download_images(
                 results,
@@ -497,6 +633,16 @@ class WanxImage(BaseTool):
         )
 
     # ── Payload builders ───────────────────────────────────────────────────────
+
+    def _build_qwen_payload(
+        self,
+        inputs: dict[str, Any],
+        model: str,
+        operation: str,
+        n: int,
+    ) -> tuple[dict[str, Any], str | None]:
+        """Qwen Image 2.0: multimodal-generation messages endpoint."""
+        return self._build_wan27_payload(inputs, model, operation, n)
 
     def _build_wan27_payload(
         self,
@@ -654,12 +800,7 @@ class WanxImage(BaseTool):
             if status == "SUCCEEDED":
                 if api_style == "wan27":
                     # wan2.7-image-pro: output.choices[N].message.content[M].image
-                    results = [
-                        {"url": item["image"]}
-                        for choice in output.get("choices", [])
-                        for item in choice.get("message", {}).get("content", [])
-                        if item.get("type") == "image" or "image" in item
-                    ]
+                    results = self._extract_message_image_results(output)
                 else:
                     results = output.get("results", [])
                 return status, results
@@ -667,6 +808,45 @@ class WanxImage(BaseTool):
                 return status, []
 
         return "TIMEOUT", []
+
+    @staticmethod
+    def _extract_message_image_results(output: dict[str, Any]) -> list[dict[str, Any]]:
+        results: list[dict[str, Any]] = []
+        seed = output.get("seed")
+        for choice in output.get("choices", []):
+            content = choice.get("message", {}).get("content", [])
+            for item in content:
+                if not isinstance(item, dict):
+                    continue
+                image_value = item.get("image") or item.get("url")
+                image_url = item.get("image_url")
+                if not image_value and isinstance(image_url, dict):
+                    image_value = image_url.get("url")
+                elif not image_value and isinstance(image_url, str):
+                    image_value = image_url
+                if image_value:
+                    entry: dict[str, Any] = {"url": image_value}
+                    if seed is not None:
+                        entry["seed"] = seed
+                    results.append(entry)
+
+        result_items = output.get("results") or []
+        image_items = output.get("images") or []
+        for item in [*result_items, *image_items]:
+            if not isinstance(item, dict):
+                continue
+            image_value = item.get("url") or item.get("image") or item.get("image_url")
+            if isinstance(image_value, dict):
+                image_value = image_value.get("url")
+            if image_value:
+                entry = {"url": image_value}
+                if item.get("seed") is not None:
+                    entry["seed"] = item["seed"]
+                elif seed is not None:
+                    entry["seed"] = seed
+                results.append(entry)
+
+        return results
 
     def _download_images(
         self,

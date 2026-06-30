@@ -128,13 +128,13 @@ stages:
     optional_tools:
       - image_selector
       - diagram_gen
-      - music_gen
+      - music_selector
       - audio_enhance
     tools_available:
       - subtitle_gen
       - image_selector
       - diagram_gen
-      - music_gen
+      - music_selector
       - audio_enhance
     checkpoint_required: true
     human_approval_default: false

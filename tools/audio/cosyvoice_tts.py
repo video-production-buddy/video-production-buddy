@@ -25,6 +25,7 @@ from tools.base_tool import (
     ToolStatus,
     ToolTier,
 )
+from tools.model_options import build_model_options
 from tools.output_paths import require_explicit_output_path
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -164,6 +165,12 @@ class CosyVoiceTTS(BaseTool):
         "delivery-controlled ad narration via qwen3-tts-instruct-flash",
     ]
     not_good_for = ["fully offline production", "voice clone matching"]
+    model_options = build_model_options(
+        _MODELS,
+        field="model",
+        default="qwen3-tts-flash",
+        cost_units={"cost_per_char": "per_char"},
+    )
 
     input_schema = {
         "type": "object",

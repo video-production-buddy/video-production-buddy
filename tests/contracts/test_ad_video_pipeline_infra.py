@@ -234,6 +234,74 @@ class _EnvSetupStubTool(BaseTool):
         return ToolResult(success=False, data={})
 
 
+class _ModelChoiceStubTool(BaseTool):
+    name = "model_choice_stub"
+    tier = ToolTier.GENERATE
+    capability = "video_generation"
+    provider = "model_provider"
+    runtime = ToolRuntime.API
+    dependencies = []
+    model_options = [
+        {
+            "id": "quality-model",
+            "name": "Quality Model",
+            "field": "model_variant",
+            "default": True,
+            "quality": "highest",
+            "speed": "medium",
+            "cost_hint": {"usd": 0.25, "unit": "per_5s"},
+        },
+        {
+            "id": "fast-model",
+            "name": "Fast Model",
+            "field": "model_variant",
+            "quality": "high",
+            "speed": "fast",
+            "cost_hint": {"usd": 0.10, "unit": "per_5s"},
+        },
+    ]
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "prompt": {"type": "string"},
+            "model_variant": {
+                "type": "string",
+                "enum": ["quality-model", "fast-model"],
+                "default": "quality-model",
+            },
+            "output_path": {"type": "string"},
+        },
+    }
+
+    def execute(self, inputs: dict[str, Any]) -> ToolResult:
+        return ToolResult(success=True, data=inputs)
+
+
+class _SchemaOnlyModelStubTool(BaseTool):
+    name = "schema_only_model_stub"
+    tier = ToolTier.GENERATE
+    capability = "image_generation"
+    provider = "schema_model_provider"
+    runtime = ToolRuntime.API
+    dependencies = []
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "prompt": {"type": "string"},
+            "model": {
+                "type": "string",
+                "enum": ["schema-pro", "schema-fast"],
+                "default": "schema-pro",
+                "description": "Schema-only model choices.",
+            },
+            "output_path": {"type": "string"},
+        },
+    }
+
+    def execute(self, inputs: dict[str, Any]) -> ToolResult:
+        return ToolResult(success=True, data=inputs)
+
+
 class TestToolRegistryEdgeCases:
     def test_register_empty_name_raises(self) -> None:
         reg = ToolRegistry()
@@ -336,6 +404,56 @@ class TestToolRegistryEdgeCases:
 
         assert summary["setup_offers"][0]["dependencies"] == [
             "env:STUB_PROVIDER_API_KEY"
+        ]
+
+    def test_provider_menu_surfaces_explicit_model_options(self) -> None:
+        reg = ToolRegistry()
+        reg.register(_ModelChoiceStubTool())
+        reg._discovered_packages.add("tools")
+
+        menu = reg.provider_menu()
+        entry = menu["video_generation"]["available"][0]
+
+        assert entry["model_options"] == _ModelChoiceStubTool.model_options
+
+    def test_provider_menu_summary_surfaces_model_choices(self) -> None:
+        reg = ToolRegistry()
+        reg.register(_ModelChoiceStubTool())
+        reg.register(_SchemaOnlyModelStubTool())
+        reg._discovered_packages.add("tools")
+
+        summary = reg.provider_menu_summary()
+
+        explicit = next(
+            choice for choice in summary["model_choices"]
+            if choice["tool"] == "model_choice_stub"
+        )
+        assert explicit["capability"] == "video_generation"
+        assert explicit["provider"] == "model_provider"
+        assert explicit["field"] == "model_variant"
+        assert explicit["default"] == "quality-model"
+        assert explicit["options"][0]["quality"] == "highest"
+        assert explicit["options"][0]["cost_hint"] == {"usd": 0.25, "unit": "per_5s"}
+
+        inferred = next(
+            choice for choice in summary["model_choices"]
+            if choice["tool"] == "schema_only_model_stub"
+        )
+        assert inferred["field"] == "model"
+        assert inferred["default"] == "schema-pro"
+        assert inferred["options"] == [
+            {
+                "id": "schema-pro",
+                "field": "model",
+                "default": True,
+                "description": "Schema-only model choices.",
+            },
+            {
+                "id": "schema-fast",
+                "field": "model",
+                "default": False,
+                "description": "Schema-only model choices.",
+            },
         ]
 
     def test_gpu_required_tools_empty(self) -> None:

@@ -63,6 +63,8 @@ snapshots, or components whose upstream path has not been verified yet.
 - **Capability-first tool design:** Each major family should expose a selector tool plus explicit provider tools
   - Example: `tts_selector` + `cosyvoice_tts` / `doubao_tts` / `elevenlabs_tts` / `google_tts` / `minimax_tts` / `openai_tts` / `piper_tts`
   - Example: `video_selector` + `heygen_video` / `wan_video` / `hunyuan_video` / `ltx_video_local` / `ltx_video_modal` / `cogvideo_video`
+  - Example: `music_selector` + `music_gen` / `minimax_music` / `suno_music`
+  - Example: `text_selector` + `qwen_chat` / `minimax_chat` for approved billed helper calls
 - **Style playbooks:** YAML defining visual language, typography, motion, audio, asset generation constraints
 - **Artifacts are canonical:** `user_request`, `intake_brief`, `enriched_brief`, `intelligence_brief`, `production_bible`, `idea_options`, `production_proposal`, `script`, `scene_plan`, `asset_manifest`, `edit_decisions`, `render_report`, `publish_log`
 - **Every tool inherits from `tools/base_tool.py`** (ToolContract)
@@ -89,13 +91,15 @@ snapshots, or components whose upstream path has not been verified yet.
 | `project_profile/migration_audit.md` | Record of migrated agent-side guidance and intentionally non-migrated local history |
 | `docs/PR_REVIEW_GUIDE.md` | Review framework for PR architecture, provider, runtime, dependency, security, and docs risks |
 | `config.yaml` | Global configuration |
+| `.env.example` | User-facing template for API keys and optional `VPB_*` model defaults |
 | `lib/config_model.py` | Runtime config loader (Pydantic) |
+| `lib/model_settings_wizard.py` | User-facing model choice listing and `.env` model preference validation |
 | `lib/checkpoint.py` | Checkpoint writer/reader |
 | `lib/pipeline_loader.py` | Pipeline manifest loader + helpers |
 | `lib/media_profiles.py` | Platform-specific render profiles |
 | `styles/playbook_loader.py` | Style playbook loader + validator + design intelligence (color/type/a11y) |
 | `tools/base_tool.py` | ToolContract base class |
-| `tools/tool_registry.py` | Tool discovery and reporting |
+| `tools/tool_registry.py` | Tool discovery and reporting, including provider/model preflight summaries |
 | `tools/cost_tracker.py` | Budget governance |
 | `lib/ad_knowledge.py` | Curated ad-video knowledge-card loading, validation, and deterministic retrieval |
 | `lib/knowledge_alignment.py` | Checks that selected producer-knowledge refs reach script and scene_plan artifacts |

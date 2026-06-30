@@ -83,6 +83,30 @@ class GrokImage(BaseTool):
         "general-purpose image generation with aspect ratio control",
     ]
     not_good_for = ["offline generation", "strict seeded reproducibility"]
+    model_options = [
+        {
+            "id": "grok-imagine-image-quality",
+            "name": "Grok Imagine Image Quality",
+            "field": "model",
+            "default": True,
+            "quality": "highest",
+            "speed": "medium",
+            "release_stage": "current",
+            "last_verified": "2026-06-28",
+            "source_url": "https://docs.x.ai/developers/model-capabilities/imagine",
+        },
+        {
+            "id": "grok-imagine-image",
+            "name": "Grok Imagine Image",
+            "field": "model",
+            "default": False,
+            "quality": "legacy_high",
+            "speed": "medium",
+            "release_stage": "legacy",
+            "last_verified": "2026-06-28",
+            "source_url": "https://docs.x.ai/developers/model-capabilities/imagine",
+        },
+    ]
 
     input_schema = {
         "type": "object",
@@ -97,8 +121,8 @@ class GrokImage(BaseTool):
             },
             "model": {
                 "type": "string",
-                "enum": ["grok-imagine-image"],
-                "default": "grok-imagine-image",
+                "enum": ["grok-imagine-image-quality", "grok-imagine-image"],
+                "default": "grok-imagine-image-quality",
             },
             "aspect_ratio": {"type": "string", "description": "Examples: 1:1, 3:2, 16:9, 9:16"},
             "resolution": {
@@ -188,16 +212,18 @@ class GrokImage(BaseTool):
     def estimate_cost(self, inputs: dict[str, Any]) -> float:
         output_count = int(inputs.get("n", 1))
         input_count = self._input_image_count(inputs)
-        # xAI currently publishes Grok Imagine Image at $0.02 per generated
-        # image plus $0.002 per input image for edits or composites.
-        return output_count * 0.02 + input_count * 0.002
+        # xAI publishes Grok Imagine Image Quality at $0.05 per generated
+        # image; keep a small input-image estimate for edit/composite routing.
+        model = inputs.get("model", "grok-imagine-image-quality")
+        output_cost = 0.05 if model == "grok-imagine-image-quality" else 0.02
+        return output_count * output_cost + input_count * 0.002
 
     def _build_payload(self, inputs: dict[str, Any]) -> tuple[str, dict[str, Any]]:
         mode = inputs.get("generation_mode", "generate")
         if mode not in {"generate", "edit"}:
             raise ValueError(f"Unsupported generation_mode '{mode}'.")
         payload: dict[str, Any] = {
-            "model": inputs.get("model", "grok-imagine-image"),
+            "model": inputs.get("model", "grok-imagine-image-quality"),
             "prompt": inputs["prompt"],
         }
         if inputs.get("aspect_ratio"):

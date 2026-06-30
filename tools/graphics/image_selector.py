@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from lib.model_preferences import apply_model_preferences, filter_model_candidates
 from tools.base_tool import BaseTool, ToolResult, ToolRuntime, ToolStability, ToolStatus, ToolTier
 from tools.status_utils import (
     is_tool_available,
@@ -65,6 +66,7 @@ class ImageSelector(BaseTool):
         "output_path",
         "preferred_provider",
         "allowed_providers",
+        "model",
         "operation",
     ]
 
@@ -115,6 +117,13 @@ class ImageSelector(BaseTool):
                 "description": "Provider name or 'auto'. Valid values are discovered at runtime from the registry.",
                 "default": "auto",
             },
+            "model": {
+                "type": "string",
+                "description": (
+                    "Provider-specific image model. Valid values are reported by "
+                    "provider_menu_summary()['model_choices'] for the selected tool."
+                ),
+            },
             "allowed_providers": {
                 "type": "array",
                 "items": {"type": "string"},
@@ -153,6 +162,10 @@ class ImageSelector(BaseTool):
             "selected_tool_best_for": {
                 "type": "array",
                 "items": {"type": "string"},
+            },
+            "selected_tool_model_options": {
+                "type": "array",
+                "items": {"type": "object"},
             },
             "alternatives_considered": {
                 "type": "array",
@@ -214,16 +227,30 @@ class ImageSelector(BaseTool):
         return ToolStatus.UNAVAILABLE
 
     def estimate_cost(self, inputs: dict[str, Any]) -> float:
+        original_inputs = dict(inputs)
+        inputs = apply_model_preferences(original_inputs, self.capability)
         candidates = self._providers()
+        inputs = self._relax_incompatible_env_model_default(
+            original_inputs,
+            inputs,
+            candidates,
+        )
         if not candidates:
             return 0.0
         tool, _ = self._select_best_tool(inputs, candidates, self._prepare_task_context(inputs))
         return tool.estimate_cost(inputs) if tool else 0.0
 
+    def idempotency_key(self, inputs: dict[str, Any]) -> str:
+        return super().idempotency_key(
+            apply_model_preferences(dict(inputs), self.capability)
+        )
+
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
         import logging
         from lib.scoring import rank_providers
 
+        original_inputs = dict(inputs)
+        inputs = apply_model_preferences(original_inputs, self.capability)
         if inputs.get("operation") != "rank":
             _, output_error = require_explicit_output_path(
                 inputs, self.name, artifact_label="generated image"
@@ -232,9 +259,15 @@ class ImageSelector(BaseTool):
                 return output_error
 
         logger = logging.getLogger(__name__)
+        providers = self._providers()
+        inputs = self._relax_incompatible_env_model_default(
+            original_inputs,
+            inputs,
+            providers,
+        )
         task_context = self._prepare_task_context(inputs)
         wants_edit = self._wants_edit(inputs)
-        candidates = self._filter_candidates(inputs, self._providers())
+        candidates = self._filter_candidates(inputs, providers)
 
         # Rank mode — return scored provider rankings without generating
         if inputs.get("operation") == "rank":
@@ -320,6 +353,7 @@ class ImageSelector(BaseTool):
                 "image_path",
                 "image_urls",
                 "image_paths",
+                "model",
             ):
                 if passthrough_key in adapted and passthrough_key not in props:
                     stripped.append(f"{passthrough_key}={adapted.pop(passthrough_key)}")
@@ -370,6 +404,7 @@ class ImageSelector(BaseTool):
                     tool = available_by_name.get(score_item.tool_name)
                     if tool is not None:
                         return tool, score_item
+            return None, None
 
         for score_item in rankings:
             tool = available_by_name.get(score_item.tool_name)
@@ -396,6 +431,7 @@ class ImageSelector(BaseTool):
             "required_agent_skills": info.get("agent_skills", []),
             "selected_tool_usage_location": info.get("usage_location"),
             "selected_tool_best_for": info.get("best_for", []),
+            "selected_tool_model_options": info.get("model_options", []),
         }
 
     def _serialize_rankings(self, candidates: list[BaseTool], rankings: list[object]) -> list[dict[str, Any]]:
@@ -410,6 +446,7 @@ class ImageSelector(BaseTool):
                 item["usage_location"] = info.get("usage_location")
                 item["best_for"] = info.get("best_for", [])
                 item["supports"] = info.get("supports", {})
+                item["model_options"] = info.get("model_options", [])
                 item["status"] = safe_tool_status(tool).value
             serialized.append(item)
         return serialized
@@ -425,9 +462,46 @@ class ImageSelector(BaseTool):
         )
 
     def _filter_candidates(self, inputs: dict[str, Any], candidates: list[BaseTool]) -> list[BaseTool]:
+        return filter_model_candidates(
+            inputs,
+            self.capability,
+            self._capability_candidates(inputs, candidates),
+        )
+
+    def _relax_incompatible_env_model_default(
+        self,
+        original_inputs: dict[str, Any],
+        inputs: dict[str, Any],
+        candidates: list[BaseTool],
+    ) -> dict[str, Any]:
+        """Drop an env-only image model default when it blocks edit routing."""
+        if "model" in original_inputs or not self._wants_edit(inputs):
+            return inputs
+
+        model = _selector_model_value(inputs)
+        if model is None:
+            return inputs
+
+        edit_candidates = self._capability_candidates(inputs, candidates)
+        if not edit_candidates:
+            return inputs
+        if filter_model_candidates(inputs, self.capability, edit_candidates):
+            return inputs
+
+        relaxed = dict(inputs)
+        relaxed.pop("model", None)
+        if self._capability_candidates(relaxed, candidates):
+            return relaxed
+        return inputs
+
+    def _capability_candidates(
+        self,
+        inputs: dict[str, Any],
+        candidates: list[BaseTool],
+    ) -> list[BaseTool]:
         wants_edit = self._wants_edit(inputs)
         if not wants_edit:
-            return candidates
+            return list(candidates)
 
         filtered: list[BaseTool] = []
         for tool in candidates:
@@ -461,3 +535,11 @@ def _allowed_candidates(
         tool for tool in candidates
         if safe_tool_provider(tool) in allowed or tool.name in allowed
     ]
+
+
+def _selector_model_value(inputs: dict[str, Any]) -> str | None:
+    value = inputs.get("model")
+    if value is None:
+        return None
+    value = str(value).strip()
+    return value or None

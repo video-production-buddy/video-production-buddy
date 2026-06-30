@@ -34,6 +34,7 @@ from tools.base_tool import (
     ToolStatus,
     ToolTier,
 )
+from tools.model_options import build_model_options
 from tools.output_paths import require_optional_project_sidecar_path
 
 _DEFAULT_API_BASE = "https://api.minimaxi.com/v1"
@@ -106,6 +107,12 @@ class MinimaxChat(BaseTool):
     not_good_for = [
         "Replacing the agent's own reasoning (the harness is the primary reasoner)",
     ]
+    model_options = build_model_options(
+        _MODELS,
+        field="model",
+        default="MiniMax-M3",
+        include_keys=("quality", "speed", "context", "note"),
+    )
 
     input_schema = {
         "type": "object",
