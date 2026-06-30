@@ -90,7 +90,7 @@
     "class_type": "SaveImage",
     "inputs": {
       "images": ["12", 0],
-      "filename_prefix": "openmontage"
+      "filename_prefix": "vpb"
     }
   }
 }

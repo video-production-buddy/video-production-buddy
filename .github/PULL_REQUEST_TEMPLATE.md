@@ -1,5 +1,5 @@
 <!--
-Thanks for contributing to OpenMontage! Please fill in the sections below.
+Thanks for contributing to Video Production Buddy! Please fill in the sections below.
 Keep PRs focused — one logical change per PR is easier to review and merge.
 -->
 

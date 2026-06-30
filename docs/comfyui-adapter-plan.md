@@ -1,4 +1,4 @@
-# ComfyUI Provider Adapter for OpenMontage
+# ComfyUI Provider Adapter for Video Production Buddy
 
 **RFC: Native ComfyUI backend for image and video generation**
 
@@ -6,7 +6,7 @@
 
 ## Motivation
 
-OpenMontage's local GPU tools (`wan_video`, `hunyuan_video`, `cogvideo_video`,
+Video Production Buddy's local GPU tools (`wan_video`, `hunyuan_video`, `cogvideo_video`,
 `local_diffusion`) use HuggingFace `diffusers` directly. This works on x86 +
 consumer GPUs but breaks on newer hardware where the PyTorch ecosystem hasn't
 caught up:
@@ -23,7 +23,7 @@ for DGX Spark. The community has optimized workflows for Blackwell (SageAttentio
 NVFP4 quantization, LightX2V 4-step LoRAs). Models like WAN 2.2, FLUX 2,
 and ACE-Step run reliably through ComfyUI on hardware where diffusers cannot.
 
-A ComfyUI adapter gives OpenMontage access to any model ComfyUI supports,
+A ComfyUI adapter gives Video Production Buddy access to any model ComfyUI supports,
 on any hardware ComfyUI runs on, without shipping or maintaining PyTorch builds.
 
 ---
@@ -33,7 +33,7 @@ on any hardware ComfyUI runs on, without shipping or maintaining PyTorch builds.
 ### Architecture
 
 ```
-OpenMontage Agent
+Video Production Buddy Agent
     |
     v
 video_selector / image_selector
@@ -290,7 +290,7 @@ different class names (`AceStepModelLoader` vs native `TextEncodeAceStepAudio`,
 etc.).  Shipping a workflow that only works with one specific custom node
 pack would break for most users.
 
-**Future path:** ACE-Step support should be revisited once OpenMontage decides
+**Future path:** ACE-Step support should be revisited once Video Production Buddy decides
 the music-generation routing shape and a portable ComfyUI audio workflow
 contract. Current image/video workflow overrides are intentionally scoped to
 image and video artifacts, not arbitrary audio workflows.
@@ -341,7 +341,7 @@ health_check: GET /system_stats
 
 When bundled models are missing, the tool returns a machine-readable
 `data.missing_models[]` list with filename, role, destination hint, and download
-URL when OpenMontage knows the canonical source. Agents should surface that
+URL when Video Production Buddy knows the canonical source. Agents should surface that
 payload rather than parsing prose error text.
 
 ---
@@ -371,7 +371,7 @@ COMFYUI_SERVER_URL=http://comfyui:8188      # if on same docker network
 ## Provider Selection Behavior
 
 When the adapter is available, selectors will rank it alongside other providers
-using OpenMontage's 7-dimension scoring:
+using Video Production Buddy's 7-dimension scoring:
 
 | Dimension | ComfyUI score | Rationale |
 |-----------|---------------|-----------|
@@ -407,11 +407,11 @@ appropriate `workflow_json` or `workflow_path`. Good candidates include:
 - LTX-Video/LTXV FP8 or quantized workflows for fast short clips.
 - Wan 2.2 GGUF/quantized community workflows at lower resolution and frame count.
 
-OpenMontage should treat those as custom workflow profiles until a blessed
+Video Production Buddy should treat those as custom workflow profiles until a blessed
 low-VRAM workflow is bundled. For custom workflows, resource requirements are
 workflow-supplied rather than inferred from the bundled WAN 2.2 14B profile.
 
-### Future (add models to ComfyUI, no code changes to OpenMontage)
+### Future (add models to ComfyUI, no code changes to Video Production Buddy)
 
 - Newer checkpoints (WAN 3.x, FLUX 3, etc.) -- just update workflow JSON
 - ControlNet, IP-Adapter, AnimateDiff -- supported via ComfyUI custom nodes
@@ -466,7 +466,7 @@ pipeline definition, or any schema.
 3. **Multi-server:** Should the adapter support multiple ComfyUI instances
    (e.g., one for images, one for video) via per-capability URLs?
 
-4. **Music generation:** ACE-Step works in ComfyUI but OpenMontage needs a
+4. **Music generation:** ACE-Step works in ComfyUI but Video Production Buddy needs a
    dedicated music-generation routing contract before adding `comfyui_music`.
    The follow-up should decide selector integration, audio artifact schemas, and
    a portable workflow/output-node contract rather than treating music as a

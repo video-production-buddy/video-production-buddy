@@ -146,7 +146,7 @@
     "class_type": "SaveVideo",
     "inputs": {
       "video": ["94", 0],
-      "filename_prefix": "openmontage_i2v",
+      "filename_prefix": "vpb_i2v",
       "format": "auto",
       "codec": "auto"
     }

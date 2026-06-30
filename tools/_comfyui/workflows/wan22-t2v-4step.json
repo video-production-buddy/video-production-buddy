@@ -135,7 +135,7 @@
     "class_type": "SaveVideo",
     "inputs": {
       "video": ["15", 0],
-      "filename_prefix": "openmontage_t2v",
+      "filename_prefix": "vpb_t2v",
       "format": "auto",
       "codec": "auto"
     }

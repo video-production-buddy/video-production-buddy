@@ -262,7 +262,7 @@ class ComfyUIVideo(BaseTool):
             return ToolResult(
                 success=False,
                 error=(
-                    "Custom ComfyUI workflows require output_node so OpenMontage "
+                    "Custom ComfyUI workflows require output_node so Video Production Buddy "
                     "knows which ComfyUI node to download artifacts from."
                 ),
             )
