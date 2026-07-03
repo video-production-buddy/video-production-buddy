@@ -311,12 +311,20 @@ def _asset_entry(project_dir: Path, asset: dict) -> dict:
             kind = "video"
         elif ext in MEDIA_AUDIO_EXT:
             kind = "audio"
+    # A visual is only *renderable* on the board if the file it points at is
+    # actually a raster image or a video. Bespoke/atelier assets (type
+    # "animation" pointing at a .tsx composition) exist on disk but can't be
+    # thumbnailed — routing them to <img> yields a broken image. The board
+    # falls back to a per-scene snapshot or the shot-spec placeholder instead.
+    ext = file_path.suffix.lower()
+    renderable = exists and ext in (MEDIA_IMAGE_EXT | MEDIA_VIDEO_EXT)
     return {
         "id": asset.get("id"),
         "type": kind,
         "scene_id": asset.get("scene_id"),
         "path": _rel(project_dir, file_path) if exists else raw_path,
         "exists": exists,
+        "renderable": renderable,
         "prompt": asset.get("prompt"),
         "model": asset.get("model"),
         "source_tool": asset.get("source_tool"),
@@ -326,6 +334,36 @@ def _asset_entry(project_dir: Path, asset: dict) -> dict:
         "duration_seconds": asset.get("duration_seconds"),
         "resolution": asset.get("resolution"),
     }
+
+
+def _find_scene_snapshot(project_dir: Path, scene_id: str) -> Optional[dict]:
+    """A per-scene review still, if the run wrote one.
+
+    Atelier/animation scenes have no thumbnailable asset file, so the
+    assets-stage snapshot (`snapshots/<scene_id>.png`) is what the filmstrip
+    shows. Accept exact `<scene_id>.<ext>` and `<scene_id>_*.<ext>` forms.
+    """
+    snap_dir = project_dir / "snapshots"
+    if not scene_id or not snap_dir.is_dir():
+        return None
+    try:
+        for f in sorted(snap_dir.iterdir()):
+            if not f.is_file() or f.suffix.lower() not in MEDIA_IMAGE_EXT:
+                continue
+            stem = f.stem
+            if stem == scene_id or stem.startswith(f"{scene_id}_"):
+                return {
+                    "id": f"snap_{scene_id}",
+                    "type": "image",
+                    "scene_id": scene_id,
+                    "path": _rel(project_dir, f),
+                    "exists": True,
+                    "renderable": True,
+                    "snapshot": True,
+                }
+    except OSError:
+        return None
+    return None
 
 
 def _find_script_section(scene: dict, sections: list[dict]) -> Optional[dict]:
@@ -396,8 +434,12 @@ def _build_storyboard(
         scene_assets = assets_by_scene.get(sid, [])
         visuals = [a for a in scene_assets if a["type"] in ("image", "video", "diagram", "animation")]
         audio = [a for a in scene_assets if a["type"] in ("audio", "narration", "music", "sfx")]
-        # Takes: multiple visual assets for the same slot, ordered as listed.
-        active_visual = visuals[-1] if visuals else None
+        # Only files that can actually be shown (raster/video) are takes; a
+        # bespoke composition asset (.tsx animation) is real but not showable.
+        renderable = [a for a in visuals if a.get("renderable")]
+        # Active visual: newest renderable take, else a per-scene review
+        # snapshot, else nothing (card falls to the shot-spec placeholder).
+        active_visual = renderable[-1] if renderable else _find_scene_snapshot(project_dir, sid)
         cards.append({
             "id": sid,
             "type": scene.get("type"),
@@ -418,7 +460,7 @@ def _build_storyboard(
             "section_label": (section or {}).get("label"),
             "required_assets": scene.get("required_assets") or [],
             "visual": active_visual,
-            "takes": visuals,
+            "takes": renderable,
             "audio": audio,
             "generating": generating.get(sid) is not None,
             "generating_tool": (generating.get(sid) or {}).get("tool"),

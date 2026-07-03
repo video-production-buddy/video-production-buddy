@@ -155,7 +155,7 @@ function renderDrawer(s) {
       el("span", { class: `f ${st.review.critical ? "crit" : ""}` }, `${st.review.critical ?? 0} critical`),
       el("span", { class: `f ${st.review.suggestions ? "sugg" : ""}` }, `${st.review.suggestions ?? 0} suggestions`),
       el("span", { class: "f" }, `${st.review.nitpicks ?? 0} nitpicks`),
-      typeof st.review.summary === "string" ? el("span", { style: "font-size:11.5px;color:var(--text-2);margin-left:8px" }, st.review.summary) : null,
+      typeof st.review.summary === "string" ? el("span", { style: "font-size:calc(11.5px * var(--fs-scale));color:var(--text-2);margin-left:8px" }, st.review.summary) : null,
     ));
   }
 
@@ -166,7 +166,7 @@ function renderDrawer(s) {
     if (!artifact) continue;
     shown = true;
     body.append(
-      el("div", { class: "d-cat", style: "font-family:var(--mono);font-size:9.5px;color:var(--text-3);letter-spacing:.1em;text-transform:uppercase;margin:6px 0 4px" }, name),
+      el("div", { class: "d-cat", style: "font-family:var(--mono);font-size:calc(9.5px * var(--fs-scale));color:var(--text-3);letter-spacing:.1em;text-transform:uppercase;margin:6px 0 4px" }, name),
       el("pre", {}, JSON.stringify(artifact, null, 2)),
     );
   }
@@ -180,7 +180,7 @@ function renderDrawer(s) {
       el("h3", {}, `${st.name} — ${st.status}`),
       st.gate_skipped ? el("span", { class: "gate-chip" }, "⚑ GATE SKIPPED") : null,
       st.versions > 1 ? el("span", { class: "ver-chip" }, `v${st.versions}`) : null,
-      st.timestamp ? el("span", { class: "meta", style: "font-family:var(--mono);font-size:10.5px;color:var(--text-3)" }, st.timestamp) : null,
+      st.timestamp ? el("span", { class: "meta", style: "font-family:var(--mono);font-size:calc(10.5px * var(--fs-scale));color:var(--text-3)" }, st.timestamp) : null,
       el("span", { class: "close", onclick: () => toggleDrawer(st.name) }, "CLOSE ✕"),
     ),
     body,
@@ -248,6 +248,23 @@ function openScriptModal() {
   modal.classList.add("open");
 }
 
+function openNarrModal(card) {
+  modal.innerHTML = "";
+  const meta = [sceneLabel(card.id), card.section_label, fmtDuration(card.duration_seconds)]
+    .filter(Boolean).join(" · ");
+  modal.append(
+    el("span", { class: "modal-close", onclick: closeModal }, "ESC · CLOSE"),
+    el("div", { class: "modal-page" },
+      el("div", { class: "script-card", style: "cursor:default" },
+        el("div", { class: "sp-meta" }, meta),
+        card.narration ? el("div", { class: "sp-action", style: "margin-left:0" }, card.narration) : null,
+        card.shot_intent ? el("div", { class: "sp-paren", style: "margin-left:0" }, `Intent — ${card.shot_intent}`) : null,
+        card.description ? el("div", { class: "sp-paren", style: "margin-left:0" }, card.description) : null,
+      )),
+  );
+  modal.classList.add("open");
+}
+
 function closeModal() { modal.classList.remove("open"); }
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(); });
 modal.addEventListener("click", (e) => { if (e.target === modal) closeModal(); });
@@ -261,12 +278,28 @@ function renderDecisions(s) {
   const decisions = (log && log.decisions) || [];
   if (!decisions.length) return null;
   const body = el("div", { class: "panel-body" });
-  for (const d of decisions.slice(-8).reverse()) {
+  // Collapse by category+subject: a decision that changed mid-run (e.g. voice
+  // openai_onyx → chirp3) is superseded by the later entry — show the CURRENT
+  // choice, not the first one recorded, and mark that it was revised.
+  const current = new Map();
+  decisions.forEach((d, i) => {
+    const key = `${d.category || "decision"}::${d.subject || ""}`;
+    const prev = current.get(key);
+    current.set(key, { d, order: i, revised: prev ? prev.revised + 1 : 0 });
+  });
+  const shown = [...current.values()].sort((a, b) => b.order - a.order).slice(0, 8);
+  for (const { d, revised } of shown) {
+    const selLabel = (() => {
+      // Prefer the human label of the selected option over its bare id.
+      const opt = (d.options_considered || []).find((o) => (o.option_id ?? o.label) === d.selected);
+      return (opt && opt.label) || d.selected || "";
+    })();
     const alts = (d.options_considered || [])
       .filter((o) => (o.option_id ?? o.label) !== d.selected && (o.option_id || o.label));
     body.append(el("div", { class: "decision" },
-      el("div", { class: "d-cat" }, `${d.category || "decision"}${d.confidence ? ` · ${d.confidence}` : ""}`),
-      el("div", { class: "d-pick" }, `${d.subject || ""} `, el("span", { class: "arrow" }, "→"), ` ${d.selected || ""}`),
+      el("div", { class: "d-cat" }, `${d.category || "decision"}${d.confidence ? ` · ${d.confidence}` : ""}`,
+        revised ? el("span", { class: "d-revised" }, " · revised") : null),
+      el("div", { class: "d-pick" }, `${d.subject || ""} `, el("span", { class: "arrow" }, "→"), ` ${selLabel}`),
       d.reason ? el("div", { class: "d-why" }, d.reason) : null,
       alts.length ? el("div", { class: "d-alt" }, "also considered: ",
         alts.slice(0, 3).map((o, i) => [i ? " · " : "", el("s", {}, o.label || o.option_id)]).flat()) : null,
@@ -373,10 +406,29 @@ function sceneCard(s, card) {
         if (vid.paused) vid.play(); else vid.pause();
       };
     } else {
-      thumb = el("div", { class: "thumb approved" },
-        el("img", { src: thumbURL(s.project_id, v.path, 640), loading: "lazy", alt: "" }),
-        badge ? el("span", { class: "badge" }, badge) : null);
+      const img = el("img", { src: thumbURL(s.project_id, v.path, 640), loading: "lazy", alt: "" });
+      // A thumbnail that fails to load must never show a broken-image icon —
+      // fall back to the shot spec in place (F: broken links).
+      img.onerror = () => {
+        const t = img.closest(".thumb");
+        if (!t) return;
+        t.className = "thumb spec";
+        t.innerHTML = "";
+        t.append(el("div", { class: "spec-in" },
+          el("div", { class: "spec-desc" }, card.description || "asset unavailable"),
+          el("div", { class: "spec-shot" }, [card.framing, card.movement].filter(Boolean).join(" · ").slice(0, 70))));
+      };
+      thumb = el("div", { class: "thumb approved" }, img,
+        v.snapshot ? el("span", { class: "badge" }, "snapshot") : (badge ? el("span", { class: "badge" }, badge) : null));
     }
+  } else if (card.type === "animation") {
+    // Bespoke/atelier scene with no snapshot yet — name it as such rather
+    // than "no asset yet" (the composition IS the asset).
+    thumb = el("div", { class: "thumb spec bespoke" },
+      el("div", { class: "spec-in" },
+        el("span", { class: "bespoke-tag" }, "◆ BESPOKE"),
+        el("div", { class: "spec-desc" }, card.description || ""),
+        el("div", { class: "spec-shot" }, "hand-authored composition")));
   } else if (card.visual && !card.visual.exists) {
     thumb = el("div", { class: "thumb missing" },
       el("div", { class: "spec-in" },
@@ -406,7 +458,7 @@ function sceneCard(s, card) {
     wrap.append(el("div", { class: "shotchips", style: "display:flex;flex-wrap:wrap;gap:4px;padding:7px 2px 0" },
       [sl.shot_size, sl.camera_movement, sl.lens_mm ? `${sl.lens_mm}mm` : null, sl.lighting_key]
         .filter(Boolean)
-        .map((t) => el("span", { style: "font-family:var(--mono);font-size:8.5px;letter-spacing:.04em;color:#62626c;border:1px solid #212129;border-radius:3px;padding:1px 5px" }, String(t).replaceAll("_", " ")))));
+        .map((t) => el("span", { style: "font-family:var(--mono);font-size:calc(8.5px * var(--fs-scale));letter-spacing:.04em;color:#62626c;border:1px solid #212129;border-radius:3px;padding:1px 5px" }, String(t).replaceAll("_", " ")))));
   }
 
   // takes drawer
@@ -426,9 +478,14 @@ function sceneCard(s, card) {
     wrap.append(takes);
   }
 
-  // narration + audio
+  // narration + audio — clickable to read in full (F: narration text cut off)
   if (card.narration) {
-    wrap.append(el("div", { class: "narr" }, card.narration));
+    const long = card.narration.length > 90;
+    wrap.append(el("div", {
+      class: `narr${long ? " clip" : ""}`,
+      title: "Click to read the full narration",
+      onclick: () => openNarrModal(card),
+    }, card.narration, long ? el("span", { class: "narr-more" }, "⤢") : null));
   } else if (card.shot_intent || card.description) {
     wrap.append(el("div", { class: "narr tc-note" }, (card.shot_intent || card.description || "").slice(0, 110)));
   }
@@ -472,6 +529,9 @@ function renderRenders(s) {
   const prev = document.querySelector(".render-hero video");
   const src = mediaURL(s.project_id, current.path);
   const video = el("video", { src, controls: "", preload: "none" });
+  // Click the frame to start playback (controls handle pause/scrub) — the
+  // big player was inert to a click on the picture itself.
+  video.addEventListener("click", () => { if (video.paused) video.play().catch(() => {}); });
   if (prev && prev.getAttribute("src") === src && (prev.currentTime > 0 || !prev.paused)) {
     const t = prev.currentTime;
     const wasPlaying = !prev.paused && !prev.ended;
@@ -510,7 +570,7 @@ function renderFoundMedia(s) {
 function renderNoState(s) {
   if (s.has_pipeline_state) return null;
   return el("div", { class: "notice", style: "border-color:#2b2b33;background:var(--surface-2);color:var(--text-3)" },
-    el("span", { style: "font-size:15px" }, "◌"),
+    el("span", { style: "font-size:calc(15px * var(--fs-scale))" }, "◌"),
     el("span", {},
       el("b", { style: "color:var(--text-2)" }, "No pipeline state. "),
       "This project has no checkpoints — Backlot is showing what it found on disk. ",
@@ -521,7 +581,7 @@ function renderAwaitingNotice(s) {
   const awaiting = s.stages.find((x) => x.status === "awaiting_human");
   if (!awaiting) return null;
   return el("div", { class: "notice" },
-    el("span", { style: "font-size:16px" }, "◈"),
+    el("span", { style: "font-size:calc(16px * var(--fs-scale))" }, "◈"),
     el("span", {},
       el("b", {}, `The ${awaiting.name} stage is waiting for your review. `),
       "The agent is paused at this gate — reply ", el("b", {}, "in chat"), " to approve or request changes."));

@@ -148,10 +148,23 @@ When `human_approval_default: true`:
    `decision_log` entry (`category: "approval_policy"`) at the moment they
    say it — absent that entry, stop at every gate.
 
-6. **The assets gate reviews the storyboard.** `assets` now gates in every
-   pipeline: present the generated assets scene-by-scene (the Backlot board's
-   filmstrip is the natural review surface), including spend so far and the
-   projected compose cost. A bad asset caught here saves a full re-render.
+6. **The assets gate reviews the storyboard — before any draft render.**
+   `assets` now gates in every pipeline: present the generated assets
+   scene-by-scene (the Backlot board's filmstrip is the natural review
+   surface), including spend so far and the projected compose cost. A bad
+   asset caught here saves a full re-render.
+
+   **Do not render a draft/full composition to earn this review.** The review
+   surface is the filmstrip populated with per-scene assets — stock picks,
+   generated stills, narration waveforms — *not* a rendered video. For scenes
+   whose "asset" is a bespoke/atelier composition (no thumbnailable file), the
+   agent writes one **per-scene review still** to
+   `projects/<id>/snapshots/<scene_id>.png` (a `remotion still` at a
+   representative frame — see `skills/meta/bespoke-composition.md`); the board
+   shows those on the filmstrip. Refresh `metadata.partial_progress` as stills
+   land, then STOP at the gate. The draft/final render is the **compose**
+   stage — it runs only after the assets gate is approved. Rendering a full
+   draft inside the assets stage jumps the gate the user is meant to hold.
 
 ### Step 6: Determine Next Stage
 
