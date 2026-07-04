@@ -102,6 +102,7 @@ stages:
       - clip_search
       - music_selector
     tools_available:
+      - genui_interaction
       - direct_clip_search
       - corpus_builder
       - clip_search

@@ -101,6 +101,13 @@ class MusicLibrary(BaseTool):
     }
     output_schema = {
         "type": "object",
+        "required": [
+            "library_dir",
+            "exists",
+            "track_count",
+            "total_duration_seconds",
+            "tracks",
+        ],
         "properties": {
             "library_dir": {"type": "string"},
             "exists": {"type": "boolean"},
@@ -124,6 +131,7 @@ class MusicLibrary(BaseTool):
     resource_profile = ResourceProfile(
         cpu_cores=1, ram_mb=64, vram_mb=0, disk_mb=0, network_required=False
     )
+    idempotency_key_fields = ["library_dir"]
     side_effects = []  # read-only
     user_visible_verification = [
         "Confirm the listed tracks are the ones you intend to choose from",

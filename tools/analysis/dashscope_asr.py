@@ -44,7 +44,7 @@ class DashscopeAsr(BaseTool):
     determinism = Determinism.DETERMINISTIC
     runtime = ToolRuntime.API
 
-    dependencies = []
+    dependencies = ["env:DASHSCOPE_API_KEY"]
     install_instructions = (
         "Set DASHSCOPE_API_KEY to your Alibaba Cloud DashScope API key.\n"
         "  Get one at https://dashscope.aliyun.com/"
@@ -120,6 +120,31 @@ class DashscopeAsr(BaseTool):
             },
         },
     }
+    output_schema = {
+        "type": "object",
+        "required": [
+            "provider",
+            "model",
+            "audio_url",
+            "task_id",
+            "transcripts",
+            "words",
+            "word_count",
+            "output",
+            "output_path",
+        ],
+        "properties": {
+            "provider": {"type": "string", "const": "dashscope"},
+            "model": {"type": "string"},
+            "audio_url": {"type": "string"},
+            "task_id": {"type": "string"},
+            "transcripts": {"type": "array"},
+            "words": {"type": "array"},
+            "word_count": {"type": "integer", "minimum": 0},
+            "output": {"type": "string"},
+            "output_path": {"type": "string"},
+        },
+    }
 
     resource_profile = ResourceProfile(
         cpu_cores=1, ram_mb=256, vram_mb=0, disk_mb=20, network_required=True
@@ -129,7 +154,13 @@ class DashscopeAsr(BaseTool):
         backoff_seconds=2.0,
         retryable_errors=["timeout", "rate_limit"],
     )
-    idempotency_key_fields = ["audio_url", "model", "enable_words", "language_hints"]
+    idempotency_key_fields = [
+        "audio_url",
+        "model",
+        "enable_words",
+        "language_hints",
+        "output_path",
+    ]
     side_effects = [
         "writes transcription JSON to output_path",
         "calls DashScope (Alibaba Cloud) ASR API (async submit + poll)",
@@ -274,6 +305,7 @@ class DashscopeAsr(BaseTool):
                 "words": words,
                 "word_count": len(words),
                 "output": str(output_path),
+                "output_path": str(output_path),
             },
             artifacts=[str(output_path)],
             cost_usd=self.estimate_cost(inputs),

@@ -227,15 +227,115 @@ proposal_packet = {
     },
 }
 
+decision_log = {
+    "version": "1.0",
+    "project_id": PROJECT_ID,
+    "decisions": [
+        {
+            "decision_id": "d-001",
+            "stage": "proposal",
+            "category": "concept_selection",
+            "subject": "Explainer concept for the QA end-to-end run",
+            "options_considered": [
+                {
+                    "option_id": "c1",
+                    "label": "AI Video Production in 60 Seconds",
+                    "score": 0.95,
+                    "reason": "Most direct problem/solution framing for a concise platform demo.",
+                },
+                {
+                    "option_id": "c2",
+                    "label": "The 60-Second Studio",
+                    "score": 0.82,
+                    "reason": "Strong metaphor, but less direct for validating the synthetic pipeline.",
+                },
+                {
+                    "option_id": "c3",
+                    "label": "The Hidden Cost Myth",
+                    "score": 0.76,
+                    "reason": "Useful contrarian angle, but narrower than the general product story.",
+                },
+            ],
+            "selected": "c1",
+            "reason": "Direct problem/solution framing is most effective for this audience.",
+            "user_visible": True,
+            "user_approved": True,
+            "confidence": 0.95,
+        },
+        {
+            "decision_id": "d-002",
+            "stage": "proposal",
+            "category": "playbook_selection",
+            "subject": "Visual style playbook",
+            "options_considered": [
+                {
+                    "option_id": "clean-professional",
+                    "label": "Clean professional",
+                    "score": 0.9,
+                    "reason": "Matches the synthetic corporate explainer fixtures and a11y check.",
+                },
+                {
+                    "option_id": "flat-motion-graphics",
+                    "label": "Flat motion graphics",
+                    "score": 0.75,
+                    "reason": "Compatible with the concept, but less aligned with this fixture.",
+                },
+            ],
+            "selected": "clean-professional",
+            "reason": "The clean professional playbook fits the approved explainer concept.",
+            "user_visible": True,
+            "user_approved": True,
+            "confidence": 0.9,
+        },
+        {
+            "decision_id": "d-003",
+            "stage": "proposal",
+            "category": "render_runtime_selection",
+            "subject": "Composition runtime",
+            "options_considered": [
+                {
+                    "option_id": "remotion",
+                    "label": "Remotion",
+                    "score": 0.9,
+                    "reason": "Best fit for React scene components used by the QA fixture.",
+                },
+                {
+                    "option_id": "hyperframes",
+                    "label": "HyperFrames",
+                    "score": 0.55,
+                    "reason": "Available for authored HTML motion graphics but not needed here.",
+                },
+                {
+                    "option_id": "ffmpeg",
+                    "label": "FFmpeg",
+                    "score": 0.5,
+                    "reason": "Useful fallback for assembly, but less expressive for this explainer.",
+                },
+            ],
+            "selected": "remotion",
+            "reason": "Remotion matches the proposal production plan and downstream edit decisions.",
+            "user_visible": True,
+            "user_approved": True,
+            "confidence": 0.9,
+        },
+    ],
+}
+
 try:
     validate_artifact("proposal_packet", proposal_packet)
     check("Proposal packet validates against schema", True)
 except Exception as e:
     check("Proposal packet validates against schema", False, str(e))
 
+try:
+    validate_artifact("decision_log", decision_log)
+    check("Decision log validates against schema", True)
+except Exception as e:
+    check("Decision log validates against schema", False, str(e))
+
 cp_path = write_checkpoint(
     PIPELINE_DIR, PROJECT_ID, "proposal", "completed", human_approved=True,
-    artifacts={"proposal_packet": proposal_packet},
+    artifacts={"proposal_packet": proposal_packet, "decision_log": decision_log},
     pipeline_type="animated-explainer",
     style_playbook="clean-professional",
 )
@@ -572,9 +672,69 @@ try:
 except Exception as e:
     check("Render report validates against schema", False, str(e))
 
+final_review = {
+    "version": "1.0",
+    "output_path": final_video,
+    "status": "pass",
+    "checks": {
+        "technical_probe": {
+            "valid_container": True,
+            "duration_seconds": round(duration, 2),
+            "resolution": f"{video_stream.get('width', 1280)}x{video_stream.get('height', 720)}",
+            "fps": 30,
+            "has_audio": bool(audio_stream),
+            "codec": video_stream.get("codec_name", "h264"),
+            "file_size_bytes": os.path.getsize(final_video) if os.path.exists(final_video) else 0,
+            "issues": [],
+        },
+        "visual_spotcheck": {
+            "frames_sampled": 4,
+            "frame_paths": [],
+            "black_frames_detected": False,
+            "broken_overlays": False,
+            "missing_assets": False,
+            "unreadable_text": False,
+            "issues": [],
+        },
+        "audio_spotcheck": {
+            "narration_present": bool(audio_stream),
+            "music_present": False,
+            "unexpected_silence": False,
+            "clipping_detected": False,
+            "mix_intelligible": True,
+            "issues": [],
+        },
+        "promise_preservation": {
+            "delivery_promise_honored": True,
+            "renderer_family_used": "explainer-data",
+            "render_runtime_used": proposal_packet["production_plan"]["render_runtime"],
+            "runtime_swap_detected": False,
+            "runtime_swap_check": "ok - render runtime matches proposal_packet.production_plan.render_runtime",
+            "motion_ratio_actual": 1.0,
+            "silent_downgrade_detected": False,
+            "issues": [],
+        },
+        "subtitle_check": {
+            "subtitles_expected": False,
+            "subtitles_present": False,
+            "coverage_ratio": 0,
+            "timing_drift_detected": False,
+            "issues": [],
+        },
+    },
+    "issues_found": [],
+    "recommended_action": "present_to_user",
+}
+
+try:
+    validate_artifact("final_review", final_review)
+    check("Final review validates against schema", True)
+except Exception as e:
+    check("Final review validates against schema", False, str(e))
+
 write_checkpoint(
     PIPELINE_DIR, PROJECT_ID, "compose", "completed",
-    artifacts={"render_report": render_report},
+    artifacts={"render_report": render_report, "final_review": final_review},
     pipeline_type="animated-explainer",
     cost_snapshot=tracker.cost_snapshot(),
 )

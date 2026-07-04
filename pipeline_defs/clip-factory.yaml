@@ -126,6 +126,7 @@ stages:
     optional_tools:
       - audio_enhance
     tools_available:
+      - genui_interaction
       - subtitle_gen
       - audio_enhance
     checkpoint_required: true

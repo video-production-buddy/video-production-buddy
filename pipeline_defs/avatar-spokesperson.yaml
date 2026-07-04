@@ -122,6 +122,7 @@ stages:
       - audio_enhance
       - video_selector
     tools_available:
+      - genui_interaction
       - talking_head
       - lip_sync
       - tts_selector

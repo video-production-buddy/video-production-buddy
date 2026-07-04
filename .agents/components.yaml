@@ -17,6 +17,7 @@ profiles:
     - comfyui
     - create-video
     - d3-viz
+    - dashscope
     - doubao-tts
     - elevenlabs
     - faceswap
@@ -125,6 +126,7 @@ sources:
       comfyui: {kind: skill, path: comfyui}
       create-video: {kind: skill, path: create-video}
       d3-viz: {kind: skill, path: d3-viz}
+      dashscope: {kind: skill, path: dashscope}
       doubao-tts: {kind: skill, path: doubao-tts}
       elevenlabs: {kind: skill, path: elevenlabs}
       faceswap: {kind: skill, path: faceswap}

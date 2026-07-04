@@ -131,6 +131,7 @@ stages:
       - music_selector
       - audio_enhance
     tools_available:
+      - genui_interaction
       - subtitle_gen
       - image_selector
       - diagram_gen

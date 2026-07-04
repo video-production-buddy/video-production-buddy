@@ -188,6 +188,7 @@ stages:
       - freesound_music
       - music_selector
     tools_available:
+      - genui_interaction
       - subtitle_gen
       - audio_enhance
       - image_selector

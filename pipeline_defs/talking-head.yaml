@@ -126,6 +126,7 @@ stages:
       - audio_mixer      # audio prep
       - image_selector
     tools_available:
+      - genui_interaction
       - subtitle_gen
       - audio_mixer
       - image_selector

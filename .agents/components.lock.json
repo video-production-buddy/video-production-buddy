@@ -414,6 +414,20 @@
       "treeSha256": "sha256:9f5f3e152cfae6731c25c4f75701327382d317f636dd4f0ea65b550c5da94ea9",
       "type": "local"
     },
+    "dashscope": {
+      "files": [
+        {
+          "mode": "100644",
+          "path": "SKILL.md",
+          "sha256": "sha256:c70b105cf0dbd036b982c57174d921a0c5d821bed9831c8be56633c24e0de6f5"
+        }
+      ],
+      "kind": "skill",
+      "source": "video-production-buddy-local",
+      "sourcePath": ".agents/local/skills/dashscope",
+      "treeSha256": "sha256:04cbfa7c30a07350c6b5fd00906a2208fb72198a5975deaba6f51ab8b57df785",
+      "type": "local"
+    },
     "doubao-tts": {
       "files": [
         {

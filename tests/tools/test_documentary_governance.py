@@ -95,11 +95,17 @@ def test_corpus_builder_rejects_unavailable_pinned_sources(monkeypatch, tmp_path
         },
     )
 
-    result = CorpusBuilder().execute({
-        "corpus_dir": str(tmp_path / "corpus"),
-        "queries": [{"query": "rain at night"}],
-        "sources": ["pexels"],
-    })
+    result = CorpusBuilder().execute(
+        {
+            "corpus_dir": str(
+                Path("projects")
+                / f"pytest-corpus-{tmp_path.parent.name}-{tmp_path.name}"
+                / "corpus"
+            ),
+            "queries": [{"query": "rain at night"}],
+            "sources": ["pexels"],
+        }
+    )
 
     assert not result.success
     assert "Requested stock sources are unavailable" in result.error
@@ -139,7 +145,12 @@ def test_video_compose_blocks_silent_hyperframes_swap(tmp_path, monkeypatch):
                 ],
             },
             "asset_manifest": {"assets": [{"id": "x", "path": "missing.png"}]},
-            "output_path": str(tmp_path / "out.mp4"),
+            "output_path": str(
+                Path("projects")
+                / f"pytest-compose-{tmp_path.parent.name}-{tmp_path.name}"
+                / "renders"
+                / "out.mp4"
+            ),
         }
     )
     assert not result.success
@@ -242,7 +253,12 @@ def test_direct_clip_search_honors_overall_timeout(monkeypatch, tmp_path):
 
     result = DirectClipSearch().execute(
         {
-            "output_dir": str(tmp_path / "clips"),
+            "output_dir": str(
+                Path("projects")
+                / f"pytest-clips-{tmp_path.parent.name}-{tmp_path.name}"
+                / "reference_assets"
+                / "clips"
+            ),
             "queries": [{"query": "foggy harbor", "slot_id": "sc5"}],
             "timeout_seconds": 1,
             "extract_thumbnails": False,
@@ -319,7 +335,12 @@ def test_direct_clip_search_times_out_streaming_download(monkeypatch, tmp_path):
 
     result = DirectClipSearch().execute(
         {
-            "output_dir": str(tmp_path / "clips"),
+            "output_dir": str(
+                Path("projects")
+                / f"pytest-clips-{tmp_path.parent.name}-{tmp_path.name}"
+                / "reference_assets"
+                / "clips"
+            ),
             "queries": [{"query": "foggy harbor", "slot_id": "sc5"}],
             "timeout_seconds": 1,
             "extract_thumbnails": False,
@@ -377,7 +398,12 @@ def test_direct_clip_search_reports_downloaded_clip_when_thumbnail_times_out(
 
     result = DirectClipSearch().execute(
         {
-            "output_dir": str(tmp_path / "clips"),
+            "output_dir": str(
+                Path("projects")
+                / f"pytest-clips-{tmp_path.parent.name}-{tmp_path.name}"
+                / "reference_assets"
+                / "clips"
+            ),
             "queries": [{"query": "foggy harbor", "slot_id": "sc5"}],
             "timeout_seconds": 1,
             "extract_thumbnails": True,

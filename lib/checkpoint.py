@@ -193,9 +193,13 @@ def get_pipeline_stages(pipeline_type: str | None) -> list[str]:
         return list(STAGES)
 
     try:
-        from lib.pipeline_loader import load_pipeline_readonly, get_stage_order
+        from lib.pipeline_loader import (
+            get_checkpoint_stage_order,
+            load_pipeline_readonly,
+        )
+
         manifest = load_pipeline_readonly(pipeline_type)
-        return get_stage_order(manifest)
+        return get_checkpoint_stage_order(manifest)
     except (FileNotFoundError, Exception):
         # Graceful fallback: return all known stages in canonical order
         return list(STAGES)
@@ -925,6 +929,9 @@ def write_checkpoint(
         if isinstance(marker, dict) and marker.get("pipeline_type"):
             pipeline_type = marker["pipeline_type"]
 
+    if isinstance(stage, str):
+        stage = _normalize_stage_for_pipeline(stage, pipeline_type)
+
     valid_stages = (
         set(get_pipeline_stages(pipeline_type)) if pipeline_type
         else ALL_KNOWN_STAGES
@@ -961,7 +968,9 @@ def write_checkpoint(
                 f"human_approved=True. Correct protocol: write "
                 f"status='awaiting_human', present the artifact summary to the "
                 f"user, END YOUR TURN, and only after the user approves "
-                f"re-write with status='completed', human_approved=True."
+                f"re-write with status='completed', human_approved=True. "
+                f"For ad-video content approvals, the artifact-level "
+                f"user_approved flag must also be true before completion."
             )
 
     checkpoint = {

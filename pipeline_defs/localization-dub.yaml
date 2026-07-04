@@ -126,6 +126,7 @@ stages:
       - lip_sync
       - audio_enhance
     tools_available:
+      - genui_interaction
       - tts_selector
       - subtitle_gen
       - lip_sync

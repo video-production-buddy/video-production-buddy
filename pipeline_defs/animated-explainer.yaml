@@ -189,6 +189,7 @@ stages:
       - code_snippet
       - music_selector
     tools_available:
+      - genui_interaction
       - tts_selector
       - image_selector
       - video_selector
@@ -273,7 +274,9 @@ stages:
       - proposal_packet
     produces:
       - publish_log
-    tools_available: [export_bundle]
+    tools_available:
+      - genui_interaction
+      - export_bundle
     checkpoint_required: true
     human_approval_default: true
     review_focus:

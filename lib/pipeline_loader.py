@@ -25,9 +25,13 @@ SCHEMA_PATH = (
 from functools import lru_cache
 
 
-@lru_cache(maxsize=1)
+@lru_cache(maxsize=8)
+def _load_manifest_schema_cached(schema_path: str) -> dict:
+    return load_strict_json_object(Path(schema_path), context="pipeline manifest schema")
+
+
 def _load_manifest_schema() -> dict:
-    return load_strict_json_object(SCHEMA_PATH, context="pipeline manifest schema")
+    return _load_manifest_schema_cached(str(SCHEMA_PATH))
 
 
 def _sub_stage_is_checkpoint_unit(sub_stage: dict[str, Any]) -> bool:

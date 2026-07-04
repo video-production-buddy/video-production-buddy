@@ -163,6 +163,7 @@ stages:
       - diagram_gen
       - audio_enhance
     tools_available:
+      - genui_interaction
       - subtitle_gen
       - tts_selector
       - image_selector

@@ -74,6 +74,9 @@ def test_character_tools_discover_in_registry():
 
 
 def test_character_animation_smoke_flow(tmp_path):
+    project_dir = Path("projects") / f"pytest-character-smoke-{tmp_path.parent.name}-{tmp_path.name}"
+    artifact_dir = project_dir / "artifacts"
+    render_dir = project_dir / "renders"
     character_result = CharacterSpecGenerator().execute(
         {
             "characters": [
@@ -90,7 +93,7 @@ def test_character_animation_smoke_flow(tmp_path):
                     "required_actions": ["idle", "wing_flap", "react"],
                 },
             ],
-            "output_path": str(tmp_path / "character_design.json"),
+            "output_path": str(artifact_dir / "character_design.json"),
         }
     )
     assert character_result.success
@@ -100,7 +103,7 @@ def test_character_animation_smoke_flow(tmp_path):
     rig_result = SvgRigBuilder().execute(
         {
             "character_design": character_design,
-            "output_path": str(tmp_path / "rig_plan.json"),
+            "output_path": str(artifact_dir / "rig_plan.json"),
         }
     )
     assert rig_result.success
@@ -108,7 +111,7 @@ def test_character_animation_smoke_flow(tmp_path):
     validate_artifact("rig_plan", rig_plan)
 
     pose_result = PoseLibraryBuilder().execute(
-        {"rig_plan": rig_plan, "output_path": str(tmp_path / "pose_library.json")}
+        {"rig_plan": rig_plan, "output_path": str(artifact_dir / "pose_library.json")}
     )
     assert pose_result.success
     pose_library = pose_result.data["pose_library"]
@@ -144,7 +147,7 @@ def test_character_animation_smoke_flow(tmp_path):
         {
             "scene_plan": scene_plan,
             "character_ids": ["mouse_lead", "bird_friend"],
-            "output_path": str(tmp_path / "action_timeline.json"),
+            "output_path": str(artifact_dir / "action_timeline.json"),
         }
     )
     assert timeline_result.success
@@ -155,7 +158,7 @@ def test_character_animation_smoke_flow(tmp_path):
         "bird_friend",
     }
 
-    preview_path = tmp_path / "preview.html"
+    preview_path = render_dir / "preview.html"
     render_result = CharacterRigRenderer().execute(
         {
             "rig_plan": rig_plan,
@@ -176,7 +179,7 @@ def test_character_animation_smoke_flow(tmp_path):
             "pose_library": pose_library,
             "action_timeline": action_timeline,
             "preview_path": str(preview_path),
-            "output_path": str(tmp_path / "character_qa_report.json"),
+            "output_path": str(artifact_dir / "character_qa_report.json"),
         }
     )
     assert qa_result.success
@@ -214,6 +217,7 @@ def test_character_reviewer_success_false_when_qa_finds_issues():
 
 
 def test_character_style_is_normalized_for_schema(tmp_path):
+    artifact_dir = Path("projects") / f"pytest-character-style-{tmp_path.parent.name}-{tmp_path.name}" / "artifacts"
     result = CharacterSpecGenerator().execute(
         {
             "characters": [{"id": "style_test", "role": "lead", "body_type": "round"}],
@@ -222,7 +226,7 @@ def test_character_style_is_normalized_for_schema(tmp_path):
                 "palette": ["#ff8f68", "#75b8ff"],
                 "unexpected": "should not leak into artifact",
             },
-            "output_path": str(tmp_path / "character_design.json"),
+            "output_path": str(artifact_dir / "character_design.json"),
         }
     )
 
@@ -235,7 +239,9 @@ def test_character_style_is_normalized_for_schema(tmp_path):
     }
 
 
+@pytest.mark.hyperframes
 def test_character_renderer_can_handoff_to_video_compose(tmp_path):
+    project_dir = Path("projects") / f"pytest-character-render-{tmp_path.parent.name}-{tmp_path.name}"
     hyperframes = HyperFramesCompose()
     runtime = hyperframes._runtime_check()
     if not runtime["runtime_available"]:
@@ -275,8 +281,8 @@ def test_character_renderer_can_handoff_to_video_compose(tmp_path):
             "rig_plan": rig_plan,
             "pose_library": pose_library,
             "action_timeline": action_timeline,
-            "output_path": str(tmp_path / "preview.html"),
-            "workspace_path": str(tmp_path / "hyperframes"),
+            "output_path": str(project_dir / "renders" / "preview.html"),
+            "workspace_path": str(project_dir / "renders" / "hyperframes"),
         }
     )
     assert render_result.success
@@ -285,7 +291,7 @@ def test_character_renderer_can_handoff_to_video_compose(tmp_path):
     assert render_result.data["edit_decisions"]["render_runtime"] == "hyperframes"
     assert Path(render_result.data["composition_path"]).exists()
 
-    output_path = tmp_path / "renders" / "final.mp4"
+    output_path = project_dir / "renders" / "final.mp4"
     compose_result = VideoCompose().execute(
         {
             "operation": "render",

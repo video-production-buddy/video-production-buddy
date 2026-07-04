@@ -167,6 +167,16 @@ When `human_approval_default: true`:
    stage — it runs only after the assets gate is approved. Rendering a full
    draft inside the assets stage jumps the gate the user is meant to hold.
 
+7. **Ad-video assets require GenUI evidence before completion.** For
+   `PIPELINE=ad-video` and `STAGE=assets`, run `genui_evidence_check` before
+   writing the completed checkpoint. Preferred command:
+   `make genui-evidence-check PIPELINE=ad-video STAGE=assets`. Direct command:
+   `python -m tools.validation.genui_evidence_check --pipeline ad-video --stage assets`.
+   The checker must cover `product_reference`, `sample_review`, `asset_review`,
+   and `music_review` whenever the effective music strategy is not `none`. If
+   effective music_strategy is `none`, skip `music_review` and record why in
+   checkpoint metadata or decision_log.
+
 ### Step 6: Determine Next Stage
 
 After checkpoint is written and approved (if needed):

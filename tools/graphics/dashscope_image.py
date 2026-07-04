@@ -37,7 +37,7 @@ class DashscopeImage(BaseTool):
     determinism = Determinism.STOCHASTIC
     runtime = ToolRuntime.API
 
-    dependencies = []
+    dependencies = ["env:DASHSCOPE_API_KEY"]
     install_instructions = (
         "Set DASHSCOPE_API_KEY to your Alibaba Cloud DashScope API key.\n"
         "  Get one at https://dashscope.aliyun.com/"
@@ -99,6 +99,31 @@ class DashscopeImage(BaseTool):
             "output_path": {"type": "string"},
         },
     }
+    output_schema = {
+        "type": "object",
+        "required": [
+            "provider",
+            "model",
+            "prompt",
+            "size",
+            "output",
+            "output_path",
+            "outputs",
+            "images_generated",
+            "usage",
+        ],
+        "properties": {
+            "provider": {"type": "string", "const": "dashscope"},
+            "model": {"type": "string"},
+            "prompt": {"type": "string"},
+            "size": {"type": "string"},
+            "output": {"type": "string"},
+            "output_path": {"type": "string"},
+            "outputs": {"type": "array", "items": {"type": "string"}},
+            "images_generated": {"type": "integer", "minimum": 0},
+            "usage": {"type": "object"},
+        },
+    }
 
     resource_profile = ResourceProfile(
         cpu_cores=1, ram_mb=512, vram_mb=0, disk_mb=100, network_required=True
@@ -115,6 +140,7 @@ class DashscopeImage(BaseTool):
         "seed",
         "prompt_extend",
         "watermark",
+        "output_path",
     ]
     side_effects = [
         "writes image file to output_path",
@@ -200,6 +226,7 @@ class DashscopeImage(BaseTool):
                 "prompt": inputs["prompt"],
                 "size": payload["parameters"]["size"],
                 "output": str(output_paths[0]),
+                "output_path": str(output_paths[0]),
                 "outputs": [str(p) for p in output_paths],
                 "images_generated": n_generated,
                 "usage": usage,

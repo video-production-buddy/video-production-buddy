@@ -114,6 +114,7 @@ class ExportBundle(BaseTool):
     }
     output_schema = {
         "type": "object",
+        "required": ["publish_log", "export_path", "files_written"],
         "properties": {
             "publish_log": {"type": "object"},
             "export_path": {"type": "string"},
@@ -124,6 +125,22 @@ class ExportBundle(BaseTool):
     resource_profile = ResourceProfile(
         cpu_cores=1, ram_mb=128, vram_mb=0, disk_mb=0, network_required=False
     )
+    idempotency_key_fields = [
+        "video_path",
+        "title",
+        "project_name",
+        "export_dir",
+        "description",
+        "tags",
+        "hashtags",
+        "chapters",
+        "subtitles_path",
+        "thumbnail_path",
+        "thumbnail_concept",
+        "platform",
+        "visibility",
+        "timestamp",
+    ]
     side_effects = ["writes an export bundle directory to disk"]
     user_visible_verification = [
         "Open the export folder and confirm the video, metadata, and chapters are present and correct",

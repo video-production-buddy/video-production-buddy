@@ -34,6 +34,8 @@ No CLIP model. No embeddings. No corpus index. Just files on disk.
 from __future__ import annotations
 
 from contextlib import contextmanager
+import os
+import shutil
 import subprocess
 import tempfile
 import time
@@ -221,6 +223,13 @@ class DirectClipSearch(BaseTool):
             "resolved_sources": {"type": "array", "items": {"type": "string"}},
             "clips": {"type": "array", "items": {"type": "object"}},
             "errors": {"type": "array", "items": {"type": "object"}},
+            "timed_out": {"type": "boolean"},
+            "phase": {"type": "string"},
+            "query": {"type": "string"},
+            "source": {"type": "string"},
+            "clip_id": {"type": "string"},
+            "elapsed_seconds": {"type": "number", "minimum": 0},
+            "timeout_seconds": {"type": "number", "minimum": 0},
         },
     }
 
@@ -236,6 +245,7 @@ class DirectClipSearch(BaseTool):
         "filters",
         "extract_thumbnails",
         "skip_existing",
+        "timeout_seconds",
     ]
     side_effects = [
         "downloads clips to <output_dir>/clips/",
@@ -502,8 +512,9 @@ class DirectClipSearch(BaseTool):
                         tmp_clip_path = _temp_sibling(clip_path)
                         try:
                             with _requests_deadline(deadline):
-                                src.download(cand, clip_path)
+                                src.download(cand, tmp_clip_path)
                         except _DeadlineExceeded:
+                            _unlink_quietly(tmp_clip_path)
                             return timeout_result(
                                 phase="download",
                                 query=query,
@@ -622,6 +633,37 @@ def _guess_ext(cand) -> str:
     if ext in known:
         return ".jpg" if ext == ".jpeg" else ext
     return ".mp4" if cand.kind == "video" else ".jpg"
+
+
+def _temp_sibling(path: Path) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=f".{path.name}.",
+        suffix=f"{path.suffix}.download.tmp",
+        dir=path.parent,
+    )
+    try:
+        os.close(fd)
+    finally:
+        _unlink_quietly(Path(tmp_name))
+    return Path(tmp_name)
+
+
+def _unlink_quietly(path: Path) -> None:
+    try:
+        if path.exists():
+            path.unlink()
+    except OSError:
+        pass
+
+
+def _copy_image_thumbnail(image_path: Path, thumb_path: Path) -> bool:
+    try:
+        thumb_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(image_path, thumb_path)
+        return True
+    except OSError:
+        return False
 
 
 def remaining_seconds(deadline: float) -> float:

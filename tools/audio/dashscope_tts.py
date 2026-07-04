@@ -37,7 +37,7 @@ class DashscopeTTS(BaseTool):
     determinism = Determinism.STOCHASTIC
     runtime = ToolRuntime.API
 
-    dependencies = []
+    dependencies = ["env:DASHSCOPE_API_KEY"]
     install_instructions = (
         "Set DASHSCOPE_API_KEY to your Alibaba Cloud DashScope API key.\n"
         "  Get one at https://dashscope.aliyun.com/"
@@ -116,6 +116,33 @@ class DashscopeTTS(BaseTool):
             "output_path": {"type": "string"},
         },
     }
+    output_schema = {
+        "type": "object",
+        "required": [
+            "provider",
+            "model",
+            "voice",
+            "language_type",
+            "text_length",
+            "audio_duration_seconds",
+            "output",
+            "output_path",
+            "audio_url",
+            "usage",
+        ],
+        "properties": {
+            "provider": {"type": "string", "const": "dashscope"},
+            "model": {"type": "string"},
+            "voice": {"type": "string"},
+            "language_type": {"type": "string"},
+            "text_length": {"type": "integer", "minimum": 0},
+            "audio_duration_seconds": {"type": ["number", "null"], "minimum": 0},
+            "output": {"type": "string"},
+            "output_path": {"type": "string"},
+            "audio_url": {"type": "string"},
+            "usage": {"type": "object"},
+        },
+    }
 
     resource_profile = ResourceProfile(
         cpu_cores=1, ram_mb=256, vram_mb=0, disk_mb=50, network_required=True
@@ -123,7 +150,14 @@ class DashscopeTTS(BaseTool):
     retry_policy = RetryPolicy(
         max_retries=2, retryable_errors=["rate_limit", "timeout"]
     )
-    idempotency_key_fields = ["text", "voice", "model", "language_type", "instructions"]
+    idempotency_key_fields = [
+        "text",
+        "voice",
+        "model",
+        "language_type",
+        "instructions",
+        "output_path",
+    ]
     side_effects = [
         "writes audio file to output_path",
         "calls DashScope (Alibaba Cloud) TTS API",
@@ -212,6 +246,7 @@ class DashscopeTTS(BaseTool):
                     round(audio_duration, 2) if audio_duration else None
                 ),
                 "output": str(output_path),
+                "output_path": str(output_path),
                 "audio_url": audio_url,
                 "usage": usage,
             },
