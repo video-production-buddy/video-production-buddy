@@ -664,6 +664,17 @@ def _checkpoint_path(pipeline_dir: Path, project_id: str, stage: str) -> Path:
     return pipeline_dir / project_id / f"checkpoint_{stage}.json"
 
 
+def _legacy_checkpoint_path(
+    pipeline_dir: Path,
+    project_id: str,
+    stage: str,
+) -> Path | None:
+    legacy_stage = AD_VIDEO_REVERSE_STAGE_ALIASES.get(stage)
+    if legacy_stage is None:
+        return None
+    return _checkpoint_path(pipeline_dir, project_id, legacy_stage)
+
+
 def init_project(
     project_id: str,
     *,

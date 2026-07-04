@@ -1,6 +1,6 @@
 # Ink Theater
 
-A deterministic, seek-safe engine for hand-drawn **"moving art"** — a minimalist black-ink-on-white world where a deadpan mascot physically *performs* an abstract idea by operating absurd low-tech contraptions. Built for OpenMontage's **atelier** path and rendered through **HyperFrames** (HTML/SVG/CSS + one paused GSAP timeline → MP4).
+A deterministic, seek-safe engine for hand-drawn **"moving art"** — a minimalist black-ink-on-white world where a deadpan mascot physically *performs* an abstract idea by operating absurd low-tech contraptions. Built for Video Production Buddy's **atelier** path and rendered through **HyperFrames** (HTML/SVG/CSS + one paused GSAP timeline → MP4).
 
 Inspired by Ian's `小黑 / Xiaohei` illustration skill (MIT — credit Ian for the technique); this is an original, generic, English, motion-first engine, not a copy.
 

@@ -23,6 +23,16 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+@pytest.fixture
+def project_renders_dir(tmp_path):
+    repo_root = Path(__file__).resolve().parents[2]
+    project_dir = repo_root / "projects" / f"pytest-video-compose-vertical-{tmp_path.name}"
+    shutil.rmtree(project_dir, ignore_errors=True)
+    renders_dir = project_dir / "renders"
+    yield renders_dir
+    shutil.rmtree(project_dir, ignore_errors=True)
+
+
 def _make_clip(path: Path, w: int = 1280, h: int = 720, d: int = 2) -> None:
     subprocess.run(
         ["ffmpeg", "-y", "-f", "lavfi", "-i",
@@ -53,11 +63,11 @@ def _edit_decisions(src: Path, metadata: dict | None = None) -> dict:
     return ed
 
 
-def test_compose_default_is_landscape_hd(tmp_path):
+def test_compose_default_is_landscape_hd(tmp_path, project_renders_dir):
     """No profile / no target → unchanged 1920x1080 default (backward compatible)."""
     src = tmp_path / "in.mp4"
     _make_clip(src)
-    out = tmp_path / "out.mp4"
+    out = project_renders_dir / "out.mp4"
     r = VideoCompose().execute(
         {"operation": "compose", "edit_decisions": _edit_decisions(src), "output_path": str(out)}
     )
@@ -65,11 +75,11 @@ def test_compose_default_is_landscape_hd(tmp_path):
     assert _dims(out) == (1920, 1080)
 
 
-def test_compose_vertical_profile(tmp_path):
+def test_compose_vertical_profile(tmp_path, project_renders_dir):
     """profile='tiktok' → 1080x1920 (the bug: previously stayed 1920x1080)."""
     src = tmp_path / "in.mp4"
     _make_clip(src)
-    out = tmp_path / "out.mp4"
+    out = project_renders_dir / "out.mp4"
     r = VideoCompose().execute(
         {"operation": "compose", "edit_decisions": _edit_decisions(src),
          "profile": "tiktok", "output_path": str(out)}
@@ -78,11 +88,11 @@ def test_compose_vertical_profile(tmp_path):
     assert _dims(out) == (1080, 1920)
 
 
-def test_compose_target_override_cover(tmp_path):
+def test_compose_target_override_cover(tmp_path, project_renders_dir):
     """metadata.compose_target with fit='cover' → exact requested dims, cropped to fill."""
     src = tmp_path / "in.mp4"
     _make_clip(src)
-    out = tmp_path / "out.mp4"
+    out = project_renders_dir / "out.mp4"
     ed = _edit_decisions(src, metadata={"compose_target": {"width": 720, "height": 1280, "fit": "cover"}})
     r = VideoCompose().execute(
         {"operation": "compose", "edit_decisions": ed, "output_path": str(out)}

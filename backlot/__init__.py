@@ -1,6 +1,6 @@
 """Backlot — the living storyboard.
 
-A read-only, disk-derived production board for OpenMontage. A small local web
+A read-only, disk-derived production board for Video Production Buddy. A small local web
 server watches ``projects/`` and renders each production's pipeline stages,
 script, scene plan, generated assets, decisions, cost, and activity — live.
 

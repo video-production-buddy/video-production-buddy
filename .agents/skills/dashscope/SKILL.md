@@ -48,7 +48,7 @@ Header: X-DashScope-Async: enable
 - Returns `task_id` → poll `GET /api/v1/tasks/{task_id}` until `SUCCEEDED` → download `output.result.transcription_url` → JSON with `transcripts[].sentences[].words[]`
 - Timestamps in `begin_time`/`end_time` are in **milliseconds** — the tool normalizes to seconds
 
-## OpenMontage Usage
+## Video Production Buddy Usage
 
 ### Image via selector
 

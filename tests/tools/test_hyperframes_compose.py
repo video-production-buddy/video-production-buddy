@@ -3745,7 +3745,7 @@ def test_video_compose_blocks_hyperframes_when_runtime_unavailable(
 
 
 def test_video_compose_honors_hyperframes_runtime_before_atelier_mode(
-    tmp_path, monkeypatch
+    project_renders_dir, monkeypatch
 ):
     """Regression for F-14: composition_mode='atelier' must not force the
     Remotion atelier branch when render_runtime='hyperframes' is locked."""
@@ -3772,7 +3772,7 @@ def test_video_compose_honors_hyperframes_runtime_before_atelier_mode(
                 "renderer_family": "animation-first",
             },
             "asset_manifest": {"assets": [{"id": "a1", "path": "does-not-matter.png"}]},
-            "output_path": str(tmp_path / "out.mp4"),
+            "output_path": str(project_renders_dir / "out.mp4"),
         }
     )
 

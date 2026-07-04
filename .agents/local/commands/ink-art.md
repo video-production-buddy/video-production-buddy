@@ -10,6 +10,6 @@ Read `skills/creative/ink-theater.md` (the metaphor method, color grammar, mined
 - Captions = **HTML overlay `<div>`s** (HyperFrames does not apply webfonts to SVG `<text>`).
 - Validate with `npx hyperframes lint` + `snapshot` (eyeball the contact sheet), then render.
 
-In OpenMontage this runs on the `animation` pipeline (illustration) or `character-animation` pipeline (mocap puppet) — it is a style + engine, not a separate pipeline.
+In Video Production Buddy this runs on the `animation` pipeline (illustration) or `character-animation` pipeline (mocap puppet) — it is a style + engine, not a separate pipeline.
 
 Request: $ARGUMENTS

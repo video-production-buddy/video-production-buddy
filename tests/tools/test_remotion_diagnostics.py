@@ -9,6 +9,7 @@ Two creator-facing gaps:
 
 import subprocess
 import sys
+import shutil
 from pathlib import Path
 
 import pytest
@@ -25,7 +26,17 @@ def tool(monkeypatch):
     return VideoCompose()
 
 
-def test_render_failure_surfaces_remotion_stderr_tail(tool, tmp_path, monkeypatch):
+@pytest.fixture
+def project_renders_dir(tmp_path):
+    repo_root = Path(__file__).resolve().parents[2]
+    project_dir = repo_root / "projects" / f"pytest-remotion-diagnostics-{tmp_path.name}"
+    shutil.rmtree(project_dir, ignore_errors=True)
+    renders_dir = project_dir / "renders"
+    yield renders_dir
+    shutil.rmtree(project_dir, ignore_errors=True)
+
+
+def test_render_failure_surfaces_remotion_stderr_tail(tool, project_renders_dir, monkeypatch):
     stderr = "some npm noise\nError: Delayed render timed out\nRemotion actual cause here"
 
     def fake_run_command(cmd, *a, **k):
@@ -33,7 +44,7 @@ def test_render_failure_surfaces_remotion_stderr_tail(tool, tmp_path, monkeypatc
 
     monkeypatch.setattr(tool, "run_command", fake_run_command)
     result = tool._remotion_render(
-        {"composition_data": {"cuts": []}, "output_path": str(tmp_path / "out.mp4")}
+        {"composition_data": {"cuts": []}, "output_path": str(project_renders_dir / "out.mp4")}
     )
 
     assert result.success is False
@@ -41,13 +52,13 @@ def test_render_failure_surfaces_remotion_stderr_tail(tool, tmp_path, monkeypatc
     assert "Remotion actual cause here" in result.error
 
 
-def test_timeout_expired_gives_actionable_message(tool, tmp_path, monkeypatch):
+def test_timeout_expired_gives_actionable_message(tool, project_renders_dir, monkeypatch):
     def fake_run_command(cmd, *a, **k):
         raise subprocess.TimeoutExpired(cmd=cmd, timeout=600)
 
     monkeypatch.setattr(tool, "run_command", fake_run_command)
     result = tool._remotion_render(
-        {"composition_data": {"cuts": []}, "output_path": str(tmp_path / "out.mp4")}
+        {"composition_data": {"cuts": []}, "output_path": str(project_renders_dir / "out.mp4")}
     )
 
     assert result.success is False
@@ -55,7 +66,7 @@ def test_timeout_expired_gives_actionable_message(tool, tmp_path, monkeypatch):
     assert "remotion_timeout_ms" in result.error
 
 
-def test_remotion_timeout_ms_is_passed_through(tool, tmp_path, monkeypatch):
+def test_remotion_timeout_ms_is_passed_through(tool, project_renders_dir, monkeypatch):
     seen = {}
 
     def fake_run_command(cmd, *a, **k):
@@ -67,7 +78,7 @@ def test_remotion_timeout_ms_is_passed_through(tool, tmp_path, monkeypatch):
     tool._remotion_render(
         {
             "composition_data": {"cuts": []},
-            "output_path": str(tmp_path / "out.mp4"),
+            "output_path": str(project_renders_dir / "out.mp4"),
             "remotion_timeout_ms": 120000,
         }
     )
@@ -78,7 +89,7 @@ def test_remotion_timeout_ms_is_passed_through(tool, tmp_path, monkeypatch):
     assert seen["timeout"] >= 180
 
 
-def test_high_level_render_forwards_timeout_to_remotion(tool, tmp_path, monkeypatch):
+def test_high_level_render_forwards_timeout_to_remotion(tool, project_renders_dir, monkeypatch):
     # The gap in the first cut: execute(operation="render") -> _render() builds a
     # fresh remotion_inputs dict, so the option must be forwarded there, not only
     # on a direct _remotion_render() call.
@@ -103,7 +114,7 @@ def test_high_level_render_forwards_timeout_to_remotion(tool, tmp_path, monkeypa
                 "cuts": [{"id": "c1", "source": "a1", "in_seconds": 0, "out_seconds": 2}],
             },
             "asset_manifest": {"assets": [{"id": "a1", "path": "/tmp/a1.mp4"}]},
-            "output_path": str(tmp_path / "out.mp4"),
+            "output_path": str(project_renders_dir / "out.mp4"),
             "remotion_timeout_ms": 120000,
         }
     )
@@ -111,7 +122,7 @@ def test_high_level_render_forwards_timeout_to_remotion(tool, tmp_path, monkeypa
     assert captured.get("remotion_timeout_ms") == 120000
 
 
-def test_no_timeout_flag_when_not_requested(tool, tmp_path, monkeypatch):
+def test_no_timeout_flag_when_not_requested(tool, project_renders_dir, monkeypatch):
     seen = {}
 
     def fake_run_command(cmd, *a, **k):
@@ -121,7 +132,7 @@ def test_no_timeout_flag_when_not_requested(tool, tmp_path, monkeypatch):
 
     monkeypatch.setattr(tool, "run_command", fake_run_command)
     tool._remotion_render(
-        {"composition_data": {"cuts": []}, "output_path": str(tmp_path / "out.mp4")}
+        {"composition_data": {"cuts": []}, "output_path": str(project_renders_dir / "out.mp4")}
     )
 
     assert not any(str(c).startswith("--timeout") for c in seen["cmd"])

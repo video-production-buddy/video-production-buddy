@@ -288,7 +288,7 @@ class ExportBundle(BaseTool):
     def _default_export_dir(video_path: Path, project_name: str) -> Path:
         """Keep run output inside the project workspace.
 
-        When the render lives at ``projects/<name>/renders/...`` (the OpenMontage
+        When the render lives at ``projects/<name>/renders/...`` (the Video Production Buddy
         convention), default the bundle to ``projects/<name>/exports/`` alongside
         ``artifacts/``, ``assets/`` and ``renders/``. Otherwise fall back to a
         top-level ``exports/<project_name>/``.

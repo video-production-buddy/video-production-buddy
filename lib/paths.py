@@ -14,4 +14,4 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # Overridable for staging/screenshots/tests. Everything — checkpoint writes,
 # event attribution, the Backlot board — follows the same root.
-PROJECTS_DIR = Path(os.environ.get("OPENMONTAGE_PROJECTS_DIR") or (REPO_ROOT / "projects"))
+PROJECTS_DIR = Path(os.environ.get("VPB_PROJECTS_DIR") or (REPO_ROOT / "projects"))

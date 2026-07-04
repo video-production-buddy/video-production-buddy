@@ -810,6 +810,7 @@ class VideoCompose(BaseTool):
         crf = inputs.get("crf", 23)
         preset = inputs.get("preset", "medium")
         profile_name = inputs.get("profile")
+        profile = _media_profile(profile_name)
 
         # Resolve target resolution + fit mode. Priority: explicit `profile`
         # arg > edit_decisions.metadata.compose_target > default (landscape HD).
@@ -818,6 +819,7 @@ class VideoCompose(BaseTool):
         # fit="pad" letterboxes (no content loss, the historical default);
         # fit="cover" scales-to-fill and centre-crops (better for vertical social).
         resolution = "1920x1080"
+        target_fps = 30
         fit_mode = "pad"
         compose_target = (edit_decisions.get("metadata") or {}).get("compose_target")
         if isinstance(compose_target, dict):
@@ -827,13 +829,9 @@ class VideoCompose(BaseTool):
                 pass
             if compose_target.get("fit") in ("pad", "cover"):
                 fit_mode = compose_target["fit"]
-        if profile_name:
-            try:
-                from lib.media_profiles import get_profile
-                p = get_profile(profile_name)
-                resolution = f"{p.width}x{p.height}"
-            except (ImportError, ValueError):
-                pass
+        if profile is not None:
+            resolution = f"{profile.width}x{profile.height}"
+            target_fps = profile.fps
         try:
             target_w, target_h = (int(v) for v in resolution.split("x"))
         except ValueError:
@@ -914,7 +912,7 @@ class VideoCompose(BaseTool):
                     # pix_fmt / sar across ALL segments — otherwise it throws
                     # "Non-monotonous DTS" or silently produces corrupt output.
                     #
-                    # Target is target_w x target_h @ 30fps, yuv420p, sar=1
+                    # Target is target_w x target_h @ target_fps, yuv420p, sar=1
                     # (default 1920x1080; overridable via `profile` or
                     # edit_decisions.metadata.compose_target — see above).
                     # fit="pad" letterboxes to preserve all content; fit="cover"
@@ -929,7 +927,7 @@ class VideoCompose(BaseTool):
                             f"scale={target_w}:{target_h}:force_original_aspect_ratio=decrease",
                             f"pad={target_w}:{target_h}:(ow-iw)/2:(oh-ih)/2:color=black",
                         ]
-                    vf_parts: list[str] = [*geom, "setsar=1", "fps=30"]
+                    vf_parts: list[str] = [*geom, "setsar=1", f"fps={target_fps}"]
                     af_parts: list[str] = []
                     if speed != 1.0:
                         vf_parts.append(f"setpts={1.0/speed}*PTS")
@@ -1795,6 +1793,10 @@ class VideoCompose(BaseTool):
                     f"render_runtime must be set at proposal stage."
                 ),
             )
+
+        runtime_governance_block = self._render_runtime_governance_block(inputs, edit_decisions)
+        if runtime_governance_block is not None:
+            return runtime_governance_block
 
         # --- Atelier (bespoke) mode -------------------------------------
         # Hand-authored, project-local Remotion composition. Deliberately

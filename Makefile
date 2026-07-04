@@ -2,11 +2,14 @@ PYTHON_VERSION ?= 3.10
 VENV_DIR ?= .venv
 BASE_PYTHON ?= $(shell command -v python$(PYTHON_VERSION) 2>/dev/null || command -v python3 2>/dev/null || command -v python 2>/dev/null)
 RUN_PYTHON = $(shell for dir in "$$VIRTUAL_ENV" "$$CONDA_PREFIX" "$(VENV_DIR)"; do if [ -n "$$dir" ] && [ -x "$$dir/bin/python" ]; then printf "%s/bin/python" "$$dir"; exit 0; elif [ -n "$$dir" ] && [ -x "$$dir/Scripts/python.exe" ]; then printf "%s/Scripts/python.exe" "$$dir"; exit 0; fi; done; if [ "$(OS)" = "Windows_NT" ]; then printf "%s/Scripts/python.exe" "$(VENV_DIR)"; else printf "%s/bin/python" "$(VENV_DIR)"; fi)
-PIP = $(RUN_PYTHON) -m pip
+PYTHON ?= $(RUN_PYTHON)
+PIP = $(PYTHON) -m pip
 
 .DEFAULT_GOAL := setup
 
-.PHONY: setup install install-dev install-gpu test test-contracts lint clean preflight demo demo-list hyperframes-doctor hyperframes-warm venv ensure-venv
+.PHONY: setup install install-dev install-gpu test test-contracts test-integration test-qa genui-verify genui-evidence-check lint clean preflight preflight-full models-list models-check models-configure demo demo-list hyperframes-doctor hyperframes-warm venv ensure-venv
+
+DEFAULT_TEST_MARKERS := not integration and not qa and not browser and not ffmpeg and not node and not hyperframes and not slow and not live_provider
 
 # ---- Virtual environment ----
 
@@ -26,7 +29,7 @@ ensure-venv:
 			exit 1; \
 		fi; \
 		"$(BASE_PYTHON)" -c "import sys; required=tuple(map(int, '$(PYTHON_VERSION)'.split('.')[:2])); raise SystemExit(0 if sys.version_info[:2] >= required else 1)" || { \
-			echo "ERROR: OpenMontage requires Python $(PYTHON_VERSION)+."; \
+			echo "ERROR: Video Production Buddy requires Python $(PYTHON_VERSION)+."; \
 			echo "Install uv or Python $(PYTHON_VERSION)+, then run make again."; \
 			exit 1; \
 		}; \
@@ -37,7 +40,7 @@ ensure-venv:
 		}; \
 	fi
 	@$(RUN_PYTHON) -c "import sys; required=tuple(map(int, '$(PYTHON_VERSION)'.split('.')[:2])); raise SystemExit(0 if sys.version_info[:2] >= required else 1)" || { \
-		echo "ERROR: OpenMontage requires Python $(PYTHON_VERSION)+."; \
+		echo "ERROR: Video Production Buddy requires Python $(PYTHON_VERSION)+."; \
 		echo "Current interpreter is $$($(RUN_PYTHON) -c 'import sys; print(\".\".join(map(str, sys.version_info[:3])))' 2>/dev/null || echo unavailable): $(RUN_PYTHON)"; \
 		echo "Activate a compatible environment or remove it so make can create $(VENV_DIR)."; \
 		exit 1; \
@@ -93,15 +96,66 @@ install-remotion:
 # ---- Testing ----
 
 test: ensure-venv
-	$(RUN_PYTHON) -m pytest tests/ -v
+	VPB_ALLOW_BROWSER_OPEN=0 PYTHONDONTWRITEBYTECODE=1 $(PYTHON) -m pytest -p no:cacheprovider -m "$(DEFAULT_TEST_MARKERS)" tests/ -v
 
 test-contracts: ensure-venv
-	$(RUN_PYTHON) -m pytest tests/contracts/ -v
+	VPB_ALLOW_BROWSER_OPEN=0 PYTHONDONTWRITEBYTECODE=1 $(PYTHON) -m pytest -p no:cacheprovider -m "$(DEFAULT_TEST_MARKERS)" tests/contracts/ -v
+
+test-integration: ensure-venv
+	VPB_ALLOW_BROWSER_OPEN=0 PYTHONDONTWRITEBYTECODE=1 $(PYTHON) -m pytest -p no:cacheprovider -m "integration" tests/ -v
+
+test-qa: ensure-venv
+	VPB_ALLOW_BROWSER_OPEN=0 PYTHONDONTWRITEBYTECODE=1 $(PYTHON) -m pytest -p no:cacheprovider -m "qa" tests/ -v
 
 # ---- Utilities ----
 
 preflight: ensure-venv
-	$(RUN_PYTHON) -c "from tools.tool_registry import registry; import json; registry.discover(); print(json.dumps(registry.provider_menu(), indent=2))"
+	$(PYTHON) -B -c "from tools.tool_registry import registry; import json; registry.discover(); print(json.dumps(registry.provider_menu_summary(), indent=2))"
+
+preflight-full: ensure-venv
+	$(PYTHON) -B -c "from tools.tool_registry import registry; import json; registry.discover(); print(json.dumps(registry.provider_menu(), indent=2))"
+
+models-list: ensure-venv
+	$(PYTHON) -B -m lib.model_settings_wizard --list $(if $(CAPABILITY),--capability $(CAPABILITY),)
+
+models-check: ensure-venv
+	$(PYTHON) -B -m lib.model_settings_wizard --check $(if $(ENV_FILE),--env $(ENV_FILE),)
+
+models-configure: ensure-venv
+	@if [ -z "$(ENV_FILE)" ]; then \
+		echo "usage: make models-configure ENV_FILE=.env CAPABILITY=video_generation [PRESET=fast] [DRY_RUN=1]"; \
+		exit 2; \
+	fi
+	$(PYTHON) -B -m lib.model_settings_wizard --env $(ENV_FILE) $(if $(CAPABILITY),--capability $(CAPABILITY),) $(if $(PRESET),--preset $(PRESET),) $(if $(PROVIDER),--provider $(PROVIDER),) $(if $(MODEL),--model $(MODEL),) $(if $(DRY_RUN),--dry-run,) $(if $(YES),--yes,)
+
+genui-verify:
+	VPB_ALLOW_BROWSER_OPEN=0 PYTHONDONTWRITEBYTECODE=1 $(PYTHON) -m pytest -p no:cacheprovider -q tests/contracts/test_genui_session_contract.py tests/contracts/test_genui_dynamic_interaction.py tests/contracts/test_genui_interaction_contract.py tests/contracts/test_genui_surface_contract.py
+	VPB_ALLOW_BROWSER_OPEN=0 PYTHONDONTWRITEBYTECODE=1 $(PYTHON) -m pytest -p no:cacheprovider -q tests/contracts/test_genui_session_hardening.py
+	VPB_ALLOW_BROWSER_OPEN=0 PYTHONDONTWRITEBYTECODE=1 $(PYTHON) -m pytest -p no:cacheprovider -q tests/contracts/test_genui_product_contract.py
+	VPB_ALLOW_BROWSER_OPEN=0 PYTHONDONTWRITEBYTECODE=1 $(PYTHON) -m pytest -p no:cacheprovider -m "browser" -q tests/integration/test_genui_browser_smoke.py
+	VPB_ALLOW_BROWSER_OPEN=0 pnpm --dir genui-renderer test
+	pnpm --dir genui-renderer typecheck
+	@before=$$(mktemp); after=$$(mktemp); \
+		status=0; \
+		git diff -- lib/genui/static/renderer > $$before; \
+		pnpm --dir genui-renderer build; \
+		git diff -- lib/genui/static/renderer > $$after; \
+		if ! cmp -s $$before $$after; then \
+			echo "genui renderer static bundle is stale; rerun pnpm --dir genui-renderer build and include lib/genui/static/renderer"; \
+			git diff --exit-code -- lib/genui/static/renderer || status=$$?; \
+		fi; \
+		rm -f $$before $$after; \
+		exit $$status
+
+genui-evidence-check:
+	@project="$(PROJECT)"; pipeline="$(PIPELINE)"; stage="$(STAGE)"; \
+		pipeline="$${pipeline:-ad-video}"; \
+		stage="$${stage:-assets}"; \
+		if [ -z "$$project" ]; then \
+			echo "usage: make genui-evidence-check PROJECT=projects/<project-id> [PIPELINE=ad-video] [STAGE=assets]"; \
+			exit 2; \
+		fi; \
+		PYTHONDONTWRITEBYTECODE=1 $(PYTHON) -m tools.validation.genui_evidence_check "$$project" "$$pipeline" "$$stage"
 
 hyperframes-doctor: ensure-venv
 	@echo "==> Probing HyperFrames runtime (node/ffmpeg/npx + hyperframes doctor)..."

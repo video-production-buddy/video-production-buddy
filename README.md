@@ -12,6 +12,8 @@
 
 <p align="center">
   <a href="#demos">🎬 Demos</a> &nbsp;·&nbsp;
+  <a href="#backlot-living-storyboard">🎞️ Backlot</a> &nbsp;·&nbsp;
+  <a href="#start-from-a-reference-video">🎯 Reference</a> &nbsp;·&nbsp;
   <a href="#why-it-is-different">✨ Why Different</a> &nbsp;·&nbsp;
   <a href="#how-it-works">🧭 How It Works</a> &nbsp;·&nbsp;
   <a href="#quick-start">⚡ Quick Start</a> &nbsp;·&nbsp;
@@ -42,145 +44,13 @@
 
 ---
 
-Turn your AI coding assistant into a full video production studio. Describe what you want in plain language — your agent handles research, scripting, asset generation, editing, and final composition.
-
-**Important distinction:** OpenMontage can make image-based videos, but it can also make a real **video video** for free/open-source workflows: the agent builds a corpus from free stock footage and open archives, retrieves actual motion clips, edits them into a timeline, and renders a finished piece. That is not the usual "animate a handful of stills and call it video" trick.
-
-<div align="center">
-  <video src="https://github.com/user-attachments/assets/f77ce7a4-68b8-4f94-a287-e94bf50a32e1" width="100%" controls></video>
-</div>
-
-> **"SIGNAL FROM TOMORROW"** — a cinematic sci-fi trailer fully produced through OpenMontage: concept, script, scene plan, Veo-generated motion clips, soundtrack, and Remotion composition.
-
-<div align="center">
-  <video src="https://github.com/user-attachments/assets/8daca07f-cdf8-4bec-89c3-9dc2176363fa" width="100%" controls></video>
-</div>
-
-> **"THE LAST BANANA"** — a 60-second Pixar-style animated short about a lonely banana who finds friendship with a kiwi. 6 Kling v3-generated motion clips (via fal.ai), Google Chirp3-HD narration, royalty-free piano music, TikTok-style word-level captions, and Remotion composition. Total cost: **$1.33**.
-
-<div align="center">
-  <video src="https://github.com/user-attachments/assets/e03b5d1f-1199-4093-9f31-a43aa9da2c68" width="100%" controls></video>
-</div>
-
-> **"The Library at Alexandria"** — a 70-second history elegy on what humanity lost in a single night. Five hand-authored scenes — an illuminated manuscript page, cascading scroll-tags, a Burning Counter ticking 700,000 → 0 inside a candle's flame, a charred vellum fragment with surviving Greek, and an empty void — set to OpenAI 'ash' narration and a free Pixabay strings score. Total cost: **$0.02**. Built through OpenMontage's atelier (bespoke) composition mode — every scene crafted from scratch, no shared components.
-
-<div align="center">
-  <video src="https://github.com/user-attachments/assets/8a6d2cc3-7ad2-46f5-922f-a8e3e5848d9f" width="100%" controls></video>
-</div>
-
-> **"VOID — Neural Interface"** — a product ad produced with just one API key (OpenAI). 4 AI-generated images (gpt-image-1), TTS narration, auto-sourced royalty-free music, word-level subtitles via WhisperX, and Remotion data visualizations. Total cost: **$0.69**. Zero manual asset work.
-
-<div align="center">
-  <video src="https://github.com/user-attachments/assets/3c5d7122-7198-43e2-a97d-ed27558dd324" width="100%" controls></video>
-</div>
-
-> **"Afternoon in Candyland"** — a Ghibli-style anime animation. A little girl's whimsical afternoon adventure through candy gates, gumdrop rivers, and lollipop gardens. 12 FLUX-generated images with multi-image crossfade, cinematic camera motion (zoom, pan, Ken Burns), sparkle/petal/firefly particle overlays, and ambient music with auto-detected energy offset. Total cost: **$0.15**. No video generation, no manual editing.
-
-<div align="center">
-  <video src="https://github.com/user-attachments/assets/e8dc5e32-5c70-46de-bd52-eef887719d13" width="100%" controls></video>
-</div>
-
-> **"Mori no Seishin"** — a Ghibli-style anime animation of a forest spirit's journey through ancient woods. 12 FLUX-generated images with parallax crossfade, drift and pan camera motion, firefly and petal particles, cinematic vignette lighting, and ambient forest soundtrack. Total cost: **$0.15**. Still images brought to life through Remotion's animation engine.
-
-<p align="center">
-  <a href="https://www.youtube.com/@OpenMontage?sub_confirmation=1"><strong>Subscribe to @OpenMontage on YouTube</strong></a> to see new videos as they ship — every video includes the full prompt, pipeline, tools used, and cost so you can reproduce it yourself.
-</p>
-
----
-
-## Start From A Video You Already Love
-
-Starting from a reference video is often faster than starting from a blank prompt.
-
-OpenMontage can start from a **YouTube video, Short, Reel, TikTok, or local clip** and turn it into a grounded production plan:
-
-1. **Paste a reference video**
-2. **The agent analyzes transcript, pacing, scenes, keyframes, and style**
-3. **You get 2-3 differentiated concepts, an honest tool path, cost estimates, and a sample before full production**
-
-```text
-"Here's a YouTube Short I love. Make me something like this, but about quantum computing."
-```
-
-What you get back is not "best guess prompt spaghetti." You get:
-
-- **What it keeps** from the reference: pacing, hook style, structure, tone
-- **What it changes**: topic, visual treatment, angle, narration approach
-- **What it will cost** at your target duration, before asset generation starts
-- **What it will actually look like** with your currently available tools
-
-Works with **Claude Code, Cursor, Copilot, Windsurf, Codex** — any AI coding assistant that can read files and run code.
-
----
-
-## Watch It Happen — The Backlot Living Storyboard
-
-Chat tells you what the agent *said*. **Backlot shows you what the production is actually doing** — a local board that fills itself in as the pipeline runs. Stages light up, the script lands as a screenplay page, scene cards shimmer while assets generate, and every provider decision and dollar spent is on the wall.
-
-When a production starts, the agent opens it for you automatically. No setup, no reporting — the board derives everything from the project files the pipeline already writes.
-
-<p align="center"><img src="docs/images/backlot/board-live.png" alt="Backlot live board — assets generating" width="920"></p>
-
-**The storyboard is now a real approval gate.** Asset generation pauses on a scene-by-scene contact sheet — takes, prompts, per-asset cost, quality scores — so you approve the visuals *before* the render, not after it's too late:
-
-<p align="center"><img src="docs/images/backlot/storyboard.png" alt="Backlot storyboard — filmstrip with takes and renders" width="920"></p>
-
-Creative gates hold until you answer. The board shows what's waiting and why; you reply in chat:
-
-<p align="center"><img src="docs/images/backlot/script-gate.png" alt="Backlot script gate — awaiting approval" width="920"></p>
-
-Every production on your machine, live-first, in the library:
-
-<p align="center"><img src="docs/images/backlot/library.png" alt="Backlot library" width="920"></p>
-
-```bash
-python -m backlot open                  # the library — every project on disk
-python -m backlot open <project-id>     # one production's live board
-python scripts/backlot_simulate_run.py  # no production yet? watch a simulated one live
-```
-
-And when a run is done, hit **▶ REPLAY RUN** — the whole production replays from its timestamps, scrubbable end to end. See [`backlot/README.md`](backlot/README.md) for how it works.
-
----
-
-## Quick Start
-
-### Prerequisites
-
-- **Python 3.10+** — [python.org](https://www.python.org/downloads/)
-- **FFmpeg** — `brew install ffmpeg` / `sudo apt install ffmpeg` / [ffmpeg.org](https://ffmpeg.org/download.html)
-- **Node.js 18+** — [nodejs.org](https://nodejs.org/)
-- **An AI coding assistant** — Claude Code, Cursor, Copilot, Windsurf, or Codex
-
-### Install & Run
-
-```bash
-git clone https://github.com/calesthio/OpenMontage.git
-cd OpenMontage
-make setup
-```
-
-Open the project in your AI coding assistant and tell it what you want:
-
-```
-"Make a 60-second animated explainer about how neural networks learn"
-```
-
-Or if you want the real-footage path:
-
-```text
-"Make a 75-second documentary montage about city life in the rain. Use real footage only, no narration, elegiac tone, with music."
-```
-
-That's it. The agent researches your topic with live web search, generates AI images, writes and narrates the script with voice direction, finds royalty-free background music automatically, burns in word-level subtitles, and renders the final video. Before you see anything, the system runs a multi-point self-review — ffprobe validation, frame sampling, audio level analysis, delivery promise verification, and subtitle checks. Every provider selection is scored across 7 dimensions with an auditable decision log. Every creative decision gets your approval.
-
-> **No `make`?** macOS/Linux: `python3 -m venv .venv && source .venv/bin/activate && python -m pip install -r requirements.txt && cd remotion-composer && npm install && cd .. && python -m pip install piper-tts && cp .env.example .env`
->
-> Windows PowerShell: `py -3 -m venv .venv; .\.venv\Scripts\Activate.ps1; python -m pip install -r requirements.txt; cd remotion-composer; npm install; cd ..; python -m pip install piper-tts; Copy-Item .env.example .env`
+> **Video Production Buddy / 织影** turns a general-purpose AI assistant into a visible video production workflow. Instead of typing one prompt and hoping, you can review the brief, plan, script, assets, render, and final checks before major generation work.
 >
 > **Agent-first by design:** the AI assistant is the producer and orchestrator, while skills and Python tools handle concrete work such as provider routing, media analysis, generation, composition, validation, checkpointing, and cost tracking.
 >
 > **Best first try:** run the zero-key demo, confirm your machine can render locally, then open this folder in your AI assistant and paste a starter prompt. Cloud API keys are optional until you want provider-generated images, video, voice, or music.
+>
+> **Not only image animation:** the system can produce image-based videos, generated-video projects, source-footage edits, and documentary montage work from open or stock motion footage, depending on the tools and providers available on your machine.
 >
 > <p align="center"><strong>⭐ Star this project if you want an open, inspectable alternative to black-box AI video generation, thank you!</strong></p>
 
@@ -198,6 +68,49 @@ That's it. The agent researches your topic with live web search, generates AI im
 
 > **MacBook Air ad** - "Please help me design an ad video for MacBook Air."
 
+## Backlot Living Storyboard
+
+Backlot is the local board for seeing what a production is actually doing. Chat tells you what the assistant said; Backlot shows stages, scripts, scene cards, generated assets, provider decisions, spend, and activity from the project files the pipeline already writes.
+
+<p align="center"><img src="docs/images/backlot/board-live.png" alt="Backlot live board - assets generating" width="920"></p>
+
+The storyboard is also an approval surface. Asset generation can pause on a scene-by-scene contact sheet so visuals, prompts, costs, and quality signals are reviewed before the final render.
+
+<p align="center"><img src="docs/images/backlot/storyboard.png" alt="Backlot storyboard - filmstrip with takes and renders" width="920"></p>
+
+Creative gates show what is waiting and why:
+
+<p align="center"><img src="docs/images/backlot/script-gate.png" alt="Backlot script gate - awaiting approval" width="920"></p>
+
+Every project on disk is visible from the local library:
+
+<p align="center"><img src="docs/images/backlot/library.png" alt="Backlot library" width="920"></p>
+
+```bash
+python -m backlot open                  # library view - every project on disk
+python -m backlot open <project-id>     # one production's live board
+python scripts/backlot_simulate_run.py  # no production yet? watch a simulated run
+```
+
+When a run is done, Backlot can replay it from checkpoint history and event timestamps. See [`backlot/README.md`](backlot/README.md) for details.
+
+## Start From A Reference Video
+
+Starting from a reference video is often faster than starting from a blank prompt.
+
+Video Production Buddy can analyze a YouTube video, Short, Reel, TikTok, or local clip and turn it into a grounded production plan:
+
+1. Paste or point to a reference video.
+2. The assistant analyzes transcript, pacing, scenes, keyframes, and style.
+3. You get differentiated concepts, a tool path, cost expectations, and a sample plan before full production.
+
+```text
+Here is a YouTube Short I like. Make something with this pacing and hook,
+but about quantum computing for high school students.
+```
+
+The plan should make clear what it keeps from the reference, what it changes, what providers or local tools are needed, what it may cost, and what it can realistically produce with your current setup.
+
 ## Why It Is Different
 
 - 🎬 **Not prompt-to-video. Pipeline-to-video.** YAML manifests and director skills guide each stage from intake to publish.
@@ -210,159 +123,17 @@ That's it. The agent researches your topic with live web search, generates AI im
 - 🧾 **Checkpointed and reproducible.** JSON artifacts, decision logs, and checkpoints preserve the production trail so work can be reviewed or resumed.
 - 🧪 **Verified output.** Scene fidelity, product consistency, provider consistency, render validation, and post-render review keep the final video accountable to the approved brief.
 
-# Music:
-SUNO_API_KEY=your-key          # Full songs, instrumentals, any genre
-
-# Voice & images:
-ELEVENLABS_API_KEY=your-key    # Premium TTS, AI music, sound effects
-OPENAI_API_KEY=your-key        # OpenAI TTS, GPT Image 2 images
-XAI_API_KEY=your-key           # xAI Grok image edits/generation + Grok video generation
-GOOGLE_API_KEY=your-key        # Google Imagen images, Google TTS (700+ voices)
-
-# More video providers:
-HEYGEN_API_KEY=your-key        # HeyGen — VEO, Sora, Runway, Kling via single gateway
-RUNWAY_API_KEY=your-key        # Runway Gen-4 direct
-```
-
-<details>
-<summary><strong>Have a GPU? Unlock free local video generation</strong></summary>
-
-```bash
-make install-gpu
-
-# Then add to .env:
-VIDEO_GEN_LOCAL_ENABLED=true
-VIDEO_GEN_LOCAL_MODEL=wan2.1-1.3b  # or wan2.1-14b, hunyuan-1.5, ltx2-local, cogvideo-5b
-```
-
-</details>
-
----
-
-## What You Get With Zero API Keys
-
-You don't need paid API keys to make real videos. Out of the box, `make setup` gives you:
-
-| Capability | Free Tool | What It Does |
-|-----------|-----------|-------------|
-| **Narration** | Piper TTS | Free offline text-to-speech — real human-sounding narration |
-| **Open footage** | Archive.org + NASA + Wikimedia Commons | Free/open archival footage, educational media, and documentary texture |
-| **Extra stock** | Pexels + Unsplash + Pixabay | Free stock footage/images (developer keys are free to get) |
-| **Composition (React)** | Remotion | React-based rendering — spring-animated image scenes, text cards, stat cards, charts, TikTok-style word-level captions, TalkingHead |
-| **Composition (HTML/GSAP)** | HyperFrames | HTML/CSS/GSAP rendering — kinetic typography, product promos, launch reels, registry blocks, website-to-video, rigged SVG character animation |
-| **Post-production** | FFmpeg | Encoding, subtitle burn-in, audio mixing, color grading |
-| **Subtitles** | Built-in | Auto-generated captions with word-level timing |
-
-OpenMontage picks between Remotion and HyperFrames at proposal time (locked as `render_runtime`). Remotion is the default for data-driven explainers and anything using the existing React scene stack; HyperFrames is the default for motion-graphics-heavy briefs that express naturally as HTML + GSAP, including the `character-animation` pipeline's SVG/GSAP rig output. See `skills/core/hyperframes.md` for the full decision matrix.
-
-**Two free-ish paths:**
-
-- **Image-based video:** Piper narrates your script, images provide the visuals, and Remotion animates them into a polished edit.
-- **Local character animation:** SVG rigs, pose libraries, GSAP timelines, and HyperFrames render cartoon character acting to `projects/<project-name>/renders/final.mp4`.
-- **Real-footage video:** the documentary montage pipeline builds a CLIP-searchable corpus from Archive.org, NASA, Wikimedia Commons, and optional free-key sources like Pexels and Unsplash, then cuts together actual motion footage into a finished video.
-
-If you want the second one, prompt for a **documentary montage**, **tone poem**, or **stock-footage collage**, and explicitly say **use real footage only**.
-
----
-
-## Try These Prompts
-
-Copy any of these into your AI coding assistant after setup. Each one runs a full production pipeline.
-
-### Start from a reference video
-
-> "Here's a YouTube short I love. Make me something like this, but about CRISPR for high school students."
-
-> "Analyze this Reel and give me 3 original variants I could make for my own product launch."
-
-> "I like the pacing and hook in this video. Keep that energy, but turn it into a 45-second explainer about black holes."
-
-### Zero keys needed
-
-> "Make a 45-second animated explainer about why the sky is blue"
-
-> "Create a 60-second video about the history of the internet, with narration and captions"
-
-> "Make a data-driven explainer about coffee consumption around the world"
-
-### Free real-footage documentary path
-
-> "Make a 90-second documentary montage about what a city feels like at 4am. Use real footage only, no narration, elegiac tone."
-
-> "Create a 60-second Adam-Curtis-style archival collage about 1950s consumer optimism. Prefer Archive.org and Wikimedia footage."
-
-> "Cut together a dreamlike montage about coming home in the rain using real stock footage only. Music yes, narration no."
-
-### With an image/video provider configured (~$0.15–$1.50)
-
-> "Create a 30-second Ghibli-style animated video of a magical floating library in the clouds at golden hour"
-
-> "Make a 30-second anime-style animation of an underwater temple with bioluminescent coral and ancient ruins"
-
-> "Create an animated explainer about how CRISPR gene editing works, using AI-generated visuals"
-
-> "Make a product launch teaser for a fictional smart water bottle called AquaPulse"
-
-### Full setup (~$1–$3)
-
-> "Create a cinematic 30-second trailer for a sci-fi concept: humanity receives a warning from 1000 years in the future"
-
-> "Make a 90-second animated explainer about quantum computing for middle school students, with a fun narrator voice and custom soundtrack"
-
-Want more? See the full **[Prompt Gallery](PROMPT_GALLERY.md)** for tested prompts with expected costs and output examples, or run `make demo` to render zero-key demo videos instantly.
-
----
-
-## Pipelines
-
-Each pipeline is a complete production workflow, from idea to finished video.
-
-| Pipeline | What It Produces | Best For |
-|----------|-----------------|----------|
-| **Animated Explainer** | AI-generated explainer with research, narration, visuals, music | Educational content, tutorials, topic breakdowns |
-| **Animation** | Motion graphics, kinetic typography, animated sequences | Social media, product demos, abstract concepts |
-| **Avatar Spokesperson** | Avatar-driven presenter videos | Corporate comms, training, announcements |
-| **Cinematic** | Trailer, teaser, and mood-driven edits | Brand films, teasers, promotional content |
-| **Clip Factory** | Batch of ranked short-form clips from one long source | Repurposing long content for social media |
-| **Documentary Montage** | Thematic montage cut from a CLIP-indexed corpus of free stock footage and open archives (Pexels, Archive.org, NASA, Wikimedia, Unsplash) | Video essays, mood pieces, retrieval-first B-roll edits, real-footage videos without paid generation APIs |
-| **Hybrid** | Source footage + AI-generated support visuals | Enhancing existing footage with graphics |
-| **Localization & Dub** | Subtitle, dub, and translate existing video | Multi-language distribution |
-| **Podcast Repurpose** | Podcast highlights to video | Podcast marketing, audiogram videos |
-| **Screen Demo** | Polished software screen recordings and walkthroughs | Product demos, tutorials, documentation |
-| **Talking Head** | Footage-led speaker videos | Presentations, vlogs, interviews |
-
-Every pipeline follows the same structured flow:
-
-```
-research -> proposal -> script -> scene_plan -> assets -> edit -> compose
-```
-
-Each stage has a dedicated **director skill** — a markdown instruction file that teaches the agent exactly how to execute that stage. The agent reads the skill, uses the tools, self-reviews, checkpoints state, and asks for human approval at creative decision points.
-
-> **Web research is a first-class stage.** Before writing a single word of script, the agent searches YouTube, Reddit, Hacker News, news sites, and academic sources. It gathers data points, audience questions, trending angles, and visual references — then cites everything in a structured research brief. Your videos are grounded in real, current information, not hallucinated facts.
-
----
-
-## Why OpenMontage?
-
-Most AI video tools give you a single clip from a prompt. OpenMontage gives you an **end-to-end production pipeline** — the same structured process a real production team follows, automated by your AI agent.
-
-Most "free AI video" stacks quietly mean "animate still images." OpenMontage can do that too, but it can also build a finished video from **real footage** pulled from free/open sources, ranked semantically, edited intentionally, and rendered as a proper timeline.
-
-Edit your own talking-head footage. Generate a fully animated explainer from scratch. Cut a 2-hour podcast into a dozen social clips. Translate and dub your content into 10 languages. Build a cinematic brand teaser from stock footage and AI-generated scenes. **If a production team can make it, OpenMontage can orchestrate it.**
-
-- **12 production pipelines** — explainers, talking heads, screen demos, cinematic trailers, animations, podcasts, localization, documentary montages, and more
-- **52 production tools** — spanning video generation, image creation, text-to-speech, music, audio mixing, subtitles, enhancement, and analysis
-- **400+ agent skills** — production skills, pipeline directors, creative techniques, quality checklists, and deep technology knowledge packs that teach the agent how to use every tool like an expert
-- **Reference-driven creation** — paste a video you like and the agent turns it into a grounded, differentiated production plan instead of forcing you to invent the perfect prompt from scratch
-- **Real-footage documentary creation without paid video models** — build actual edited videos from free/open motion footage and archival sources, not just Ken Burns over images
-- **Live web research built in** — before writing a single word of script, the agent runs 15-25+ web searches across YouTube, Reddit, news sites, and academic sources to ground your video in real, current data
-- **Both free/local AND cloud providers** — every capability supports open-source local alternatives alongside premium APIs. Use what you have.
-- **No vendor lock-in** — swap providers freely. The scored selector ranks every provider across 7 dimensions (task fit, output quality, control, reliability, cost efficiency, latency, continuity) and picks the best match automatically.
-- **Production-grade quality gates** — delivery promise enforcement blocks slideshow-looking renders, pre-compose validation catches broken plans before wasting GPU time, and mandatory post-render self-review (ffprobe + frame extraction + audio analysis) ensures the agent never presents garbage. Every provider choice, style decision, and fallback gets logged in an auditable decision trail.
-- **Budget governance built in** — cost estimation before execution, spend caps, per-action approval thresholds. No surprise bills.
-
----
+| Typical AI video tools | Video Production Buddy / 织影 |
+|------------------------|--------------------------------|
+| One-shot prompt to generation | Staged pipeline from brief to verified render |
+| The user must know exactly what to ask for | Chat and GenUI clarify needs before production decisions |
+| Trend and reference work is optional | Hot topics and viral videos add timely audience context during design |
+| Story quality is judged after rendering | Emotion pacing is reviewed in the lightweight text phase |
+| Hidden provider, model, and cost choices | Visible provider/model routing, budget checks, and approval gates |
+| Segments can drift from each other | Concept maps constrain cross-segment consistency |
+| Hard to resume or audit | Checkpointed artifacts and decision logs |
+| Generate first, fix later | Approve the plan before expensive generation |
+| Output judged by vibe only | Structured quality checks after composition |
 
 ## How It Works
 
@@ -396,7 +167,7 @@ You need:
 - **FFmpeg** - `brew install ffmpeg` / `sudo apt install ffmpeg` / `winget install --id Gyan.FFmpeg` / `choco install ffmpeg -y` / [ffmpeg.org](https://ffmpeg.org/download.html)
 - **Node.js 22+** - required for Remotion, HyperFrames, and character-animation renders
 - **Make** - on macOS run `xcode-select --install`; on Ubuntu/Debian run `sudo apt update && sudo apt install make`; on Windows install [Chocolatey](https://chocolatey.org/install), then run `choco install make -y` in Administrator PowerShell
-- **An AI coding assistant** - Codex, Claude Code, Cursor, GitHub Copilot, Windsurf, or another assistant that can read files and run shell commands
+- **An AI coding assistant** - Codex, Claude Code, Cursor, GitHub Copilot, Windsurf, OpenClaw, or another assistant that can read files and run shell commands
 
 On Windows, reopen PowerShell after installing Python, Node.js, FFmpeg, or Make so new `PATH` entries are visible.
 If you downloaded the ZIP instead of using Git, skip the `git clone` line and `cd` into the unzipped folder.
@@ -467,18 +238,7 @@ make demo
 
 `Set-ExecutionPolicy` only changes the current PowerShell process so the virtualenv activation script can run. `$env:PYTHON = "python"` makes the Makefile use Python from the active virtualenv. Later, when you want API keys, copy `.env.example` to `.env` if `make setup` did not already create it.
 
-| Provider | Type | Notes |
-|----------|------|-------|
-| **FLUX** | Cloud API | State-of-the-art quality |
-| **Google Imagen** | Cloud API | Imagen 4 — high-quality, multiple aspect ratios |
-| **Grok Imagine Image** | Cloud API | Strong image edits, style transfer, and multi-image compositing |
-| **GPT Image 2** | Cloud API | OpenAI's image model |
-| **Recraft** | Cloud API | Design-focused generation |
-| **Local Diffusion** | Local GPU | Stable Diffusion, free |
-| **Pexels** | Stock | Free stock images |
-| **Pixabay** | Stock | Free stock images |
-| **Unsplash** | Stock | Free stock images |
-| **ManimCE** | Local | Mathematical animations |
+Success looks like this:
 
 - `make preflight` prints JSON with `composition_runtimes`, provider availability, and selectable model choices.
 - `make models-list` prints model choices in a readable list.
@@ -519,12 +279,19 @@ If something fails, stay in the same AI assistant session and ask it to inspect 
 All keys are optional. Skip this for the first try; when you need cloud generation, add only the provider keys you plan to use in `.env`. `make setup` usually creates `.env`; if not, copy `.env.example` to `.env`.
 
 ```bash
-FAL_KEY=your-key              # Image/video generation: FLUX, Recraft, Seedance, Kling, Veo, MiniMax video
-DASHSCOPE_API_KEY=your-key    # Qwen speech, Wan video, Wanxiang image
+FAL_KEY=your-key              # FLUX/Recraft images; Seedance/Kling/Veo/MiniMax video
+DASHSCOPE_API_KEY=your-key    # Qwen speech/ASR, Wan video, Wanxiang image
+GOOGLE_API_KEY=your-key       # Google TTS and Google/Gemini image generation
 ELEVENLABS_API_KEY=your-key   # TTS, music, sound effects
 OPENAI_API_KEY=your-key       # OpenAI TTS and image generation
-MINIMAX_API_KEY=your-key      # MiniMax music generation
-PEXELS_API_KEY=your-key       # Optional: stock media
+XAI_API_KEY=your-key          # Grok image/video generation and edits
+MINIMAX_API_KEY=your-key      # MiniMax music, video, TTS, and text helpers
+SUNO_API_KEY=your-key         # Music generation
+RUNWAY_API_KEY=your-key       # Runway video generation
+HEYGEN_API_KEY=your-key       # Avatar/video gateway routes
+PEXELS_API_KEY=your-key       # Optional stock video/images
+PIXABAY_API_KEY=your-key      # Optional stock video/images
+UNSPLASH_ACCESS_KEY=your-key  # Optional stock images
 ```
 
 New to API keys? Follow [`docs/PROVIDERS.md#where-to-get-api-keys`](docs/PROVIDERS.md#where-to-get-api-keys) for official signup/key links and key-safety rules. Keep keys in `.env`; do not paste them into chat prompts, screenshots, issues, or committed files.
@@ -578,16 +345,21 @@ Out of the box, the local path can still do useful work:
 | Capability | Free/local tool | What it does |
 |------------|-----------------|--------------|
 | Narration | Piper TTS | Offline text-to-speech when installation succeeds. |
+| Open footage | Archive.org, NASA, Wikimedia, and public-domain adapters | Documentary texture and retrieval-first B-roll for footage-led projects. |
+| Stock media | Pexels, Pixabay, Unsplash, and related adapters | Extra stock footage/images when the optional free developer keys are configured. |
 | Composition | Remotion | React-based animated scenes, title cards, charts, captions, and image motion. |
 | Motion graphics | HyperFrames | HTML/CSS/GSAP video when Node.js 22+ and the runtime check pass. |
 | Post-production | FFmpeg | Encoding, stitching, trimming, audio mixing, subtitle burn-in, and validation. |
+| Subtitles | Built-in subtitle tools | Captions and subtitle burn-in from generated or analyzed timing. |
 | Demos | `make demo` | Renders the checked-in zero-key demo suite under `projects/demos/renders/`. |
 
-- **Human approval gates are enforced, not suggested** — proposal, script, scene plan, generated assets, and publish all pause for your sign-off. The checkpoint writer rejects a "completed" gated stage without recorded approval, and every superseded checkpoint is archived so the audit trail (including gate transitions) survives revisions. Review happens visually on the [Backlot board](#watch-it-happen--the-backlot-living-storyboard).
-- **Pre-compose validation** — blocks render if the delivery promise is violated (e.g. "motion-led" video with 80% still images), slideshow risk score is critical, or renderer family is missing. Catches broken plans before wasting GPU time.
-- **Post-render self-review** — after every render, the runtime runs ffprobe validation, extracts frames at 4 positions to check for black frames and broken overlays, analyzes audio levels for silence and clipping, verifies the delivery promise was honored, and checks subtitle presence. If the review fails, the video is not presented.
-- **Slideshow risk scoring** — 6-dimension analysis (repetition, decorative visuals, weak motion, shot intent, typography overreliance, unsupported cinematic claims) prevents "animated PowerPoint" outputs.
-- **Source media inspection** — when users supply their own footage, the system probes every file (resolution, codec, audio channels, duration) and builds planning implications before a single creative decision is made. No hallucinating content from filenames.
+Common low-cost paths:
+
+- **Image-based video:** local narration, generated or supplied images, and Remotion/HyperFrames animation.
+- **Local character animation:** SVG rigs, pose libraries, GSAP timelines, and HyperFrames rendering.
+- **Real-footage montage:** the documentary montage path builds or searches a corpus of open/stock motion footage, then edits actual clips into a rendered timeline.
+
+For real-footage work, ask for a **documentary montage**, **stock-footage collage**, or **real footage only** treatment. For any real production brief, the assistant should present the preflight menu and tell you which providers and model options are available, missing, or optional before spending on generation.
 
 ### Start With A Prompt
 
@@ -600,7 +372,7 @@ Platform: TikTok or Instagram Reels.
 Style: warm, modern, cinematic, not loud.
 ```
 
-OpenClaw, Claude Code, Codex, and similar assistants generally use the repository's agent instructions to pick the right pipeline, inspect available tools, propose a plan, and wait for confirmation before major generation work. If your assistant does not automatically read the repo instructions, ask it to read `AGENT_GUIDE.md` first. If a provider is missing, it should offer a local fallback or explain which API key unlocks that path.
+Claude Code, Codex, Cursor, GitHub Copilot, Windsurf, OpenClaw, and similar assistants generally use the repository's agent instructions to pick the right pipeline, inspect available tools, propose a plan, and wait for confirmation before major generation work. If your assistant does not automatically read the repo instructions, ask it to read `AGENT_GUIDE.md` first. If a provider is missing, it should offer a local fallback or explain which API key unlocks that path.
 
 Useful starter prompts:
 
@@ -626,7 +398,9 @@ but turn it into a 30-second product ad for my own app.
 | 💬 Interactive discovery | Chat and GenUI interfaces clarify the target audience, emotion, constraints, and ideal video profile before generation. |
 | 📣 Ad production | Strategy, hot-topic search, Bilibili/Douyin-style viral analysis, professional production knowledge retrieval, product constraints, sample approval, and publish checks. |
 | 🎥 Source footage | Talking-head edits, screen demos, podcast repurposing, clip extraction, localization, and hybrid videos. |
+| 🎞️ Real-footage montage | Retrieval-first edits from open archives, public-domain sources, or optional stock providers. |
 | 🧭 Reference-aware planning | Analyze a reference video or user-provided source media before designing the new output. |
+| 🧱 Live production board | Backlot shows project state, gates, generated assets, spend, and replay from checkpoint/event files. |
 | 🎭 Story control | Emotion pacing constraints check suspense, twists, emotional anchors, and story appeal before assets are generated. |
 | 🧩 Consistency control | Concept maps and approved design constraints keep product identity, characters, scenes, and visual logic consistent across segments. |
 | 🔀 Provider routing | Select among configured image, video, voice, music, stock, subtitle, analysis, and composition tools. |

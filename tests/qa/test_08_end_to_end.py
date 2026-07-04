@@ -252,7 +252,7 @@ SECTIONS = [
     ("s1_hook",    "Hook",    0,  8, "What if creating a professional video took less time than making your morning coffee?"),
     ("s2_setup",   "Setup",   8, 20, "Traditional video production involves scripting, filming, editing, and post-production. It takes days, sometimes weeks."),
     ("s3_build",   "Build",  20, 38, "Now imagine an AI that handles all of that. You type a topic, and it writes the script, generates visuals, creates narration, mixes audio, and delivers a finished video."),
-    ("s4_climax",  "Climax", 38, 50, "This is not science fiction. OpenMontage is an open-source platform that orchestrates AI tools into a complete video pipeline."),
+    ("s4_climax",  "Climax", 38, 50, "This is not science fiction. Video Production Buddy is an open-source platform that orchestrates AI tools into a complete video pipeline."),
     ("s5_landing", "Landing", 50, 60, "The future of video creation is open, automated, and available right now. Try it yourself."),
 ]
 
@@ -595,12 +595,12 @@ publish_log = {
             "metadata_used": {
                 "title": "AI Video Production in 60 Seconds",
                 "description": "See how AI orchestrates an entire video production pipeline.",
-                "hashtags": ["#AI", "#VideoProduction", "#OpenMontage"],
+                "hashtags": ["#AI", "#VideoProduction", "#VideoProductionBuddy"],
                 "chapters": [
                     {"time": "0:00", "label": "Hook"},
                     {"time": "0:08", "label": "The Problem"},
                     {"time": "0:20", "label": "The Solution"},
-                    {"time": "0:38", "label": "OpenMontage"},
+                    {"time": "0:38", "label": "Video Production Buddy"},
                     {"time": "0:50", "label": "Try It"},
                 ],
             },

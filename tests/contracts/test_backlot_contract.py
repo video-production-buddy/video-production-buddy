@@ -27,6 +27,90 @@ def _minimal_script() -> dict:
     }
 
 
+def _minimal_research_brief() -> dict:
+    return {
+        "version": "1.0",
+        "topic": "Test Topic",
+        "research_date": "2026-03-27",
+        "landscape": {
+            "existing_content": [
+                {
+                    "title": "Existing Video 1",
+                    "source": "youtube",
+                    "angle": "tutorial",
+                    "what_it_covers": "basics",
+                },
+                {
+                    "title": "Existing Video 2",
+                    "source": "blog",
+                    "angle": "deep dive",
+                    "what_it_covers": "advanced",
+                },
+                {
+                    "title": "Existing Video 3",
+                    "source": "youtube",
+                    "angle": "comparison",
+                    "what_it_covers": "alternatives",
+                },
+            ],
+            "saturated_angles": ["basic tutorial"],
+            "underserved_gaps": ["misconceptions about topic"],
+        },
+        "data_points": [
+            {
+                "claim": "73% of users prefer X",
+                "source_url": "https://example.com/study",
+                "credibility": "primary_source",
+            },
+            {
+                "claim": "Market grew 40% in 2025",
+                "source_url": "https://example.com/report",
+                "credibility": "secondary_source",
+            },
+            {
+                "claim": "Most experts agree on Y",
+                "source_url": "https://example.com/survey",
+                "credibility": "primary_source",
+            },
+        ],
+        "audience_insights": {
+            "common_questions": ["What is X?", "How does X work?", "Why is X important?"],
+            "misconceptions": [{"myth": "X is slow", "reality": "X is fast"}],
+            "knowledge_level": "Beginner to intermediate",
+        },
+        "angles_discovered": [
+            {
+                "name": "The Surprising Truth",
+                "hook": "You think X is slow. It's not.",
+                "type": "contrarian",
+                "why_now": "New benchmark data",
+                "grounded_in": ["data_point_1"],
+            },
+            {
+                "name": "X From Scratch",
+                "hook": "Build X in 5 minutes.",
+                "type": "evergreen",
+                "why_now": "Audience demand",
+                "grounded_in": ["audience_q1"],
+            },
+            {
+                "name": "Why X Matters Now",
+                "hook": "X just changed everything.",
+                "type": "trending",
+                "why_now": "Recent announcement",
+                "grounded_in": ["trending_1"],
+            },
+        ],
+        "sources": [
+            {"url": "https://example.com/study", "title": "Study on X", "used_for": "data_points"},
+            {"url": "https://example.com/report", "title": "Market Report", "used_for": "data_points"},
+            {"url": "https://example.com/survey", "title": "Expert Survey", "used_for": "data_points"},
+            {"url": "https://example.com/reddit", "title": "Reddit Discussion", "used_for": "audience_insights"},
+            {"url": "https://example.com/blog", "title": "Tech Blog", "used_for": "landscape"},
+        ],
+    }
+
+
 class TestGateEnforcement:
     """GI-4: gated stages cannot be completed without approval evidence."""
 
@@ -70,11 +154,9 @@ class TestGateEnforcement:
             )
 
     def test_ungated_stage_unaffected(self, tmp_path):
-        from tests.contracts.test_phase0_contracts import sample_artifact
-
         path = write_checkpoint(
             tmp_path, "proj", "research", "completed",
-            artifacts={"research_brief": sample_artifact("research_brief")},
+            artifacts={"research_brief": _minimal_research_brief()},
             pipeline_type="animated-explainer",
         )
         assert path.exists()

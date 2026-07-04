@@ -6,6 +6,8 @@ interface for discovery, execution, cost estimation, and health reporting.
 
 from __future__ import annotations
 
+import base64
+import copy
 import functools
 import hashlib
 import inspect

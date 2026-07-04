@@ -97,7 +97,7 @@ def run_stage() -> None:
 
 def start_server() -> subprocess.Popen:
     env = dict(os.environ)
-    env["OPENMONTAGE_PROJECTS_DIR"] = str(STAGE_DIR)
+    env["VPB_PROJECTS_DIR"] = str(STAGE_DIR)
     server = subprocess.Popen(
         [sys.executable, "-m", "backlot", "serve", "--port", str(PORT)],
         cwd=REPO_ROOT,

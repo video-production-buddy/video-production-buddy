@@ -2,7 +2,7 @@
 
 Builds a handful of fictional projects (generated cinematic placeholder art —
 safe for the public repo, no real project content) into a staging projects
-dir, serves Backlot against it via OPENMONTAGE_PROJECTS_DIR, and captures
+dir, serves Backlot against it via VPB_PROJECTS_DIR, and captures
 screenshots with Playwright.
 
     python scripts/backlot_screenshot_stage.py            # stage + shoot
@@ -27,7 +27,7 @@ STAGE_DIR = REPO_ROOT / ".backlot" / "screenshot-stage"
 SHOTS_DIR = REPO_ROOT / "docs" / "images" / "backlot"
 PORT = 4790
 
-os.environ["OPENMONTAGE_PROJECTS_DIR"] = str(STAGE_DIR)
+os.environ["VPB_PROJECTS_DIR"] = str(STAGE_DIR)
 sys.path.insert(0, str(REPO_ROOT))
 
 from PIL import Image, ImageDraw, ImageFilter  # noqa: E402
