@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from lib.checkpoint import PROJECTS_DIR, init_project, write_checkpoint
 from lib.events import emit_event
+from scripts.backlot_demo_fixtures import minimal_research_brief
 
 SCENES = [
     ("sc1", "Opening — a lighthouse at dusk", 0, 4, "The coast holds its breath."),
@@ -87,11 +88,9 @@ def main() -> int:
         print(f"[sim] checkpoint {stage} -> {status}")
         time.sleep(wait)
 
-    # research auto-proceeds (schema-valid fixture from the contract tests)
+    # research auto-proceeds with a schema-valid local demo fixture
     cp("research", "in_progress", {})
-    from tests.contracts.test_phase0_contracts import sample_artifact
-    brief = sample_artifact("research_brief")
-    brief["topic"] = "The Last Lighthouse"
+    brief = minimal_research_brief("The Last Lighthouse")
     cp("research", "completed", {"research_brief": brief})
 
     # script gates: awaiting_human -> approved

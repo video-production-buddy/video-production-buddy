@@ -12,6 +12,8 @@
 
 <p align="center">
   <a href="#演示">🎬 演示</a> &nbsp;·&nbsp;
+  <a href="#片场看板">🎞️ Backlot</a> &nbsp;·&nbsp;
+  <a href="#从参考视频开始">🎯 参考</a> &nbsp;·&nbsp;
   <a href="#差异点">✨ 差异点</a> &nbsp;·&nbsp;
   <a href="#工作方式">🧭 工作方式</a> &nbsp;·&nbsp;
   <a href="#快速开始">⚡ 快速开始</a> &nbsp;·&nbsp;
@@ -48,6 +50,8 @@
 >
 > **第一次试用建议：** 先运行零 API key 演示，确认本机可以完成本地渲染；然后在 AI 助手中打开这个文件夹，并输入视频制作 prompt。当需要云端生成图像、视频、配音或音乐时，需要添加 API key。
 >
+> **不只是图片动起来：** 根据你机器上可用的工具和 provider，系统可以制作图片动画、AI 生成视频、源素材剪辑，也可以从开放素材或 stock motion footage 里组织真实动态镜头做 documentary montage。
+>
 > <p align="center"><strong>⭐ 如果你希望看到一个开放、可检查的黑盒 AI 视频生成替代方案，欢迎 Star 这个项目，谢谢！</strong></p>
 
 ## 演示
@@ -56,13 +60,56 @@
   <video src="https://github.com/user-attachments/assets/df481a12-a150-41c6-97fe-24afcbeb85db" width="100%" controls></video>
 </div>
 
-> **MacBook Air 广告** - “Please help me design an ad video for MacBook Air.”
+> **织影产品广告** - 展示从需求输入、方案确认、素材生成、合成到最终交付复核的引导式助手流程。
 
 <div align="center">
   <video src="https://github.com/user-attachments/assets/c240b2d1-5c65-41f1-8d71-454ae1f43f51" width="100%" controls></video>
 </div>
 
-> **织影产品广告** - 展示从需求输入、方案确认、素材生成、合成到最终交付复核的引导式助手流程。
+> **MacBook Air 广告** - “Please help me design an ad video for MacBook Air.”
+
+## 片场看板
+
+Backlot 是本地生产看板，用来显示一个视频项目实际正在发生什么。Chat 会告诉你助手说了什么；Backlot 会从项目文件里展示阶段、脚本、分镜卡、生成素材、provider 决策、花费和活动记录。
+
+<p align="center"><img src="docs/images/backlot/board-live.png" alt="Backlot live board - assets generating" width="920"></p>
+
+这个看板也可以作为审批界面。素材生成可以在逐场景 contact sheet 上暂停，让你在最终渲染前先复核视觉、prompt、成本和质量信号。
+
+<p align="center"><img src="docs/images/backlot/storyboard.png" alt="Backlot storyboard - filmstrip with takes and renders" width="920"></p>
+
+创意门禁会显示当前等待什么、为什么等待：
+
+<p align="center"><img src="docs/images/backlot/script-gate.png" alt="Backlot script gate - awaiting approval" width="920"></p>
+
+本机磁盘上的每个项目都可以从本地 library 看到：
+
+<p align="center"><img src="docs/images/backlot/library.png" alt="Backlot library" width="920"></p>
+
+```bash
+python -m backlot open                  # library view - 本机磁盘上的所有项目
+python -m backlot open <project-id>     # 打开某一个项目的 live board
+python scripts/backlot_simulate_run.py  # 暂时没有项目时，观看一次模拟运行
+```
+
+项目完成后，Backlot 可以根据 checkpoint history 和 event timestamps 回放整次生产过程。更多细节见 [`backlot/README.md`](backlot/README.md)。
+
+## 从参考视频开始
+
+从一个参考视频开始，通常比从空白 prompt 开始更快。
+
+Video Production Buddy 可以分析 YouTube 视频、Short、Reel、TikTok 或本地 clip，并把它转成 grounded production plan：
+
+1. 粘贴或指向一个参考视频。
+2. 助手分析 transcript、节奏、场景、关键帧和风格。
+3. 在完整生产前，你会得到差异化概念、工具路径、成本预期和 sample plan。
+
+```text
+我喜欢这个 YouTube Short 的节奏和开头吸引力。
+请用类似方式做一个面向高中生的量子计算科普视频。
+```
+
+这个 plan 应该明确说明：会保留参考视频的哪些部分，会改变哪些部分，需要哪些 provider 或本地工具，可能花费多少，以及在你当前环境下能真实产出什么。
 
 ## 差异点
 
@@ -339,7 +386,9 @@ OpenClaw、Claude Code、Codex等助手一般会自动根据仓库内的 agent i
 | 💬 交互式需求澄清 | 通过 chat 和 GenUI 在生成前明确目标受众、情绪、约束和理想视频画像。 |
 | 📣 广告制作 | 策略、热点搜索、Bilibili/抖音等爆款视频分析、专业制作知识检索、产品约束、样片确认和发布检查。 |
 | 🎥 源素材处理 | 口播剪辑、屏幕演示、播客再创作、片段抽取、本地化和混合视频。 |
+| 🎞️ 真实素材 montage | 从开放 archives、公有领域素材或可选 stock providers 中检索真实动态镜头，再组织成剪辑。 |
 | 🧭 参考视频规划 | 先分析参考视频或用户提供的源素材，再设计新输出。 |
+| 🧱 Live production board | Backlot 从 checkpoint/event 文件显示项目状态、门禁、生成素材、花费和回放。 |
 | 🎭 故事控制 | 情绪节奏约束会检查悬念、反转、情绪锚点和故事吸引力，再进入素材生成。 |
 | 🧩 一致性控制 | Concept maps 和已确认设计约束会保持产品身份、角色、场景与视觉逻辑的跨片段一致性。 |
 | 🔀 Provider 路由 | 在已配置的图像、视频、配音、音乐、素材、字幕、分析和合成工具之间选择。 |

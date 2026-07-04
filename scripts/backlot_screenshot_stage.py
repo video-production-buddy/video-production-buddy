@@ -34,7 +34,7 @@ from PIL import Image, ImageDraw, ImageFilter  # noqa: E402
 
 from lib.checkpoint import init_project, write_checkpoint  # noqa: E402
 from lib.events import emit_event  # noqa: E402
-from tests.contracts.test_phase0_contracts import sample_artifact  # noqa: E402
+from scripts.backlot_demo_fixtures import minimal_research_brief  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -180,8 +180,7 @@ def stage_project(pid: str, title: str, palette: str, scenes: list, *,
                          pipeline_type="cinematic", **kw)
         time.sleep(0.02)  # distinct mtimes/timestamps
 
-    brief = sample_artifact("research_brief")
-    brief["topic"] = title
+    brief = minimal_research_brief(title)
     cp("research", "completed", {"research_brief": brief})
 
     script = script_artifact(title, scenes)
