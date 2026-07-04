@@ -72,19 +72,12 @@
 
 Backlot 是本地生产看板，用来显示一个视频项目实际正在发生什么。Chat 会告诉你助手说了什么；Backlot 会从项目文件里展示阶段、脚本、分镜卡、生成素材、provider 决策、花费和活动记录。
 
-<p align="center"><img src="docs/images/backlot/board-live.png" alt="Backlot live board - assets generating" width="920"></p>
+它的设计是本地、文件驱动的：
 
-这个看板也可以作为审批界面。素材生成可以在逐场景 contact sheet 上暂停，让你在最终渲染前先复核视觉、prompt、成本和质量信号。
-
-<p align="center"><img src="docs/images/backlot/storyboard.png" alt="Backlot storyboard - filmstrip with takes and renders" width="920"></p>
-
-创意门禁会显示当前等待什么、为什么等待：
-
-<p align="center"><img src="docs/images/backlot/script-gate.png" alt="Backlot script gate - awaiting approval" width="920"></p>
-
-本机磁盘上的每个项目都可以从本地 library 看到：
-
-<p align="center"><img src="docs/images/backlot/library.png" alt="Backlot library" width="920"></p>
+- library 会列出这台机器上发现的项目。
+- project board 会读取 checkpoints、canonical artifacts、生成媒体路径、成本记录和事件时间戳。
+- 根据 pipeline manifest，不同项目可以在 proposal、script、scene plan、assets 或 publish 阶段暂停等待确认。
+- replay mode 可以根据 checkpoint history 和 events 回放已经完成的制作过程。
 
 ```bash
 python -m backlot open                  # library view - 本机磁盘上的所有项目

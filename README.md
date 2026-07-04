@@ -72,19 +72,12 @@
 
 Backlot is the local board for seeing what a production is actually doing. Chat tells you what the assistant said; Backlot shows stages, scripts, scene cards, generated assets, provider decisions, spend, and activity from the project files the pipeline already writes.
 
-<p align="center"><img src="docs/images/backlot/board-live.png" alt="Backlot live board - assets generating" width="920"></p>
+It is intentionally file-backed and local:
 
-The storyboard is also an approval surface. Asset generation can pause on a scene-by-scene contact sheet so visuals, prompts, costs, and quality signals are reviewed before the final render.
-
-<p align="center"><img src="docs/images/backlot/storyboard.png" alt="Backlot storyboard - filmstrip with takes and renders" width="920"></p>
-
-Creative gates show what is waiting and why:
-
-<p align="center"><img src="docs/images/backlot/script-gate.png" alt="Backlot script gate - awaiting approval" width="920"></p>
-
-Every project on disk is visible from the local library:
-
-<p align="center"><img src="docs/images/backlot/library.png" alt="Backlot library" width="920"></p>
+- The library lists projects found on this machine.
+- The board reads checkpoints, canonical artifacts, generated media paths, cost logs, and event timestamps.
+- Approval gates can pause work at proposal, script, scene plan, assets, or publish stages, depending on the pipeline manifest.
+- Replay mode reconstructs a finished run from checkpoint history and events.
 
 ```bash
 python -m backlot open                  # library view - every project on disk
