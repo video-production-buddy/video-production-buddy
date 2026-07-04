@@ -120,6 +120,12 @@ The agent must ask the user before changing any major production choice, includi
 
 Minor prompt refinements inside an already approved provider/model path do not require separate approval unless they materially change the creative direction.
 
+### Re-log Changed Decisions (Binding)
+
+The `decision_log` is the board's Decisions rail and the run's audit trail. It is **append-only history, not a scratchpad.** When a choice you already logged changes mid-run — the user swaps the voice, you switch provider/model/runtime/music, or a fallback overrides an earlier pick — you MUST **append a new `decision_log` entry** for the new choice, reusing the **same `category` AND the same `subject`** (e.g. `category: "voice_selection"`, `subject: "Narration TTS provider"`), with the superseded option moved into `options_considered` and `rejected_because` noting it was changed.
+
+Editing only a downstream artifact (the `asset_manifest`, a prop) while leaving the old decision in the log is a defect: the board keeps showing the stale choice (e.g. `voice → openai_onyx` after the user moved to Chirp3). The board identifies a decision by its **(category, subject) pair** and renders the latest entry for that pair as current (tagged "revised") — so the fix is to append the new entry with an identical `subject`, never to silently mutate the old one or reword the subject (a reworded subject reads as a different decision and both will show). Keeping distinct decisions in one category (e.g. TTS vs image `provider_selection`) is exactly why the pair, not the category alone, is the key. This applies at every stage, not just `idea`.
+
 ### Present Both Composition Runtimes (HARD RULE)
 
 When both Remotion and HyperFrames are available on the machine (check `video_compose.get_info()["render_engines"]`), the agent **MUST present both options to the user** before locking `render_runtime` at the proposal stage. The agent MAY recommend one with rationale — but silently picking a "default" is forbidden even when the pipeline manifest or a director skill suggests one.
@@ -356,7 +362,14 @@ projects/<project-name>/
 
 **Naming convention**: Use kebab-case derived from the video title (e.g., `hidden-math-of-nature`, `how-music-rewires-brain`).
 
-Create the project directory at pipeline initialization, before any stage runs. All tools and agents should write outputs to these paths — never to the repo root or ad-hoc locations.
+At pipeline initialization, before any stage runs:
+
+1. **Initialize the workspace**: `python -c "from lib.checkpoint import init_project; init_project('<project-id>', title='<Title>', pipeline_type='<pipeline>')"` — creates the layout above and writes `project.json` (the marker the Backlot board reads).
+2. **Open the board**: run `python -m backlot open <project-id>`. This starts the Backlot server if needed and opens the user's browser at the project's live board. If the command fails, continue the production — the board is an observer, never a blocker. This is the agent's ONLY board duty; the board derives everything else from disk.
+
+All tools and agents must write outputs to these paths — **always pass an explicit `output_path` under `projects/<project-id>/`**. Assets written to the repo root, cwd, or temp dirs are invisible to the user's board and violate the workspace contract.
+
+**This applies to atelier and HyperFrames-skill runs too**: hand-authored compositions still write the canonical artifacts they have (script or beats-plan, scene_plan-equivalent, asset manifest) plus checkpoints into `projects/<project-id>/`. The board is runtime-agnostic; only runs that skip the artifacts get a degraded board.
 
 ### Reference Assets (physical-product brands)
 
@@ -694,7 +707,7 @@ Selector tools abstract multi-provider capabilities. **Selectors auto-discover p
 | Selector | Routes to | How it discovers |
 |----------|-----------|-----------------|
 | `tts_selector` | All tools with `capability="tts"` (ElevenLabs, Google TTS, OpenAI, Piper) | `registry.get_by_capability("tts")` |
-| `image_selector` | All tools with `capability="image_generation"` (FLUX, Google Imagen, DALL-E, Recraft, etc.) | `registry.get_by_capability("image_generation")` |
+| `image_selector` | All tools with `capability="image_generation"` (FLUX, Google Imagen, GPT Image, Recraft, etc.) | `registry.get_by_capability("image_generation")` |
 | `video_selector` | All tools with `capability="video_generation"` | `registry.get_by_capability("video_generation")` |
 | `music_selector` | All tools with `capability="music_generation"` | `registry.get_by_capability("music_generation")` |
 | `text_selector` | Optional billed tools with `capability="text_generation"` | `registry.get_by_capability("text_generation")` |
@@ -861,15 +874,11 @@ The reviewer is a meta skill (`skills/meta/reviewer.md`) — advisory, never dir
 
 The checkpoint protocol meta skill (`skills/meta/checkpoint-protocol.md`) teaches the agent when to pause:
 
-- Read `human_approval_default` from the pipeline manifest per stage
-- Creative stages (`idea`, `script`, `scene_plan`) typically require approval
-- Technical stages (`assets`, `edit`, `compose`) may auto-proceed only when the
-  manifest and any child gates do not declare human approval or evidence gates.
-  `ad-video` assets do not auto-proceed: sample, asset, and music approvals plus
-  `genui_evidence_check PASS` are required before the completed assets
-  checkpoint can advance.
-- When approval is required: present artifact summary, review findings, and cost snapshot
-- Wait for human to approve, request revision, or abort
+- Read `human_approval_default` from the pipeline manifest per stage. **The manifest value is binding** — never re-judge it. `lib/checkpoint.py` enforces this: a gated stage cannot be written `completed` without `human_approved=True`.
+- Typical gated stages: `idea`/`proposal`, `script`, `scene_plan`, **`assets`** (review the generated assets scene-by-scene — the Backlot board's filmstrip — before compose locks them in), and `publish` where the pipeline has one. Most pipelines auto-proceed on `edit` and `compose`, but not all (documentary-montage gates `edit`) — the manifest you loaded is the only authority.
+- When approval is required: write the checkpoint as `awaiting_human`, present artifact summary, review findings, and cost snapshot — then **END YOUR TURN**. Doing further pipeline work in the same response is a gate violation.
+- **Approval is per-gate.** An early "go ahead" never covers later gates; explicit full-run pre-authorization must be recorded as a `decision_log` entry (`category: "approval_policy"`) to count.
+- Wait for human to approve, request revision, or abort.
 
 ## Communication Protocol
 
@@ -889,9 +898,12 @@ Primary files:
 
 Checkpoint rules:
 
-- Checkpoints live at `projects/<project_id>/checkpoint_<stage>.json`.
+- Checkpoints live at `projects/<project_id>/checkpoint_<stage>.json` (the project workspace — this is what the Backlot board watches).
 - `status` may be `completed`, `failed`, `awaiting_human`, or `in_progress`.
+- Write an `in_progress` checkpoint on entering each stage; during `assets`/`compose`, refresh `metadata.partial_progress` after each completed scene/asset unit — this powers live progress on the board.
 - `completed` and `awaiting_human` checkpoints must include the canonical artifact.
+- A gated stage (`human_approval_default: true`) can only be written `completed` with `human_approved=True` — the writer raises a GATE VIOLATION otherwise.
+- Superseded checkpoints are archived automatically to `projects/<project_id>/history/` — stage re-runs never destroy run history.
 - Invalid checkpoints or invalid canonical artifacts are contract violations and should fail fast.
 
 Pipeline manifest rules:
@@ -918,6 +930,11 @@ Tool rules:
 | `clean-professional` | Corporate, educational, SaaS |
 | `flat-motion-graphics` | Social media, TikTok, startups |
 | `minimalist-diagram` | Technical deep-dives, architecture |
+| `ink-sketch` (Ink Theater) | Hand-drawn ink-on-white doodle animation; a character that draws itself, walks, dances; contraption explainers |
+
+### Hand-drawn "doodle" animation → Ink Theater / Ink Puppet
+
+For any brief that wants a **hand-drawn ink doodle** look — "a sketch that comes to life", "a pencil / stick figure that walks or dances", "a little character that acts out the idea", whiteboard-doodle explainers — use the **Ink Theater** engine + **Ink Puppet** mocap system (`skills/creative/ink-theater.md`, `ink-theater/README.md`). It is a **style + reusable engine, not a new pipeline**: illustration / contraption pieces run on the `animation` pipeline; a mocap character (draws itself → walks / dances / waves via `InkPuppet.choreograph([...])`) runs on `character-animation`. Cross-tool entry points: **`/ink-art`** (create a vector doodle from scratch) and **`/animated-drawing`** (animate a *supplied* drawing with mocap — raster; `skills/creative/animated-drawing.md`). Never hand-tune character motion — the agent only chooses named mocap clips.
 
 ## Layer Map
 

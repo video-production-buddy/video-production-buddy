@@ -22,6 +22,10 @@ SCHEMA_PATH = (
 )
 
 
+from functools import lru_cache
+
+
+@lru_cache(maxsize=1)
 def _load_manifest_schema() -> dict:
     return load_strict_json_object(SCHEMA_PATH, context="pipeline manifest schema")
 
@@ -106,6 +110,22 @@ def _validate_manifest_semantics(manifest: dict[str, Any]) -> None:
                     "before any prior stage produces it"
                 )
         produced_artifacts.update(unit.get("produces", []))
+
+
+@lru_cache(maxsize=64)
+def _load_pipeline_cached(name: str, defs_dir_key: str) -> dict[str, Any]:
+    """Cached manifest load. Treat the returned dict as READ-ONLY."""
+    return load_pipeline(name, Path(defs_dir_key) if defs_dir_key else None)
+
+
+def load_pipeline_readonly(name: str, defs_dir: Optional[Path] = None) -> dict[str, Any]:
+    """Load a manifest through a cache. The result MUST NOT be mutated.
+
+    Manifests are immutable within a run; hot paths (gate checks on every
+    checkpoint write, board state derivation) should use this instead of
+    re-parsing YAML + re-validating the schema each call.
+    """
+    return _load_pipeline_cached(name, str(defs_dir) if defs_dir else "")
 
 
 def load_pipeline(name: str, defs_dir: Optional[Path] = None) -> dict[str, Any]:
@@ -305,6 +325,18 @@ def get_stage_skill(manifest: dict, stage_name: str) -> Optional[str]:
     """Get the skill path for an instruction-driven stage."""
     unit = _resolve_stage_unit(manifest, stage_name)
     return unit.get("skill") if unit else None
+
+
+def get_stage_human_approval_default(manifest: dict, stage_name: str) -> Optional[bool]:
+    """Whether a stage gates on human approval. None if the stage isn't declared.
+
+    This is the single lookup used by gate enforcement (lib/checkpoint.py)
+    and the Backlot board — keep them reading the same field the same way.
+    """
+    for stage in manifest["stages"]:
+        if stage["name"] == stage_name:
+            return bool(stage.get("human_approval_default", False))
+    return None
 
 
 def get_stage_review_focus(manifest: dict, stage_name: str) -> list[str]:

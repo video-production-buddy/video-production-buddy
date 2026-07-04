@@ -52,8 +52,7 @@ Video Production Buddy/
 │   ├── character/          # Local character specs, rigs, poses, timelines, QA
 │   ├── compliance/         # Deterministic structural compliance checks
 │   ├── enhancement/        # Upscale, bg removal, face enhance/restore, color grading
-│   ├── graphics/           # Image gen (FLUX, OpenAI GPT Image, Recraft, local diffusion), stock, diagrams, code snippets, math animation
-│   ├── interaction/         # GenUI local form tool for dense human gates
+│   ├── graphics/           # Image gen (FLUX, GPT Image, Recraft, local diffusion), stock, diagrams, code snippets, math animation
 │   ├── publishers/         # (Reserved)
 │   ├── subtitle/           # SRT/VTT generation from timestamps
 │   ├── text/               # Optional billed LLM chat providers for ad-hoc text sub-tasks
@@ -592,7 +591,7 @@ All config is validated via Pydantic models in `lib/config_model.py`.
 | Variable | Used By | Purpose |
 |----------|---------|---------|
 | `ELEVENLABS_API_KEY` | elevenlabs_tts, music_gen | TTS, music, sound effects |
-| `OPENAI_API_KEY` | openai_tts, openai_image | TTS fallback, OpenAI GPT Image |
+| `OPENAI_API_KEY` | openai_tts, openai_image | TTS fallback, GPT Image 2 |
 | `XAI_API_KEY` | grok_image, grok_video | Grok image editing/generation, Grok video generation |
 | `FAL_KEY` / `FAL_AI_API_KEY` | flux_image, recraft_image, seedance_video, kling_video, veo_video | fal.ai hosted image/video models |
 | `DASHSCOPE_API_KEY` | cosyvoice_tts, qwen_asr, wan_video_api, wanx_image, qwen_chat, qwen_vl | Alibaba Cloud Bailian / DashScope — Qwen3.7/CosyVoice TTS, Qwen ASR, HappyHorse/Wan video, Wanxiang image, Qwen LLM chat, Qwen-VL vision |

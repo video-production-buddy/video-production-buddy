@@ -124,7 +124,9 @@ class PiperTTS(BaseTool):
     user_visible_verification = ["Inspect transcript alignment, duration, and waveform metrics for intelligibility"]
 
     def get_status(self) -> ToolStatus:
-        return super().get_status()
+        if shutil.which("piper"):
+            return ToolStatus.AVAILABLE
+        return ToolStatus.UNAVAILABLE
 
     def estimate_cost(self, inputs: dict[str, Any]) -> float:
         return 0.0

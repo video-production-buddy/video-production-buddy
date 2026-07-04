@@ -15,110 +15,18 @@ projects start with one stock-media key and one generation provider.
 
 | Step | Cost | What to set up | What it unlocks |
 |------|------|----------------|-----------------|
-| 1 | **free/local** | No API keys | Run the README demo with Remotion, FFmpeg, and optional Piper TTS |
-| 2 | **free tier** | Pexels + Pixabay | Stock photos and videos for source-backed videos |
-| 3 | **free tier / paid** | ElevenLabs or Google | Narration, music, sound effects, or Google TTS/image paths |
-| 4 | **pay-as-you-go** | Alibaba Cloud Bailian / DashScope | Qwen TTS/ASR plus Wan/Wanxiang image and video under one key |
-| 5 | **pay-as-you-go** | fal.ai | FLUX/Recraft images plus Seedance/Kling/Veo/MiniMax video |
-| 6 | **paid** | MiniMax or Suno | Music generation, covers, instrumentals, and full songs |
-| 7 | **paid** | Runway, HeyGen, Replicate, Higgsfield, xAI, OpenAI | Add only when a project needs that provider's specific output |
-| 8 | **local GPU** | Local video/image models | WAN, Hunyuan, CogVideo, LTX, or local diffusion when you have suitable hardware |
-
-### Where To Get API Keys
-
-For your first real production run, do not set up every provider. Add one or two
-keys for the capability you need, then run `make preflight` again so the agent
-can see what is available.
-
-Key safety rules:
-
-- Put keys in `.env`; this repo ignores `.env`, `.env.local`, and `*.env`.
-- Do not paste API keys into chat prompts, issues, screenshots, or committed files.
-- Start with free or low-risk providers, then add paid video/image providers only
-  when you are ready to approve generation costs.
-- Provider dashboards change. If a direct link asks you to sign in or moves, look
-  for a menu named **API Keys**, **Developers**, **Tokens**, **Credentials**, or
-  **Billing / Usage**.
-
-Recommended beginner order:
-
-| Need | Provider | Get the key | Put this in `.env` | Beginner note |
-|------|----------|-------------|--------------------|---------------|
-| Free stock photos/video | Pexels | [Pexels API](https://www.pexels.com/api/) | `PEXELS_API_KEY=...` | Good first key because it is free and useful for source-backed videos. |
-| Free stock photos/video | Pixabay | [Pixabay API docs](https://pixabay.com/api/docs/) | `PIXABAY_API_KEY=...` | Free backup stock source; login shows the key on the docs page. |
-| Free stock photos | Unsplash | [Unsplash Developers](https://unsplash.com/developers) | `UNSPLASH_ACCESS_KEY=...` | Optional, useful when you want more photo variety. |
-| Voice / music / SFX | ElevenLabs | [ElevenLabs API keys](https://elevenlabs.io/app/settings/api-keys) | `ELEVENLABS_API_KEY=...` | Good first voice key; free tier is enough for short narration tests. |
-| Voice + Google images | Google AI Studio | [Google API keys](https://aistudio.google.com/app/apikey) | `GOOGLE_API_KEY=...` or `GEMINI_API_KEY=...` | For TTS, also enable the Text-to-Speech API in Google Cloud. |
-| Image + video gateway | fal.ai | [fal.ai API keys](https://fal.ai/dashboard/keys) | `FAL_KEY=...` or `FAL_AI_API_KEY=...` | One broad pay-as-you-go key for FLUX/Recraft images and several video models. |
-| Qwen speech + Wan/Wanxiang media | Alibaba Cloud Bailian / DashScope | [DashScope API key guide](https://www.alibabacloud.com/help/en/model-studio/get-api-key) | `DASHSCOPE_API_KEY=...` | Strong option for Mandarin, Qwen ASR/TTS, Wan video, and Wanxiang images. |
-| TTS + images | OpenAI | [OpenAI API keys](https://platform.openai.com/api-keys) | `OPENAI_API_KEY=...` | Requires billing for most accounts; use only when you want OpenAI TTS/image paths. |
-| Grok image/video | xAI | [xAI Console](https://console.x.ai/) | `XAI_API_KEY=...` | Sign in, open API keys in the console, then copy the generated key. |
-| Video generation | Runway | [Runway developer portal](https://dev.runwayml.com/) | `RUNWAY_API_KEY=...` or `RUNWAYML_API_SECRET=...` | API access may require a paid developer/subscription setup. |
-| Avatar/video gateway | HeyGen | [HeyGen API key docs](https://developers.heygen.com/docs/api-key) | `HEYGEN_API_KEY=...` | Often requires API balance separate from web-app credits. |
-| Seedance fallback | Replicate | [Replicate API tokens](https://replicate.com/account/api-tokens) | `REPLICATE_API_TOKEN=...` | Useful if you prefer Replicate billing for hosted model runs. |
-| Video gateway | Higgsfield | [Higgsfield Cloud](https://cloud.higgsfield.ai/) | `HIGGSFIELD_API_KEY=...` + `HIGGSFIELD_API_SECRET=...` or `HIGGSFIELD_KEY=key:secret` | Sign in, then open the API Keys section. Some plans/features may require subscription access. |
-| Music | Suno API | [Suno API quickstart](https://docs.sunoapi.org/suno-api/quickstart) | `SUNO_API_KEY=...` | Third-party API route; check credits and commercial terms before client work. |
-| Music | MiniMax | [MiniMax quickstart](https://platform.minimax.io/docs/guides/quickstart-preparation) | `MINIMAX_API_KEY=...` | Make sure the account has a token/paid plan for paid music models. |
-| Mandarin TTS | Volcengine Doubao Speech | [Volcengine console](https://console.volcengine.com/) | `DOUBAO_SPEECH_API_KEY=...` and `DOUBAO_SPEECH_VOICE_TYPE=...` | Enable Speech Synthesis 2.0, then create a new-console API key. |
-| Sound search | Freesound | [Freesound API access](https://freesound.org/apiv2/apply/) | `FREESOUND_API_KEY=...` | Optional fallback for sound effects and music search. |
-
-After adding keys, verify what the project can see:
-
-```bash
-make preflight
-```
-
-To inspect model choices in a beginner-friendly list:
-
-```bash
-make models-list
-make models-list CAPABILITY=video_generation
-```
-
-Without `make`:
-
-```bash
-python -c "from tools.tool_registry import registry; import json; registry.discover(); print(json.dumps(registry.provider_menu_summary(), indent=2))"
-```
-
-The summary includes `model_choices`. Each entry shows the capability, provider
-tool, selector field, default model, and any available quality, speed, cost,
-release-stage, deprecation, and last-verified hints. The tracked template is
-`.env.example`; copy it to `.env`, then keep
-provider keys, optional `VPB_*` model defaults, and provider shortlists together
-in that local file.
-
-Example local `.env` defaults:
-
-```bash
-MINIMAX_API_KEY=your-key
-VPB_VIDEO_GENERATION_PROVIDER=minimax
-VPB_VIDEO_GENERATION_MODEL=MiniMax-Hailuo-2.3
-
-DASHSCOPE_API_KEY=your-key
-DASHSCOPE_WORKSPACE_ID=your-workspace-id
-DASHSCOPE_REGION=cn-beijing
-VPB_IMAGE_GENERATION_PROVIDER=bailian
-VPB_IMAGE_GENERATION_MODEL=qwen-image-2.0-pro
-VPB_TTS_PROVIDER=bailian
-VPB_TTS_MODEL=qwen3-tts-flash
-```
-
-After editing, validate the file:
-
-```bash
-make models-check ENV_FILE=.env
-```
-
-If you prefer a command-generated preview instead of editing `.env` manually:
-
-```bash
-make models-configure ENV_FILE=.env CAPABILITY=video_generation PRESET=fast DRY_RUN=1
-make models-configure ENV_FILE=.env CAPABILITY=video_generation PRESET=fast YES=1
-```
-
-Explicit request/tool inputs still win over these defaults. The agent must
-announce the actual provider and model before paid generation.
+| 1 | **$0** | Pexels + Pixabay | Stock photos and videos — enough to produce basic videos |
+| 2 | **$0** | Google API key | TTS with 700+ voices (1M chars/month free) + $300 new account credit |
+| 3 | **$0** | ElevenLabs | Premium TTS + music + SFX (10K chars/month free) |
+| 4 | **$0** | Piper (local install) | Fully offline TTS — no API key, no cost, no network |
+| 5 | **~$0.03/image** | fal.ai | FLUX images + Kling/Veo/MiniMax video + Recraft — broad single-key image + video coverage |
+| 6 | **~$0.05/image** | OpenAI | GPT Image 2 images + OpenAI TTS |
+| 7 | **~$0.04/image** | Google Imagen | Imagen 4 images (shares the Google API key) |
+| 8 | **$12/month** | Runway | Gen-4 video — highest quality AI video |
+| 9 | **pay-as-you-go** | HeyGen | Avatar videos, multi-model video gateway |
+| 10 | **pay-as-you-go** | Suno | Full song generation with vocals and lyrics |
+| 11 | **$0 + GPU** | Local video gen | WAN 2.1, Hunyuan, CogVideo, LTX — free, offline |
+| 12 | **$0 + GPU** | Local Diffusion | Stable Diffusion images — free, offline |
 
 ### Environment Variable Summary
 
@@ -147,12 +55,11 @@ GEMINI_API_KEY=              # Optional Google AI Studio alias accepted by Googl
 
 # VOICE + MUSIC
 ELEVENLABS_API_KEY=          # TTS, music, sound effects (10K chars/month free)
-OPENAI_API_KEY=              # OpenAI TTS + GPT Image generation
+OPENAI_API_KEY=              # OpenAI TTS + GPT Image 2 images
 XAI_API_KEY=                 # xAI Grok image generation/editing + Grok video generation
 DOUBAO_SPEECH_API_KEY=       # Volcengine Doubao Speech TTS (strong Mandarin narration)
 DOUBAO_SPEECH_VOICE_TYPE=    # Default Doubao speaker/voice type
-DASHSCOPE_API_KEY=           # Qwen3 TTS/ASR, Wan video, Wanxiang image generation/editing
-MINIMAX_API_KEY=             # MiniMax Music 2.6 and music-cover generation
+DASHSCOPE_API_KEY=           # Alibaba DashScope (Qwen image gen, TTS, ASR with word timestamps)
 
 # MULTI-MODEL GATEWAY (one key, 6+ tools)
 FAL_KEY=                     # FLUX, Recraft, Seedance, Kling, Veo, MiniMax video
@@ -271,6 +178,43 @@ Wanxiang image sizes use `*` separators such as `1024*1024`, not `1024x1024`.
 #### Pricing
 
 Pricing is model-specific in Bailian/DashScope. The tools estimate cost from the model metadata in code and prefer provider-returned usage when available; check the Bailian console before committing a production budget.
+
+---
+
+### Alibaba DashScope — Qwen Image + TTS + ASR
+
+> **Best for Chinese-language production.** One key unlocks Qwen-Image generation, Qwen-TTS Mandarin narration, and Qwen-ASR with word-level timestamps — the only DashScope path that provides word-level granularity for subtitle alignment.
+
+**Tools unlocked:** `dashscope_image`, `dashscope_tts`, `dashscope_asr`
+**Env var:** `DASHSCOPE_API_KEY`
+
+#### Setup
+
+1. Go to [dashscope.aliyun.com](https://dashscope.aliyun.com/)
+2. Create an Alibaba Cloud account if you don't have one
+3. Generate an API key in the DashScope console
+4. Add to `.env`: `DASHSCOPE_API_KEY=sk-...`
+
+#### What it's best for
+
+- Chinese-language image generation with strong prompt understanding (Qwen-Image)
+- Natural Mandarin narration (Qwen-TTS, Cherry voice)
+- Word-level timestamp transcription for subtitle alignment (Qwen-ASR filetrans)
+- Replacing the broken `whisperx` slot for ASR
+
+#### API notes
+
+DashScope's `/compatible-mode/v1/` only supports `/chat/completions` and `/embeddings`. Image gen, TTS, and ASR all use DashScope-native endpoints with nested `{model, input, parameters}` request shape — not OpenAI-compatible paths.
+
+The ASR tool (`qwen3-asr-flash-filetrans`) uses an async submit-poll pattern. Audio must be at a publicly accessible URL (local files are not supported). Word timestamps are in milliseconds, normalized to seconds by the tool.
+
+#### Pricing
+
+| Model | Price |
+|------|-------|
+| `qwen-image-2.0-pro` | ~$0.02 per image (check console for current rates) |
+| `qwen3-tts-flash` | ~$0.000015 per character |
+| `qwen3-asr-flash-filetrans` | Per-minute billing (check console) |
 
 ---
 
@@ -485,7 +429,7 @@ Google TTS offers 700+ voices across 50+ languages. Voice names follow the patte
 
 ### OpenAI — TTS + Image Generation
 
-> **Solid all-rounder.** GPT Image 2 is the current OpenAI image default for detailed image generation/editing. TTS is fast and affordable.
+> **Solid all-rounder.** GPT Image 2 handles complex multi-element compositions and in-image text well. TTS is fast and affordable.
 
 **Tools unlocked:** `openai_tts`, `openai_image`
 **Env var:** `OPENAI_API_KEY`
@@ -510,11 +454,14 @@ Google TTS offers 700+ voices across 50+ languages. Voice names follow the patte
 
 | Model | Size | Quality | Price per image |
 |-------|------|---------|----------------|
-| GPT Image 2 | 1024x1024 | low | $0.016 |
-| GPT Image 2 | 1024x1024 | medium | $0.063 |
-| GPT Image 2 | 1024x1024 | high | $0.250 |
-| GPT Image 1 | 1024x1024 | high | $0.167 |
-| DALL-E 3 legacy | 1024x1024 | standard | $0.040 |
+| GPT Image 2 | 1024x1024 | low | $0.006 |
+| GPT Image 2 | 1024x1024 | medium | $0.053 |
+| GPT Image 2 | 1024x1024 | high | $0.211 |
+| GPT Image 2 | 1024x1536 / 1536x1024 | low | $0.005 |
+| GPT Image 2 | 1024x1536 / 1536x1024 | medium | $0.041 |
+| GPT Image 2 | 1024x1536 / 1536x1024 | high | $0.165 |
+
+> **Note:** DALL-E 2/3 were shut down by OpenAI on 2026-05-12, and the `gpt-image-1` family (`gpt-image-1-mini`, `gpt-image-1.5`) retires 2026-12-01 — `gpt-image-2` is OpenAI's recommended replacement ([deprecations](https://developers.openai.com/api/docs/deprecations)).
 
 **Free tier:** None. Requires prepaid billing. Previously offered $5 in free credits for new accounts (discontinued for most signups).
 
@@ -918,7 +865,7 @@ First run downloads the model (~4GB). Subsequent runs use the cached model.
 
 **VRAM requirement:** 4GB+ (8GB recommended for 1024x1024 images)
 
-**Supports:** Negative prompts, seeds, custom sizes. Quality is lower than current FLUX or OpenAI GPT Image cloud models but completely free and offline.
+**Supports:** Negative prompts, seeds, custom sizes. Quality is lower than FLUX or GPT Image 2 but completely free and offline.
 
 ---
 
@@ -997,10 +944,10 @@ Coverage is discovered from the live registry at preflight. This table groups th
 
 | Capability | Cloud Providers | Local Providers | Free Options |
 |-----------|----------------|-----------------|--------------|
-| **Image Generation** | FLUX, Grok, Google Gemini/Imagen, OpenAI GPT Image, Recraft, Qwen Image/Wanxiang | Local Diffusion | Pexels, Pixabay (stock) |
-| **Video Generation** | Grok, Kling, Runway, Veo, Higgsfield, MiniMax, HeyGen, Seedance, Wan API | WAN, Hunyuan, CogVideo, LTX | Pexels, Pixabay (stock) |
-| **Text-to-Speech** | ElevenLabs, Google TTS, OpenAI, Doubao, Qwen/CosyVoice | Piper | Piper, Google free tier, ElevenLabs free tier |
-| **Music Generation** | ElevenLabs, MiniMax, Suno | — | ElevenLabs free tier, Freesound/Pixabay search, provider-specific trial/free variants |
+| **Image Generation** | FLUX, Grok, Google Imagen, GPT Image 2, Recraft | Local Diffusion | Pexels, Pixabay (stock) |
+| **Video Generation** | Grok, Kling, Runway, Veo, Higgsfield, MiniMax, HeyGen | WAN, Hunyuan, CogVideo, LTX | Pexels, Pixabay (stock) |
+| **Text-to-Speech** | ElevenLabs, Google TTS, OpenAI | Piper | Piper, Google free tier, ElevenLabs free tier |
+| **Music Generation** | ElevenLabs, Suno | — | ElevenLabs free tier |
 | **Post-Production** | — | FFmpeg (compose, stitch, trim, mix, enhance, grade) | All free |
 | **Analysis and transcription** | Qwen ASR | WhisperX, Scene Detect, Frame Sampler, CLIP/BLIP-2, audio/video probes | Local analysis is free |
 | **Enhancement** | — | Upscale, BG Remove, Face Enhance, Face Restore | All free |

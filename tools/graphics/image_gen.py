@@ -44,7 +44,7 @@ class ImageGen(BaseTool):
     stability = ToolStability.EXPERIMENTAL
     execution_mode = ExecutionMode.SYNC
     determinism = Determinism.SEEDED
-    runtime = ToolRuntime.HYBRID  # API (OpenAI/FLUX) or local (diffusers)
+    runtime = ToolRuntime.HYBRID  # API (GPT Image/FLUX) or local (diffusers)
 
     dependencies = ["env_any:OPENAI_API_KEY,FAL_KEY,FAL_AI_API_KEY"]
     install_instructions = (
@@ -149,7 +149,7 @@ class ImageGen(BaseTool):
     def estimate_cost(self, inputs: dict[str, Any]) -> float:
         provider = inputs.get("provider") or self._detect_provider()
         if provider == "openai":
-            return 0.063  # GPT Image 2 medium estimate
+            return 0.053  # gpt-image-2 medium at 1024x1024 (call uses auto quality)
         if provider == "flux":
             return 0.03
         return 0.0  # local
@@ -202,12 +202,13 @@ class ImageGen(BaseTool):
         size = f"{inputs.get('width', 1024)}x{inputs.get('height', 1024)}"
         model = inputs.get("model", "gpt-image-2")
 
-        kwargs = {"model": model, "prompt": prompt, "size": size, "n": 1}
-        if str(model).startswith("gpt-image"):
-            kwargs.update({"quality": "auto", "output_format": "png"})
-        else:
-            kwargs["response_format"] = "b64_json"
-        response = client.images.generate(**kwargs)
+        # GPT image models don't accept response_format; they always return b64
+        response = client.images.generate(
+            model=model,
+            prompt=prompt,
+            size=size,
+            n=1,
+        )
 
         image_data = base64.b64decode(response.data[0].b64_json)
         output_path = Path(inputs["output_path"])

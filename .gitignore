@@ -120,3 +120,7 @@ local/
 .agents/local/**/__pycache__/
 .agents/local/**/*.pyc
 venv/
+.venv/
+
+# Backlot local cache (thumbnails)
+.backlot/

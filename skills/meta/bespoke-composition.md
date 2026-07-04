@@ -224,8 +224,27 @@ registry (`src/components`, `src/Explainer`, etc.), and warns if `art_direction`
   so the user opts in knowingly. Quality varies more without a stock baseline — mitigate with strong
   principle skills (above) and the distinctness review, not by reintroducing reuse.
 - **Checkpoint cadence.** Follow `skills/meta/checkpoint-protocol.md`: present script + scene plan
-  for approval BEFORE generating assets, then a footage/asset checkpoint, then a first-render
-  checkpoint. Do not batch-generate ahead of sign-off.
+  for approval BEFORE generating assets, then the **assets gate**, then a first-render checkpoint.
+  Do not batch-generate ahead of sign-off, and **do not render a draft to earn the assets review** —
+  the assets gate is held *before* compose (see below).
+
+- **Populate the filmstrip with per-scene stills at the assets gate.** A bespoke scene's "asset" is
+  a `.tsx` composition — not thumbnailable — so the board can't show it until a still exists. Once
+  the composition compiles, render one still per scene at a representative frame into
+  `projects/<slug>/snapshots/<scene_id>.png`, so the assets-gate filmstrip shows real frames instead
+  of "◆ BESPOKE" placeholders. Use Remotion's still renderer (fast — one frame each), driven off the
+  scene_plan timings:
+
+  ```bash
+  # one still per scene at mid-scene frame (fps * mid_seconds), into snapshots/<scene_id>.png
+  npx remotion still projects/<slug>/index.tsx <CompositionId> \
+    projects/<slug>/snapshots/<scene_id>.png \
+    --frame=<mid_frame> --props=<abs artifacts/props.json> --public-dir=<abs public/>
+  ```
+
+  A helper that reads the scene_plan and renders all stills is at
+  `scripts/atelier_snapshots.py` (`python scripts/atelier_snapshots.py <slug>`). Then STOP at the
+  assets gate. The full/draft render is the **compose** stage, after approval.
 
 ## Worked precedents (for the *workflow*, not the look)
 
