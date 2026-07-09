@@ -56,7 +56,7 @@ publishing this repository as code.
 
 ## Documentation Localization
 
-- Treat `README.md` and `README.zh-CN.md` as a synchronized public-facing pair.
+- Treat `README.md` and `README_zh-CN.md` as a synchronized public-facing pair.
   Whenever updating English README content, update the Chinese README in the
   same change unless the user explicitly scopes the task otherwise.
 - The Chinese README should use the project name `织影` while preserving the

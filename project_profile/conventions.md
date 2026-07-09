@@ -53,4 +53,4 @@ the current task.
   findings from Claude Code session state into repo-side profile and tool
   behavior.
 - 2026-06-23: Added the bilingual README maintenance rule: keep `README.md` and
-  `README.zh-CN.md` synchronized, and use `织影` as the Chinese project name.
+  `README_zh-CN.md` synchronized, and use `织影` as the Chinese project name.

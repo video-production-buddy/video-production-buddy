@@ -151,7 +151,7 @@ Check:
   attribution or upstream-credit contexts?
 - Does it update `project_profile/` when it changes durable provider, runtime,
   brand, voice, subtitle, or workflow findings?
-- Do `README.md` and `README.zh-CN.md` stay synchronized for public-facing
+- Do `README.md` and `README_zh-CN.md` stay synchronized for public-facing
   navigation, contribution, citation, and setup changes?
 - Do platform wrapper files point to shared contracts instead of duplicating
   stale instructions?

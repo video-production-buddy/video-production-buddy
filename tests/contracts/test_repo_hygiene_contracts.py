@@ -34,7 +34,7 @@ ALLOWED_LEGACY_LINES = {
         re.compile(r"github\.com/calesthio/" + LEGACY_PROPER),
         re.compile(r"builds on the excellent \[" + LEGACY_PROPER + r"\]"),
     ),
-    "README.zh-CN.md": (
+    "README_zh-CN.md": (
         re.compile(r"织影基于开源项目 \[" + LEGACY_PROPER + r"\]"),
         re.compile(r"同时致谢 " + LEGACY_PROPER),
         re.compile(r"@software\{calesthio2026" + LEGACY_LOWER + r","),
@@ -99,7 +99,7 @@ def test_public_onboarding_documents_safe_test_entrypoints() -> None:
 
     sections = {
         "README.md": "## Testing",
-        "README.zh-CN.md": "## 测试",
+        "README_zh-CN.md": "## 测试",
     }
     for readme_name, header in sections.items():
         body = (ROOT / readme_name).read_text(encoding="utf-8")
