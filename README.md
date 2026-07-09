@@ -7,7 +7,7 @@
 <p align="center"><strong>Open, governed AI video production: plan, approve, generate, compose, and verify before you spend.</strong></p>
 
 <p align="center">
-  <strong>English</strong> | <a href="README.zh-CN.md">简体中文</a>
+  <strong>English</strong> | <a href="README_zh-CN.md">简体中文</a>
 </p>
 
 <p align="center">
@@ -47,6 +47,8 @@
 > **Video Production Buddy / 织影** turns a general-purpose AI assistant into a visible video production workflow. Instead of typing one prompt and hoping, you can review the brief, plan, script, assets, render, and final checks before major generation work.
 >
 > **Agent-first by design:** the AI assistant is the producer and orchestrator, while skills and Python tools handle concrete work such as provider routing, media analysis, generation, composition, validation, checkpointing, and cost tracking.
+>
+> This project is also an exploration of the optimal form of AI-native applications.
 >
 > **Best first try:** run the zero-key demo, confirm your machine can render locally, then open this folder in your AI assistant and paste a starter prompt. Cloud API keys are optional until you want provider-generated images, video, voice, or music.
 >
@@ -102,7 +104,7 @@ Here is a YouTube Short I like. Make something with this pacing and hook,
 but about quantum computing for high school students.
 ```
 
-The plan should make clear what it keeps from the reference, what it changes, what providers or local tools are needed, what it may cost, and what it can realistically produce with your current setup.
+The plan will make clear what it keeps from the reference, what it changes, what providers or local tools are needed, what it may cost, and what it can realistically produce with your current setup.
 
 ## Why It Is Different
 
@@ -421,7 +423,7 @@ Good first contributions:
 - Improve setup docs, provider notes, or error messages that blocked you.
 - Add demo prompts, style playbooks, sample props, or small zero-key examples.
 - Improve tests around schemas, pipeline manifests, provider routing, or render validation.
-- Translate or tighten public-facing docs while keeping `README.md` and `README.zh-CN.md` synchronized.
+- Translate or tighten public-facing docs while keeping `README.md` and `README_zh-CN.md` synchronized.
 
 Common developer paths:
 
@@ -434,7 +436,7 @@ Pull request checklist:
 1. Start from a focused issue, discussion, or clearly scoped change.
 2. Run the setup path in this README if your change affects install, runtime, providers, or demos.
 3. Add or update focused tests for code, schema, manifest, or tool-contract changes.
-4. Run `git diff --check -- README.md README.zh-CN.md` for README-only changes.
+4. Run `git diff --check -- README.md README_zh-CN.md` for README-only changes.
 5. Run `make test-contracts` for manifest, schema, tool registry, pipeline, or agent-instruction changes. Use `make test-integration` when a change touches FFmpeg, browser, Node, or HyperFrames runtime behavior.
 6. Use [`docs/PR_REVIEW_GUIDE.md`](docs/PR_REVIEW_GUIDE.md) to check architecture, provider, security, dependency, and docs risks before requesting review.
 7. In the PR, summarize the user-facing impact, list verification commands, and include screenshots or demo links for visual README changes.
