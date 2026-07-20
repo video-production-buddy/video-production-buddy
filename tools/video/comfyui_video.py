@@ -29,13 +29,13 @@ from tools.base_tool import (
 from tools._comfyui.client import ComfyUIClient, ComfyUIError
 from tools._comfyui.metadata import (
     BUNDLED_MODEL_STACKS,
+    COMFYUI_DEFAULT_URL,
     COMFYUI_SETUP_OFFER,
+    COMFYUI_WORKFLOWS_DIR,
     missing_models_payload,
     model_stack,
     workflow_hash,
 )
-
-_WORKFLOWS = Path(__file__).resolve().parent.parent / "_comfyui" / "workflows"
 
 # Output node IDs in the bundled workflows
 _T2V_OUTPUT_NODE = "16"
@@ -106,7 +106,7 @@ class ComfyUIVideo(BaseTool):
     setup_offer = COMFYUI_SETUP_OFFER
     install_instructions = (
         "Start a ComfyUI server and set COMFYUI_SERVER_URL "
-        "(default http://localhost:8188).\n"
+        f"(default {COMFYUI_DEFAULT_URL}).\n"
         "Requires WAN 2.2 models and LightX2V LoRAs in ComfyUI's model directory."
     )
     agent_skills = ["comfyui", "ai-video-gen", "ltx2"]
@@ -415,7 +415,9 @@ class ComfyUIVideo(BaseTool):
         height = inputs.get("height", 480)
         num_frames = inputs.get("num_frames", 81)
 
-        workflow = ComfyUIClient.load_workflow(_WORKFLOWS / "wan22-t2v-4step.json")
+        workflow = ComfyUIClient.load_workflow(
+            COMFYUI_WORKFLOWS_DIR / "wan22-t2v-4step.json"
+        )
         workflow = ComfyUIClient.patch_workflow(workflow, {
             "2": {"text": inputs["prompt"]},
             "11": {"width": width, "height": height, "batch_size": num_frames},
@@ -452,7 +454,9 @@ class ComfyUIVideo(BaseTool):
         upload_name = f"om_{output_path.stem}.png"
         server_name = self._client.upload_image(Path(ref_path), upload_name)
 
-        workflow = ComfyUIClient.load_workflow(_WORKFLOWS / "wan22-i2v-4step.json")
+        workflow = ComfyUIClient.load_workflow(
+            COMFYUI_WORKFLOWS_DIR / "wan22-i2v-4step.json"
+        )
         workflow = ComfyUIClient.patch_workflow(workflow, {
             "93": {"text": inputs["prompt"]},
             "97": {"image": server_name},

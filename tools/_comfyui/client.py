@@ -16,6 +16,8 @@ from typing import Any
 
 import requests
 
+from tools._comfyui.metadata import COMFYUI_DEFAULT_URL
+
 
 class ComfyUIError(Exception):
     """Raised when ComfyUI returns an error or times out."""
@@ -32,10 +34,11 @@ class ComfyUIClient:
     """
 
     def __init__(self, server_url: str | None = None) -> None:
-        self.server_url = (
-            server_url
-            or os.environ.get("COMFYUI_SERVER_URL", "http://localhost:8188")
-        ).rstrip("/")
+        configured = (
+            server_url or os.environ.get("COMFYUI_SERVER_URL") or ""
+        ).strip()
+        self._uses_default_url = not configured
+        self.server_url = (configured or COMFYUI_DEFAULT_URL).rstrip("/")
 
     # ------------------------------------------------------------------
     # Health
@@ -44,7 +47,7 @@ class ComfyUIClient:
     @property
     def is_default_url(self) -> bool:
         """True if using the fallback URL (user didn't set COMFYUI_SERVER_URL)."""
-        return not os.environ.get("COMFYUI_SERVER_URL")
+        return self._uses_default_url
 
     def is_available(self) -> bool:
         """Return True if the ComfyUI server is reachable."""
@@ -63,7 +66,7 @@ class ComfyUIClient:
                 f"No ComfyUI server found at {self.server_url} "
                 f"(default — no COMFYUI_SERVER_URL configured).\n"
                 f"Set COMFYUI_SERVER_URL in your .env file to the address of "
-                f"your ComfyUI server (e.g. http://localhost:8188)."
+                f"your ComfyUI server (e.g. {COMFYUI_DEFAULT_URL})."
             )
         return (
             f"ComfyUI server not reachable at {self.server_url}.\n"

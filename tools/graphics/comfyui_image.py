@@ -26,13 +26,13 @@ from tools.base_tool import (
 from tools._comfyui.client import ComfyUIClient, ComfyUIError
 from tools._comfyui.metadata import (
     BUNDLED_MODEL_STACKS,
+    COMFYUI_DEFAULT_URL,
     COMFYUI_SETUP_OFFER,
+    COMFYUI_WORKFLOWS_DIR,
     missing_models_payload,
     model_stack,
     workflow_hash,
 )
-
-_WORKFLOWS = Path(__file__).resolve().parent.parent / "_comfyui" / "workflows"
 
 # Models required by the bundled flux2-txt2img workflow
 _REQUIRED_MODELS = [
@@ -57,7 +57,7 @@ class ComfyUIImage(BaseTool):
     setup_offer = COMFYUI_SETUP_OFFER
     install_instructions = (
         "Start a ComfyUI server and set COMFYUI_SERVER_URL "
-        "(default http://localhost:8188).\n"
+        f"(default {COMFYUI_DEFAULT_URL}).\n"
         "See https://github.com/comfyanonymous/ComfyUI for setup."
     )
     agent_skills = ["comfyui", "flux-best-practices"]
@@ -242,7 +242,9 @@ class ComfyUIImage(BaseTool):
                 workflow = self._load_custom_workflow(inputs)
                 output_node = str(inputs["output_node"])
             else:
-                workflow = ComfyUIClient.load_workflow(_WORKFLOWS / "flux2-txt2img.json")
+                workflow = ComfyUIClient.load_workflow(
+                    COMFYUI_WORKFLOWS_DIR / "flux2-txt2img.json"
+                )
                 workflow = ComfyUIClient.patch_workflow(workflow, {
                     "4": {"text": inputs["prompt"]},
                     "5": {"guidance": guidance},
