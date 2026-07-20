@@ -24,6 +24,7 @@ from tools.base_tool import (
     ToolStatus,
     ToolTier,
 )
+from tools.enhancement.model_assets import GFPGAN_V13_MODEL_URL
 from tools.output_paths import require_explicit_output_path
 
 
@@ -364,7 +365,7 @@ class Upscale(BaseTool):
         if face_enhance:
             from gfpgan import GFPGANer
             face_kwargs: dict = {
-                "model_path": "https://github.com/TencentARC/GFPGAN/releases/download/v1.3.0/GFPGANv1.3.pth",
+                "model_path": GFPGAN_V13_MODEL_URL,
                 "upscale": scale,
                 "arch": "clean",
                 "channel_multiplier": 2,

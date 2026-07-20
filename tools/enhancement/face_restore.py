@@ -21,6 +21,7 @@ from tools.base_tool import (
     ToolStability,
     ToolTier,
 )
+from tools.enhancement.model_assets import GFPGAN_V13_MODEL_URL
 from tools.output_paths import require_explicit_output_path
 
 
@@ -212,10 +213,7 @@ class FaceRestore(BaseTool):
             )
             arch = "CodeFormer"
         else:
-            model_path = (
-                "https://github.com/TencentARC/GFPGAN/releases/download/"
-                "v1.3.0/GFPGANv1.3.pth"
-            )
+            model_path = GFPGAN_V13_MODEL_URL
             arch = "clean"
 
         # Instantiate restorer
