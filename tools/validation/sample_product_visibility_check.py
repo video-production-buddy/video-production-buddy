@@ -41,6 +41,7 @@ from tools.base_tool import (
     ToolStability,
     ToolTier,
 )
+from tools.validation.asset_contract import PRODUCT_VISIBLE_VALUES
 from tools.validation._scene_scope import validate_scene_id_list
 
 
@@ -49,8 +50,6 @@ _STOPWORDS = {
     "with", "to", "by", "from", "into", "onto", "as", "must", "appear",
     "appears", "visible", "include", "included", "element", "elements",
 }
-PRODUCT_VISIBLE_VALUES = {"background", "partial", "hero", "detail", "packshot"}
-
 _NEGATED_VISUAL_CONSTRAINT_RE = re.compile(
     r"\b(?:do not|don't|dont|never)\s+"
     r"(?:show|reveal|display|feature|include|surface|frame)\b"

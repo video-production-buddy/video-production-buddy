@@ -23,6 +23,7 @@ from tools.base_tool import (
     ToolStability,
     ToolTier,
 )
+from tools.validation.asset_contract import VISUAL_ASSET_TYPES
 
 
 EXPECTED_TTS_TOOLS = {
@@ -30,8 +31,6 @@ EXPECTED_TTS_TOOLS = {
     "openai": "openai_tts",
     "minimax": "minimax_tts",
 }
-
-VISUAL_ASSET_TYPES = {"image", "video", "animation"}
 
 MUSIC_SOURCE_TOOLS_BY_STRATEGY = {
     "generative_loose": {"minimax_music", "music_gen", "suno_music"},

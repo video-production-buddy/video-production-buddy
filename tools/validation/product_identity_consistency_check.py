@@ -30,26 +30,18 @@ from tools.base_tool import (
     ToolStability,
     ToolTier,
 )
+from tools.validation.asset_contract import (
+    PRODUCT_VISIBLE_VALUES,
+    SOURCED_ASSET_SOURCE_TOOLS,
+    SOURCED_ASSET_SUBTYPES,
+    VISUAL_ASSET_TYPES,
+)
 from tools.validation._scene_scope import validate_scene_id_list
 
 
-VISUAL_ASSET_TYPES = {"image", "video", "animation"}
 REFERENCE_SOURCE_TYPES = {"user_provided", "generated", "external_url"}
-PRODUCT_VISIBLE_VALUES = {"background", "partial", "hero", "detail", "packshot"}
 RISK_WAIVER_DECISION_CATEGORY = "product_identity_reference_selection"
 RISK_WAIVER_SELECTED_VALUE = "risk_accepted"
-SOURCED_ASSET_SUBTYPES = {
-    "source",
-    "sourced",
-    "provided",
-    "user_provided",
-    "stock",
-    "recorded",
-    "library",
-}
-SOURCED_ASSET_SOURCE_TOOLS = {
-    "user_upload",
-}
 
 
 def _load_artifact(project_dir: Path, name: str) -> dict[str, Any]:

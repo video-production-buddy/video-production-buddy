@@ -36,26 +36,18 @@ from tools.base_tool import (
     ToolStability,
     ToolTier,
 )
+from tools.validation.asset_contract import (
+    PRODUCT_VISIBLE_VALUES,
+    SOURCED_ASSET_SOURCE_TOOLS,
+    SOURCED_ASSET_SUBTYPES,
+    VISUAL_ASSET_TYPES,
+)
 from tools.validation._scene_scope import validate_scene_id_list
 
 
-PRODUCT_VISIBLE_VALUES = {"background", "partial", "hero", "detail", "packshot"}
-VISUAL_ASSET_TYPES = {"image", "video", "animation"}
 WAIVER_DECISION_CATEGORY = "hallucination_review_waiver"
 WAIVER_SELECTED_VALUES = {"waive", "waiver", "human_waiver"}
 GENERATED_ASSET_SUBTYPES = {"generated", "ai_generated", "synthetic"}
-SOURCED_ASSET_SUBTYPES = {
-    "source",
-    "sourced",
-    "provided",
-    "user_provided",
-    "stock",
-    "recorded",
-    "library",
-}
-SOURCED_ASSET_SOURCE_TOOLS = {
-    "user_upload",
-}
 TRUTH_CONTRACT_SECTIONS = {
     "objective_facts",
     "physical_constraints",
