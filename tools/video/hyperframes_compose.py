@@ -25,6 +25,7 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
+from lib.hyperframes_contract import HYPERFRAMES_REGISTRY_URL
 from lib.hyperframes_gsap_shim import gsap_shim_script
 from tools.base_tool import (
     BaseTool,
@@ -1102,7 +1103,7 @@ class HyperFramesCompose(BaseTool):
         (workspace / "hyperframes.json").write_text(
             json.dumps(
                 {
-                    "registry": "https://raw.githubusercontent.com/heygen-com/hyperframes/main/registry",
+                    "registry": HYPERFRAMES_REGISTRY_URL,
                     "paths": {
                         "blocks": "compositions",
                         "components": "compositions/components",
