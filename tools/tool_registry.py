@@ -21,6 +21,11 @@ from tools.base_tool import (
     _coerce_tool_status,
     _json_safe,
 )
+from tools.tool_info_contract import (
+    DICT_INFO_FIELDS,
+    LIST_INFO_FIELDS,
+    MODEL_FIELD_NAMES,
+)
 
 
 def _enum_value(value: Any) -> Any:
@@ -63,37 +68,11 @@ def _safe_optional_dict(value: Any) -> dict[str, Any] | None:
     return _safe_dict(value)
 
 
-_LIST_INFO_FIELDS = (
-    "dependencies",
-    "capabilities",
-    "best_for",
-    "not_good_for",
-    "model_options",
-    "idempotency_key_fields",
-    "side_effects",
-    "fallback_tools",
-    "agent_skills",
-    "related_skills",
-    "user_visible_verification",
-)
-
-_DICT_INFO_FIELDS = (
-    "input_schema",
-    "output_schema",
-    "artifact_schema",
-    "supports",
-    "provider_matrix",
-)
-
-
-_MODEL_FIELD_NAMES = ("model_variant", "model_id", "model", "resource_id")
-
-
 def _normalize_info_shape(info: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(info)
-    for field in _LIST_INFO_FIELDS:
+    for field in LIST_INFO_FIELDS:
         normalized[field] = _safe_list(normalized.get(field))
-    for field in _DICT_INFO_FIELDS:
+    for field in DICT_INFO_FIELDS:
         normalized[field] = _safe_dict(normalized.get(field))
     normalized["progress_schema"] = _safe_optional_dict(
         normalized.get("progress_schema")
@@ -113,7 +92,7 @@ def _schema_model_options(input_schema: Mapping[str, Any]) -> list[dict[str, Any
     if not isinstance(properties, Mapping):
         return []
 
-    for field in _MODEL_FIELD_NAMES:
+    for field in MODEL_FIELD_NAMES:
         prop = properties.get(field)
         if not isinstance(prop, Mapping):
             continue

@@ -15,6 +15,7 @@ from typing import Any
 from uuid import UUID
 
 from tools.base_tool import ToolStatus
+from tools.tool_info_contract import DICT_INFO_FIELDS, LIST_INFO_FIELDS
 
 
 def _coerce_tool_status(value: Any) -> ToolStatus:
@@ -130,35 +131,12 @@ def _safe_dict(value: Any) -> dict[str, Any]:
     return {}
 
 
-_LIST_INFO_FIELDS = (
-    "dependencies",
-    "capabilities",
-    "best_for",
-    "not_good_for",
-    "model_options",
-    "idempotency_key_fields",
-    "side_effects",
-    "fallback_tools",
-    "agent_skills",
-    "related_skills",
-    "user_visible_verification",
-)
-
-_DICT_INFO_FIELDS = (
-    "input_schema",
-    "output_schema",
-    "artifact_schema",
-    "supports",
-    "provider_matrix",
-)
-
-
 def _normalize_info_shape(info: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(info)
-    for field in _LIST_INFO_FIELDS:
+    for field in LIST_INFO_FIELDS:
         if field in normalized:
             normalized[field] = _safe_list(normalized[field])
-    for field in _DICT_INFO_FIELDS:
+    for field in DICT_INFO_FIELDS:
         if field in normalized:
             normalized[field] = _safe_dict(normalized[field])
     if "progress_schema" in normalized and normalized["progress_schema"] is not None:
