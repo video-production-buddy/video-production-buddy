@@ -60,10 +60,8 @@ Non-goals (intentional for Phase 1)
 from __future__ import annotations
 
 import json
-import hashlib
 import math
 import os
-import re
 import shutil
 import tempfile
 import time
@@ -73,6 +71,7 @@ from pathlib import Path
 from typing import Any, Iterator, Optional
 
 from schemas.artifacts import loads_strict_json
+from tools.video.stock_sources.base import safe_clip_file_name
 
 try:
     import filelock  # type: ignore
@@ -87,9 +86,6 @@ _DEFAULT_MAX_TOTAL_BYTES = 20 * 1024 * 1024 * 1024
 # Reject ingesting a source file under this size — almost always a
 # failed/empty download that the caller didn't catch.
 _MIN_USABLE_BYTES = 1024
-_BLOB_SAFE_CHARS_RE = re.compile(r"[^A-Za-z0-9._-]+")
-_MAX_BLOB_FILE_NAME_LENGTH = 120
-_BLOB_DIGEST_LENGTH = 12
 
 
 # ----------------------------------------------------------------------
@@ -447,7 +443,7 @@ class ClipCache:
             # Name the blob ``{clip_id}{ext}``. Stable and collision-free
             # as long as clip_ids are unique (they are — {source}_{source_id}).
             ext = source_path.suffix or ""
-            blob_name = _safe_blob_name(clip_id, ext)
+            blob_name = safe_clip_file_name(clip_id, ext)
             blob_path = self.cache_dir / blob_name
 
             # Clean any stale blob at the same path (drift or interrupted
@@ -558,22 +554,6 @@ class ClipCache:
 # ----------------------------------------------------------------------
 # Module-level helpers
 # ----------------------------------------------------------------------
-
-
-def _safe_blob_name(clip_id: str, ext: str) -> str:
-    """Return a cache-local blob file name for an arbitrary source clip id."""
-    raw = str(clip_id)
-    safe = _BLOB_SAFE_CHARS_RE.sub("_", raw).strip("._-")
-    if not safe:
-        safe = "clip"
-    if safe != raw or len(f"{safe}{ext}") > _MAX_BLOB_FILE_NAME_LENGTH:
-        digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:_BLOB_DIGEST_LENGTH]
-        max_stem = max(
-            1,
-            _MAX_BLOB_FILE_NAME_LENGTH - len(ext) - len(digest) - 1,
-        )
-        safe = f"{safe[:max_stem]}-{digest}"
-    return f"{safe}{ext}"
 
 
 def _resolve_cache_blob_path(cache_dir: Path, file_name: str) -> Optional[Path]:
