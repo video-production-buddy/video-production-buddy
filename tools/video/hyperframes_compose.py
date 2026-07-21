@@ -2283,11 +2283,21 @@ class HyperFramesCompose(BaseTool):
         except subprocess.TimeoutExpired as e:
             # Surface timeouts as a failed CompletedProcess so callers get a
             # uniform shape. The stderr tail will say timeout.
+            stdout = (
+                e.stdout.decode("utf-8", errors="replace")
+                if isinstance(e.stdout, bytes)
+                else (e.stdout or "")
+            )
+            stderr = (
+                e.stderr.decode("utf-8", errors="replace")
+                if isinstance(e.stderr, bytes)
+                else (e.stderr or "")
+            )
             return subprocess.CompletedProcess(
                 args=cmd,
                 returncode=124,
-                stdout=e.stdout or "",
-                stderr=(e.stderr or "") + f"\n[timeout after {timeout}s]",
+                stdout=stdout,
+                stderr=stderr + f"\n[timeout after {timeout}s]",
             )
 
     @staticmethod
