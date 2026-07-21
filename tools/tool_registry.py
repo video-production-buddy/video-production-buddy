@@ -13,6 +13,7 @@ from collections.abc import Mapping
 from types import ModuleType
 from typing import Any, Optional
 
+from lib.dotenv_loader import load_dotenv
 from tools.base_tool import (
     BaseTool,
     ToolStatus,
@@ -230,16 +231,9 @@ class ToolRegistry:
             registered.append(tool.name)
         return registered
 
-    @staticmethod
-    def _load_dotenv() -> None:
-        """Load .env file into os.environ if present, so tools can find API keys."""
-        from lib.dotenv_loader import load_dotenv as _load
-
-        _load()
-
     def discover(self, package_name: str = "tools") -> list[str]:
         """Import a package tree and register any concrete tools it defines."""
-        self._load_dotenv()
+        load_dotenv()
         package = importlib.import_module(package_name)
         discovered: list[str] = []
         package_paths = getattr(package, "__path__", None)
