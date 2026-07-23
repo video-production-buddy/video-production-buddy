@@ -5,6 +5,7 @@ import pytest
 
 from lib.scoring import ProviderScore
 from tools.base_tool import ToolResult
+from tools.video.atlascloud_video import AtlasCloudVideo
 from tools.video.grok_video import GrokVideo
 from tools.video.heygen_video import HeyGenVideo
 from tools.video.higgsfield_video import HiggsFieldVideo
@@ -30,6 +31,7 @@ def _configure_provider_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("XAI_API_KEY", "test-xai-key")
     monkeypatch.setenv("HEYGEN_API_KEY", "test-heygen-key")
     monkeypatch.setenv("MODAL_LTX2_ENDPOINT_URL", "https://modal.example.test/ltx")
+    monkeypatch.setenv("ATLASCLOUD_API_KEY", "test-atlas-key")
 
 
 def _fail_network(*_args, **_kwargs):
@@ -40,6 +42,7 @@ def _fail_network(*_args, **_kwargs):
     "tool",
     [
         KlingVideo(),
+        AtlasCloudVideo(),
         MiniMaxVideo(),
         RunwayVideo(),
         HiggsFieldVideo(),
@@ -66,6 +69,7 @@ def test_cloud_video_image_to_video_requires_image_before_network(
     "tool",
     [
         KlingVideo(),
+        AtlasCloudVideo(),
         MiniMaxVideo(),
         RunwayVideo(),
         HiggsFieldVideo(),
@@ -118,6 +122,7 @@ def test_minimax_fast_rejects_text_to_video_before_network(
     "tool",
     [
         KlingVideo(),
+        AtlasCloudVideo(),
         MiniMaxVideo(),
         RunwayVideo(),
         HiggsFieldVideo(),
@@ -169,6 +174,7 @@ def test_cloud_video_requires_project_output_path_before_network(
     ("tool", "env_vars"),
     [
         (GrokVideo(), ("XAI_API_KEY",)),
+        (AtlasCloudVideo(), ("ATLASCLOUD_API_KEY",)),
         (HeyGenVideo(), ("HEYGEN_API_KEY",)),
         (KlingVideo(), ("FAL_KEY", "FAL_AI_API_KEY")),
         (MiniMaxVideo(), ("MINIMAX_API_KEY",)),
@@ -205,6 +211,7 @@ def test_cloud_video_rejects_non_project_output_path_before_credentials(
     ("tool", "minimal_inputs"),
     [
         (GrokVideo(), {"prompt": "A product hero shot"}),
+        (AtlasCloudVideo(), {"prompt": "A product hero shot"}),
         (HeyGenVideo(), {"prompt": "A product hero shot"}),
         (HiggsFieldVideo(), {"prompt": "A product hero shot"}),
         (KlingVideo(), {"prompt": "A product hero shot"}),

@@ -12,6 +12,7 @@ import pytest
 
 from lib.scoring import ProviderScore
 from tools.base_tool import ToolResult, ToolStatus
+from tools.graphics.atlascloud_image import AtlasCloudImage
 from tools.graphics.flux_image import FluxImage
 from tools.graphics.google_imagen import GoogleImagen
 from tools.graphics.grok_image import GrokImage
@@ -237,6 +238,11 @@ def test_wanx_requires_project_output_path_before_network(
     ("tool", "inputs", "env_vars"),
     [
         (FluxImage(), {"prompt": "product hero image", "output_path": "flux.png"}, ("FAL_KEY", "FAL_AI_API_KEY")),
+        (
+            AtlasCloudImage(),
+            {"prompt": "product hero image", "output_path": "atlascloud.png"},
+            ("ATLASCLOUD_API_KEY",),
+        ),
         (GoogleImagen(), {"prompt": "product hero image", "output_path": "imagen.png"}, ("GOOGLE_API_KEY", "GEMINI_API_KEY")),
         (GrokImage(), {"prompt": "product hero image", "output_path": "grok.png"}, ("XAI_API_KEY",)),
         (OpenAIImage(), {"prompt": "product hero image", "output_path": "openai.png"}, ("OPENAI_API_KEY",)),
