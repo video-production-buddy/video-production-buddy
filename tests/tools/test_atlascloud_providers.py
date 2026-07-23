@@ -28,6 +28,14 @@ def _fail_network(*_args, **_kwargs):
     raise AssertionError("network called before local input validation")
 
 
+def test_atlascloud_providers_declare_matching_agent_skills() -> None:
+    assert AtlasCloudImage.agent_skills == ["atlas-cloud"]
+    assert AtlasCloudVideo.agent_skills == [
+        "atlas-cloud",
+        "ai-video-gen",
+    ]
+
+
 def test_atlascloud_image_requires_project_output_path_before_credentials(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

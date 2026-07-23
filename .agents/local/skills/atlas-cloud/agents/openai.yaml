@@ -1,0 +1,4 @@
+interface:
+  display_name: "Atlas Cloud"
+  short_description: "Guide Atlas Cloud image and video generation"
+  default_prompt: "Use $atlas-cloud to prepare a governed Atlas Cloud image or video generation request."

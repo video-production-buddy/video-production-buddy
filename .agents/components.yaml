@@ -8,6 +8,7 @@ profiles:
     - acestep
     - agents
     - ai-video-gen
+    - atlas-cloud
     - avatar-video
     - beautiful-mermaid
     - bfl-api
@@ -119,6 +120,7 @@ sources:
       acestep: {kind: skill, path: acestep}
       agents: {kind: skill, path: agents}
       ai-video-gen: {kind: skill, path: ai-video-gen}
+      atlas-cloud: {kind: skill, path: atlas-cloud}
       avatar-video: {kind: skill, path: avatar-video}
       canvas-procedural-animation: {kind: skill, path: canvas-procedural-animation}
       character-animation-qa: {kind: skill, path: character-animation-qa}

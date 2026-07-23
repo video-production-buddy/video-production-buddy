@@ -67,6 +67,25 @@
       "treeSha256": "sha256:8fb74dccb79a39ef4e53bd3eca079bfc82f38edae32837f8be2b977ac7e3a1f5",
       "type": "local"
     },
+    "atlas-cloud": {
+      "files": [
+        {
+          "mode": "100644",
+          "path": "SKILL.md",
+          "sha256": "sha256:478edf978fc5652d79ab2ad3f219a8b8ab68855a2835c086536f4dbdf22e58a2"
+        },
+        {
+          "mode": "100644",
+          "path": "agents/openai.yaml",
+          "sha256": "sha256:e5d85481d078de0ef384806af7513696e309cb6ba8ea473a81ec9ab098209d4b"
+        }
+      ],
+      "kind": "skill",
+      "source": "video-production-buddy-local",
+      "sourcePath": ".agents/local/skills/atlas-cloud",
+      "treeSha256": "sha256:753e4721642c5a2c1b47f47ac7a223625d91ce6e0d913f2fdbe48c6eabd3231b",
+      "type": "local"
+    },
     "avatar-video": {
       "files": [
         {
