@@ -329,6 +329,17 @@ Run at **compose** and **publish** stages. Ensures the agent reviewed the actual
    - `subtitle_check` must report presence/absence
    - Any check with missing data: **SUGGESTION** — "Self-review check [X] has incomplete data"
 4. **Promise preservation**: If `promise_preservation.silent_downgrade_detected` is true: **CRITICAL** — "Self-review detected silent downgrade from motion-led to still-led."
+5. **Contextual Technical QC**: When the compose stage declares `technical_qc`,
+   read `skills/meta/technical-qc-review.md` and verify that
+   `final_review.checks.technical_qc_review.outputs[]` covers every rendered
+   output. Every context-sensitive warning needs evidence plus a `defect`,
+   `intentional`, or `uncertain` disposition. A passing review requires only
+   intentional findings, no inconclusive supplemental diagnostics, and both
+   per-output and aggregate `unresolved_count == 0`. Each output's copied
+   `warning_count` must equal its number of `source: "technical_qc"` findings.
+   Missing evidence or an
+   Agent-authored diagnostic that bypasses the capability-extension protocol is
+   **CRITICAL**.
 
 ### At publish stage:
 1. Verify that `final_review` was passed through as a required artifact

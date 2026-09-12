@@ -43,6 +43,149 @@
             }
           }
         },
+        "technical_qc_review": {
+          "type": "object",
+          "description": "Contextual disposition of technical_qc warnings. The canonical tool supplies measurements; the agent classifies findings against inspected media and approved editorial artifacts.",
+          "required": ["outputs", "unresolved_count"],
+          "additionalProperties": false,
+          "properties": {
+            "outputs": {
+              "type": "array",
+              "minItems": 1,
+              "description": "One contextual review for every rendered output covered by final_review.",
+              "items": {
+                "type": "object",
+                "required": [
+                  "output_path",
+                  "report_path",
+                  "scan_status",
+                  "warning_count",
+                  "findings",
+                  "supplemental_checks",
+                  "unresolved_count"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "output_path": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "variant": { "type": "string", "minLength": 1 },
+                  "report_path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Project-relative path to the technical_qc report for this exact render."
+                  },
+                  "scan_status": {
+                    "type": "string",
+                    "enum": ["pass", "pass_with_warnings", "fail"],
+                    "description": "Status copied from the canonical technical_qc report."
+                  },
+                  "warning_count": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Warning count copied from technical_qc.summary.warning_count."
+                  },
+                  "findings": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "source",
+                        "disposition",
+                        "reason",
+                        "evidence_refs",
+                        "context_refs",
+                        "recommended_action"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": { "type": "string", "minLength": 1 },
+                        "source": {
+                          "type": "string",
+                          "enum": ["technical_qc", "supplemental"]
+                        },
+                        "start_seconds": { "type": "number", "minimum": 0 },
+                        "end_seconds": { "type": "number", "minimum": 0 },
+                        "disposition": {
+                          "type": "string",
+                          "enum": ["defect", "intentional", "uncertain"]
+                        },
+                        "reason": { "type": "string", "minLength": 1 },
+                        "evidence_refs": {
+                          "type": "array",
+                          "minItems": 1,
+                          "items": { "type": "string", "minLength": 1 }
+                        },
+                        "context_refs": {
+                          "type": "array",
+                          "minItems": 1,
+                          "items": { "type": "string", "minLength": 1 }
+                        },
+                        "recommended_action": {
+                          "type": "string",
+                          "enum": [
+                            "none",
+                            "re_render",
+                            "revise_edit",
+                            "remix_audio",
+                            "human_review"
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "supplemental_checks": {
+                    "type": "array",
+                    "description": "Governed project-scoped diagnostics created only when registry tools cannot answer a specific question.",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "purpose",
+                        "method",
+                        "lifecycle",
+                        "artifact_ref",
+                        "decision_log_ref",
+                        "result",
+                        "limitations"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "purpose": { "type": "string", "minLength": 1 },
+                        "method": {
+                          "type": "string",
+                          "enum": ["project_script", "project_tool"]
+                        },
+                        "lifecycle": {
+                          "type": "string",
+                          "const": "project_only",
+                          "description": "Supplemental diagnostics are local evidence, not a shared-tool compatibility commitment."
+                        },
+                        "artifact_ref": { "type": "string", "minLength": 1 },
+                        "decision_log_ref": { "type": "string", "minLength": 1 },
+                        "result": {
+                          "type": "string",
+                          "enum": ["supports_defect", "supports_intentional", "inconclusive"]
+                        },
+                        "limitations": { "type": "string", "minLength": 1 }
+                      }
+                    }
+                  },
+                  "unresolved_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              }
+            },
+            "unresolved_count": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Aggregate number of defect or uncertain findings across reviewed outputs that still block a passing final review."
+            }
+          }
+        },
         "visual_spotcheck": {
           "type": "object",
           "description": "Sample frames inspected from opening, middle, climax, ending",
@@ -185,5 +328,54 @@
     },
     "metadata": { "type": "object" }
   },
+  "allOf": [
+    {
+      "if": {
+        "required": ["status", "checks"],
+        "properties": {
+          "status": { "const": "pass" },
+          "checks": { "required": ["technical_qc_review"] }
+        }
+      },
+      "then": {
+        "properties": {
+          "checks": {
+            "properties": {
+              "technical_qc_review": {
+                "properties": {
+                  "unresolved_count": { "const": 0 },
+                  "outputs": {
+                    "items": {
+                      "properties": {
+                        "unresolved_count": { "const": 0 },
+                        "scan_status": {
+                          "enum": ["pass", "pass_with_warnings"]
+                        },
+                        "findings": {
+                          "items": {
+                            "properties": {
+                              "disposition": { "const": "intentional" },
+                              "recommended_action": { "const": "none" }
+                            }
+                          }
+                        },
+                        "supplemental_checks": {
+                          "items": {
+                            "properties": {
+                              "result": { "const": "supports_intentional" }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
   "additionalProperties": false
 }

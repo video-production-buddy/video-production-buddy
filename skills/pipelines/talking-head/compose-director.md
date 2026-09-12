@@ -441,6 +441,12 @@ technical_qc.execute({
 })
 ```
 
+Before interpreting the result, read and follow
+`skills/meta/technical-qc-review.md`. The registered tool is the canonical
+measurement baseline; the Agent supplies editorial judgment only after mapping
+each warning to the scene/edit/audio plan and inspecting evidence from the
+reported interval.
+
 - `ToolResult.success: false` means the file could not be probed or the report
   could not be produced. Treat that as a blocker rather than assuming the
   render passed.
@@ -449,15 +455,25 @@ technical_qc.execute({
   the cause or re-render before submitting.
 - `status: pass_with_warnings` does not automatically block delivery. Inspect
   every reported interval because black, frozen, or silent sections may be
-  intentional editorial choices. Surface unresolved warnings in
-  `render_report` / `final_review`.
+  intentional editorial choices. Assign `defect`, `intentional`, or
+  `uncertain` with evidence and artifact context; surface unresolved warnings
+  in `render_report` / `final_review`.
 - Technical QC is not an aesthetic review and does not replace watching the
   render or inspecting representative frames.
 - Store the report path in `render_report.metadata.technical_qc_report`; map
   its container evidence into `final_review.checks.technical_probe`, and map
-  unresolved interval/audio findings into the corresponding visual/audio
-  review issues. An intentional warning may be recorded as a verification note
-  after the reported interval has actually been watched.
+  every context-sensitive finding into the matching
+  `final_review.checks.technical_qc_review.outputs[]` entry, including the
+  canonical report's `scan_status` and `warning_count`. The warning count must
+  equal the number of `source: "technical_qc"` findings. A passing review
+  requires both its per-output and aggregate `unresolved_count == 0`. An
+  intentional warning may be recorded only after
+  its interval evidence and matching scene/edit/audio context have actually
+  been inspected.
+- If no registered tool answers a remaining project-specific question, follow
+  `skills/meta/capability-extension.md` for a project-scoped diagnostic. Record
+  it as supplemental evidence; it cannot override a canonical technical
+  failure or establish a pass by itself.
 
 Then extract representative frames for visual inspection:
 

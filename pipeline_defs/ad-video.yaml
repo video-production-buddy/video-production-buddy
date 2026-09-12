@@ -34,6 +34,7 @@ required_skills:
   - skills/pipelines/ad-video/publish-director.md
   - skills/pipelines/ad-video/research-director.md
   - skills/pipelines/ad-video/technical-proposal-director.md
+  - skills/meta/technical-qc-review.md
 stages:
   - name: research
     skill: pipelines/ad-video/research-director
@@ -529,10 +530,11 @@ stages:
       - crop_regions verified present before each derivative render
       - Each derivative is a separate output file
       - render_report output resolution matches each aspect-ratio variant label; 15s/15s_short outputs are <=15s
-      - technical_qc completed for every primary and derivative output, with no failed or unresolved checks
+      - technical_qc completed for every primary and derivative output, with every context-sensitive warning assigned a disposition through the technical-qc-review skill
       - Duration within ±5% of target
       - 'Audio channels: stereo'
       - final_review.status == pass after inspecting actual rendered outputs
+      - final_review.checks.technical_qc_review records evidence-backed dispositions with unresolved_count == 0
       - final_review.output_path and probe/runtime evidence match render_report.outputs
       - final_review subtitle evidence matches production_proposal and music presence evidence matches the approved music_strategy
       - final_review.reviewed_outputs covers every render_report.outputs file when derivative outputs exist
@@ -540,6 +542,7 @@ stages:
       - render_report artifact produced
       - final_review artifact produced with status pass
       - technical_qc reports exist for every render_report output and all required checks completed
+      - final_review contains one contextual technical_qc_review output entry per rendered output with zero unresolved findings
       - final_review subtitle evidence matches production_proposal and music evidence matches the approved music_strategy
       - ad_video_planning_chain_check passed before video_compose
       - provider_consistency_check confirmed narration coverage and visual provider locks before video_compose

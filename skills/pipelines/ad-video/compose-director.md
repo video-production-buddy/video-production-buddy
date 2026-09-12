@@ -359,10 +359,19 @@ if blocking_warnings:
 ```
 
 Black, freeze, and silence findings are timecoded warnings because they can be
-intentional. Inspect each reported interval in the actual render. Re-render an
-unintentional interval; record an intentional one in
-`render_report.verification_notes` rather than silently discarding it. A
+intentional. Before interpreting any warning, read and follow
+`skills/meta/technical-qc-review.md`. It requires an evidence-backed
+`defect` / `intentional` / `uncertain` disposition against `scene_plan`,
+`edit_decisions`, the approved audio contract, and frames from the reported
+interval. Re-render a defect; do not pass an uncertain result; retain an
+intentional finding in the audit trail rather than silently discarding it. A
 requested check that could not complete is a failed QC result, not a pass.
+
+The registered `technical_qc` tool remains the canonical baseline. An
+Agent-authored project diagnostic is permitted only for a verified registry
+gap and must follow `skills/meta/capability-extension.md`; it is supplemental
+evidence and cannot override a canonical decode/profile failure or establish a
+pass by itself.
 
 ### Check 6: Subtitle no-overlap (when subtitles enabled)
 
@@ -398,7 +407,9 @@ square, and any `15s` / `15s_short` output is `<=15s`. Run the same
 `technical_qc` procedure for every derivative using its actual expected
 dimensions and duration, and write a distinct report such as
 `artifacts/technical_qc_9x16.json`. Do not add an output to the render report
-until its QC result completed and all warnings were either fixed or reviewed.
+until its QC result completed and all warnings were assigned a disposition through the
+context-review protocol. Do not reuse the primary output's evidence or
+dispositions for a derivative.
 
 ## Render Report Format
 
@@ -452,6 +463,11 @@ The `final_review` must include:
 - `technical_probe` with container, duration, resolution, fps, audio, codec, and
   file-size evidence from the rendered file; derive this from the corresponding
   `technical_qc` report and retain its path in `final_review.metadata`
+- `technical_qc_review.outputs[]` with one entry per rendered output, the exact
+  report path, copied `scan_status` and `warning_count`, an evidence-backed
+  disposition for every context-sensitive warning, any governed supplemental
+  diagnostics, and per-output plus aggregate `unresolved_count == 0` for a
+  passing review
 - `visual_spotcheck` with at least 4 sampled frame paths covering opening,
   middle, climax, and ending
 - `audio_spotcheck` confirming narration, silence, clipping, mix
@@ -487,7 +503,9 @@ status is `revise` or `fail`.
 - [ ] Every `render_report.outputs[]` variant has matching resolution and short variants are `<=15s`
 - [ ] Probe results are PASS, or WARN only with a matching verification note
 - [ ] Every primary and derivative output has a saved `technical_qc` report
-- [ ] No Technical QC failed; every timecoded warning was fixed or explicitly reviewed
+- [ ] No Technical QC failed; every context-sensitive warning has an evidence-backed disposition
+- [ ] `final_review.checks.technical_qc_review.outputs[]` covers every rendered output
+- [ ] Per-output and aggregate `technical_qc_review.unresolved_count == 0`
 - [ ] `render_report.renderer` matches `EP_STATE.render_runtime`
 - [ ] `final_review.status == "pass"` and every required self-review check has evidence
 - [ ] `final_review.output_path` and probe/runtime evidence match `render_report`

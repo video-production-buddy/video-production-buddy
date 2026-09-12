@@ -24,6 +24,7 @@ required_skills:
   - pipelines/talking-head/compose-director
   - pipelines/talking-head/publish-director
   - meta/reviewer
+  - meta/technical-qc-review
   - meta/checkpoint-protocol
 
 orchestration:
@@ -218,11 +219,12 @@ stages:
       - Output video exists and is playable
       - Subtitles are synced with speech
       - Audio is clear with balanced levels
-      - technical_qc completed and every timecoded warning was fixed or reviewed
+      - technical_qc completed and every context-sensitive warning was assigned a disposition through the technical-qc-review skill
     success_criteria:
       - Schema-valid render_report artifact
       - Output video file exists and is playable
       - technical_qc JSON report saved and referenced by render_report metadata
+      - final_review.checks.technical_qc_review has evidence-backed dispositions and unresolved_count == 0 when final_review.status == pass
 
   - name: publish
     skill: pipelines/talking-head/publish-director

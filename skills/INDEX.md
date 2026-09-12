@@ -382,6 +382,7 @@ Cross-cutting skills that apply to all pipelines:
 | Video Reference Analyst | `meta/video-reference-analyst.md` | Reference-video analysis and reference-vs-source-footage routing |
 | GenUI Interaction | `meta/genui-interaction.md` | A2UI/CopilotKit GenUI sessions, ui_session_response review, compatibility surface fallback, and CLI fallback |
 | Reviewer | `meta/reviewer.md` | Self-review protocol after every stage |
+| Technical QC Context Review | `meta/technical-qc-review.md` | Hybrid deterministic scan + evidence-backed Agent disposition, with governed project-scoped supplemental diagnostics |
 | Checkpoint Protocol | `meta/checkpoint-protocol.md` | When/how to checkpoint and request human approval |
 | Skill Creator | `meta/skill-creator.md` | Dynamically create new skills during pipeline runs |
 | Animation Runtime Selector | `meta/animation-runtime-selector.md` | Choose render runtime + animation library per scene |

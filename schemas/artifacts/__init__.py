@@ -1970,6 +1970,228 @@ def _validate_ad_video_render_report(
         )
 
 
+def _validate_contextual_technical_qc_review(
+    final_review: dict[str, Any],
+    *,
+    pipeline_type: str | None,
+    related_artifacts: dict[str, Any] | None = None,
+) -> None:
+    """Require contextual QC evidence for pipelines that opt into the protocol."""
+    if pipeline_type not in {"ad-video", "talking-head"}:
+        return
+
+    checks = final_review.get("checks")
+    technical_review = (
+        checks.get("technical_qc_review") if isinstance(checks, dict) else None
+    )
+    if not isinstance(technical_review, dict):
+        if final_review.get("status") != "pass":
+            return
+        raise jsonschema.ValidationError(
+            f"{pipeline_type} final_review.status='pass' requires "
+            "checks.technical_qc_review"
+        )
+    if (
+        final_review.get("status") == "pass"
+        and technical_review.get("unresolved_count") != 0
+    ):
+        raise jsonschema.ValidationError(
+            f"{pipeline_type} final_review.checks.technical_qc_review."
+            "unresolved_count must be 0 when status is pass"
+        )
+
+    output_reviews = technical_review.get("outputs")
+    if not isinstance(output_reviews, list) or not output_reviews:
+        raise jsonschema.ValidationError(
+            f"{pipeline_type} final_review.checks.technical_qc_review.outputs "
+            "must contain at least one output review"
+        )
+
+    reviewed_paths: set[str] = set()
+    report_paths: set[str] = set()
+    review_by_path: dict[str, dict[str, Any]] = {}
+    expected_unresolved_total = 0
+    for idx, output_review in enumerate(output_reviews):
+        if not isinstance(output_review, dict):
+            raise jsonschema.ValidationError(
+                f"{pipeline_type} technical_qc_review.outputs[{idx}] must be an object"
+            )
+        output_path = output_review.get("output_path")
+        report_path = output_review.get("report_path")
+        if not isinstance(output_path, str) or not output_path.strip():
+            raise jsonschema.ValidationError(
+                f"{pipeline_type} technical_qc_review.outputs[{idx}].output_path "
+                "must be non-empty"
+            )
+        if not isinstance(report_path, str) or not report_path.strip():
+            raise jsonschema.ValidationError(
+                f"{pipeline_type} technical_qc_review.outputs[{idx}].report_path "
+                "must be non-empty"
+            )
+        output_path = output_path.strip()
+        report_path = report_path.strip()
+        if output_path in reviewed_paths:
+            raise jsonschema.ValidationError(
+                f"{pipeline_type} technical_qc_review.outputs contains duplicate "
+                f"output_path {output_path!r}"
+            )
+        if report_path in report_paths:
+            raise jsonschema.ValidationError(
+                f"{pipeline_type} technical_qc_review.outputs contains duplicate "
+                f"report_path {report_path!r}"
+            )
+        reviewed_paths.add(output_path)
+        report_paths.add(report_path)
+        review_by_path[output_path] = output_review
+
+        findings = output_review.get("findings")
+        scan_status = output_review.get("scan_status")
+        warning_count = output_review.get("warning_count")
+        canonical_finding_count = sum(
+            1
+            for finding in findings or []
+            if isinstance(finding, dict) and finding.get("source") == "technical_qc"
+        )
+        if warning_count != canonical_finding_count:
+            raise jsonschema.ValidationError(
+                f"{pipeline_type} technical_qc_review.outputs[{idx}].warning_count "
+                "must equal the number of findings sourced from technical_qc"
+            )
+        if scan_status == "pass" and warning_count != 0:
+            raise jsonschema.ValidationError(
+                f"{pipeline_type} technical_qc_review.outputs[{idx}] with "
+                "scan_status='pass' must have warning_count 0"
+            )
+        if scan_status == "pass_with_warnings" and warning_count == 0:
+            raise jsonschema.ValidationError(
+                f"{pipeline_type} technical_qc_review.outputs[{idx}] with "
+                "scan_status='pass_with_warnings' must have at least one warning"
+            )
+        for finding_idx, finding in enumerate(findings or []):
+            if not isinstance(finding, dict):
+                continue
+            start_seconds = finding.get("start_seconds")
+            end_seconds = finding.get("end_seconds")
+            has_start = isinstance(start_seconds, (int, float))
+            has_end = isinstance(end_seconds, (int, float))
+            if has_start != has_end:
+                raise jsonschema.ValidationError(
+                    f"{pipeline_type} technical_qc_review.outputs[{idx}]."
+                    f"findings[{finding_idx}] must provide both start_seconds "
+                    "and end_seconds, or neither"
+                )
+            if has_start and has_end and float(end_seconds) < float(start_seconds):
+                raise jsonschema.ValidationError(
+                    f"{pipeline_type} technical_qc_review.outputs[{idx}]."
+                    f"findings[{finding_idx}].end_seconds must be greater than "
+                    "or equal to start_seconds"
+                )
+        expected_output_unresolved = sum(
+            1
+            for finding in findings or []
+            if isinstance(finding, dict)
+            and finding.get("disposition") in {"defect", "uncertain"}
+        )
+        if output_review.get("unresolved_count") != expected_output_unresolved:
+            raise jsonschema.ValidationError(
+                f"{pipeline_type} technical_qc_review.outputs[{idx}]."
+                "unresolved_count must equal the number of defect or uncertain "
+                "findings"
+            )
+        expected_unresolved_total += expected_output_unresolved
+
+    if technical_review.get("unresolved_count") != expected_unresolved_total:
+        raise jsonschema.ValidationError(
+            f"{pipeline_type} technical_qc_review.unresolved_count must equal "
+            "the sum of per-output unresolved findings"
+        )
+
+    explicit_reviewed_outputs = final_review.get("reviewed_outputs")
+    explicit_reviewed_paths = {
+        reviewed.get("path").strip()
+        for reviewed in explicit_reviewed_outputs or []
+        if isinstance(reviewed, dict)
+        and isinstance(reviewed.get("path"), str)
+        and reviewed.get("path").strip()
+    }
+    if explicit_reviewed_paths and explicit_reviewed_paths != reviewed_paths:
+        missing = sorted(explicit_reviewed_paths - reviewed_paths)
+        extra = sorted(reviewed_paths - explicit_reviewed_paths)
+        details: list[str] = []
+        if missing:
+            details.append("missing " + ", ".join(repr(path) for path in missing))
+        if extra:
+            details.append("unknown " + ", ".join(repr(path) for path in extra))
+        raise jsonschema.ValidationError(
+            f"{pipeline_type} technical_qc_review.outputs must exactly cover "
+            "final_review.reviewed_outputs (" + "; ".join(details) + ")"
+        )
+
+    render_report = (
+        related_artifacts.get("render_report")
+        if isinstance(related_artifacts, dict)
+        else None
+    )
+    rendered_outputs = (
+        render_report.get("outputs") if isinstance(render_report, dict) else None
+    )
+    rendered_by_path = {
+        output.get("path").strip(): output
+        for output in rendered_outputs or []
+        if isinstance(output, dict)
+        and isinstance(output.get("path"), str)
+        and output.get("path").strip()
+    }
+    if rendered_by_path and set(rendered_by_path) != reviewed_paths:
+        missing = sorted(set(rendered_by_path) - reviewed_paths)
+        extra = sorted(reviewed_paths - set(rendered_by_path))
+        details: list[str] = []
+        if missing:
+            details.append("missing " + ", ".join(repr(path) for path in missing))
+        if extra:
+            details.append("unknown " + ", ".join(repr(path) for path in extra))
+        raise jsonschema.ValidationError(
+            f"{pipeline_type} technical_qc_review.outputs must exactly cover "
+            "render_report.outputs (" + "; ".join(details) + ")"
+        )
+
+    if not rendered_by_path and not explicit_reviewed_paths:
+        primary_output_path = final_review.get("output_path")
+        expected_primary_paths = (
+            {primary_output_path.strip()}
+            if isinstance(primary_output_path, str) and primary_output_path.strip()
+            else set()
+        )
+        if expected_primary_paths and expected_primary_paths != reviewed_paths:
+            missing = sorted(expected_primary_paths - reviewed_paths)
+            extra = sorted(reviewed_paths - expected_primary_paths)
+            details: list[str] = []
+            if missing:
+                details.append("missing " + ", ".join(repr(path) for path in missing))
+            if extra:
+                details.append("unknown " + ", ".join(repr(path) for path in extra))
+            raise jsonschema.ValidationError(
+                f"{pipeline_type} technical_qc_review.outputs must exactly cover "
+                "final_review output_path (" + "; ".join(details) + ")"
+            )
+
+    for output_path, rendered in rendered_by_path.items():
+        reviewed_variant = review_by_path[output_path].get("variant")
+        rendered_variant = rendered.get("variant")
+        if (
+            isinstance(rendered_variant, str)
+            and rendered_variant.strip()
+            and (
+                not isinstance(reviewed_variant, str)
+                or reviewed_variant.strip() != rendered_variant.strip()
+            )
+        ):
+            raise jsonschema.ValidationError(
+                f"{pipeline_type} technical_qc_review variant must match "
+                f"render_report.outputs for {output_path!r}"
+            )
+
+
 def _validate_ad_video_final_review_matches_render_report(
     final_review: dict[str, Any],
     render_report: dict[str, Any],
@@ -2594,6 +2816,12 @@ def validate_artifact(
         _validate_ad_video_render_report(data, related_artifacts=related_artifacts)
     if name == "final_review" and _is_ad_video_final_review(pipeline_type):
         _validate_ad_video_final_review(data, related_artifacts=related_artifacts)
+    if name == "final_review":
+        _validate_contextual_technical_qc_review(
+            data,
+            pipeline_type=pipeline_type,
+            related_artifacts=related_artifacts,
+        )
     if name == "decision_log":
         _validate_decision_log(data)
 

@@ -253,7 +253,15 @@ local FFmpeg/ffprobe passes to validate delivery metadata (dimensions, duration,
 frame rate, codecs, pixel format, audio layout, and file size) and locate black,
 frozen, or silent intervals plus loudness/clipping risks. Its JSON report is
 evidence for `render_report` and `final_review`; it does not make aesthetic
-decisions or replace watching representative sections of the render.
+decisions or replace watching representative sections of the render. The
+`technical-qc-review` meta skill is the contextual layer: the agent maps each
+warning to scene/edit/audio intent, inspects time-local evidence, and records a
+`defect`, `intentional`, or `uncertain` disposition in `final_review`. When the
+registry has a genuine gap, project-scoped Agent-authored diagnostics may add
+evidence under the capability-extension protocol, but they cannot override
+canonical decode/profile failures or establish a pass by themselves. These
+diagnostics remain disposable `project_only` evidence by default; converting
+one into a shared tool is never an automatic pipeline responsibility.
 
 ---
 

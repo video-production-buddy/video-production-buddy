@@ -444,6 +444,21 @@ def _valid_final_review() -> dict:
                 "file_size_bytes": 1200000,
                 "issues": [],
             },
+            "technical_qc_review": {
+                "outputs": [
+                    {
+                        "output_path": "renders/final.mp4",
+                        "variant": "16:9",
+                        "report_path": "artifacts/technical_qc_primary.json",
+                        "scan_status": "pass",
+                        "warning_count": 0,
+                        "findings": [],
+                        "supplemental_checks": [],
+                        "unresolved_count": 0,
+                    }
+                ],
+                "unresolved_count": 0,
+            },
             "visual_spotcheck": {
                 "frames_sampled": 4,
                 "frame_paths": [
@@ -956,6 +971,13 @@ class TestRenderReportOutputCoverage:
 
 
 class TestFinalReviewCompleteness:
+    def test_passing_final_review_requires_contextual_technical_qc(self) -> None:
+        review = _valid_final_review()
+        del review["checks"]["technical_qc_review"]
+
+        with pytest.raises(ValidationError, match="technical_qc_review"):
+            validate_artifact("final_review", review, pipeline_type="ad-video")
+
     def test_passing_final_review_requires_technical_probe_data(self) -> None:
         review = _valid_final_review()
         del review["checks"]["technical_probe"]["valid_container"]
@@ -1066,12 +1088,45 @@ class TestRenderToFinalReviewConsistency:
                 "resolution": "1080x1920",
             },
         ]
+        review["checks"]["technical_qc_review"]["outputs"].append(
+            {
+                "output_path": "renders/final-vertical.mp4",
+                "variant": "9:16",
+                "report_path": "artifacts/technical_qc_9x16.json",
+                "scan_status": "pass",
+                "warning_count": 0,
+                "findings": [],
+                "supplemental_checks": [],
+                "unresolved_count": 0,
+            }
+        )
         validate_artifact(
             "final_review",
             review,
             pipeline_type="ad-video",
             related_artifacts={"render_report": report},
         )
+
+    def test_technical_qc_review_must_cover_every_rendered_output(self) -> None:
+        report = _render_report_with_vertical_derivative()
+        review = _valid_final_review()
+        review["reviewed_outputs"] = [
+            {
+                "path": output["path"],
+                "variant": output["variant"],
+                "duration_seconds": output["duration_seconds"],
+                "resolution": output["resolution"],
+            }
+            for output in report["outputs"]
+        ]
+
+        with pytest.raises(ValidationError, match="technical_qc_review.outputs"):
+            validate_artifact(
+                "final_review",
+                review,
+                pipeline_type="ad-video",
+                related_artifacts={"render_report": report},
+            )
 
     def test_final_review_subtitle_expectation_must_match_proposal(self) -> None:
         proposal = _minimal_production_proposal()
