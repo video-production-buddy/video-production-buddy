@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -92,6 +93,28 @@ def test_technical_qc_contract_and_registry_discovery() -> None:
     assert registry.get("technical_qc") is not None
 
 
+def test_changed_input_during_scan_preserves_existing_report(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    media = Path("projects/scan/renders/final.mp4")
+    media.parent.mkdir(parents=True)
+    media.write_bytes(b"original video")
+    report = Path("projects/scan/artifacts/technical_qc.json")
+    report.parent.mkdir(parents=True)
+    report.write_text("previous report")
+    runner = _runner()
+
+    def replace_input(self, cmd, *args, **kwargs):
+        if cmd[0] == "ffprobe":
+            media.write_bytes(b"replaced video")
+        return runner(self, cmd, *args, **kwargs)
+
+    monkeypatch.setattr(TechnicalQC, "run_command", replace_input)
+    result = TechnicalQC().execute({"input_path": str(media), "report_path": str(report)})
+    assert not result.success
+    assert "input changed during scan" in result.error
+    assert report.read_text() == "previous report"
+
+
 def test_technical_qc_clean_file_matches_output_schema(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -106,6 +129,7 @@ def test_technical_qc_clean_file_matches_output_schema(
     assert result.success is True
     assert result.data["status"] == "pass"
     assert result.data["passed"] is True
+    assert result.data["input_sha256"] == hashlib.sha256(b"video").hexdigest()
     assert result.data["issues"] == []
     assert result.data["checks_run"] == [
         "container",

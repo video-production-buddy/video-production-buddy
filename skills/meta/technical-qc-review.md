@@ -47,6 +47,13 @@ Do not reuse a review from another render or variant. Every output needs its own
 scan and contextual disposition because crop, timing, audio, and transitions
 can differ.
 
+Save the report with `technical_qc`'s `report_path` option. The tool records
+`input_sha256` for the scanned file; rerun it after replacing that file, and
+rerun older reports that lack this fingerprint before submitting a new PASS.
+Use project-relative paths (`renders/...`, `artifacts/...`), repository-relative
+`projects/<project-id>/...` paths, or absolute paths inside the same project.
+Checkpoint writes resolve these against the actual project, independent of cwd.
+
 ## Protocol
 
 ### 1. Keep deterministic failures deterministic
@@ -219,3 +226,16 @@ merely to populate the block.
 
 An intentional warning remains visible in the audit trail; it is not deleted
 from the canonical report.
+
+Before persisting a passing review, `write_checkpoint` loads each saved report
+and verifies the render fingerprint, canonical status, completed requested
+checks, and one-to-one warning coverage by code and exact interval. Copy the
+reported timestamps without rounding. Audio checks skipped for a missing stream
+are acceptable only when the scan explicitly requested `expected.has_audio=false`;
+that expectation must come from the approved delivery contract.
+
+For ad-video, `visual_spotcheck.black_frames_detected` remains a factual
+observation about the primary output. Keep it true when black frames were seen;
+PASS then requires matching `black_segment` findings with inspected evidence,
+approved context, and `intentional` dispositions. Unreviewed or unresolved black
+frames remain blocking, as do broken overlays, missing assets, and unreadable text.

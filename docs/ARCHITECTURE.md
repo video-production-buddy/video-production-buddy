@@ -263,6 +263,23 @@ canonical decode/profile failures or establish a pass by themselves. These
 diagnostics remain disposable `project_only` evidence by default; converting
 one into a shared tool is never an automatic pipeline responsibility.
 
+For ad-video and talking-head, a new checkpoint carrying a passing final review
+also verifies the saved QC reports against files in that project. Reports carry
+the tool-recorded `input_sha256`; copied status/count fields and warning code/time
+intervals must agree with the reports. The primary review output must belong to
+the reviewed render set. Detected black frames may pass the ad-video visual gate
+only with intentional black findings for that primary output. These are evidence
+consistency checks, not automated editorial judgments.
+
+`validate_artifact` / `validate_checkpoint` without a project directory perform
+structural checks, including in-memory cross-artifact contracts. Supply
+`validation_context={"project_dir": project_dir}` to `validate_artifact`, or
+`project_dir=project_dir` to `validate_checkpoint`, for saved-report verification.
+`write_checkpoint` always provides the actual project directory before writing;
+historical reads stay structural so a rerender does not invalidate old records.
+Before writing a new PASS with an older QC report lacking a fingerprint, rerun
+`technical_qc` and refresh its contextual review.
+
 ---
 
 ## Pipeline System

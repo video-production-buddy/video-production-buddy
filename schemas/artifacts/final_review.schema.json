@@ -74,7 +74,7 @@
                   "report_path": {
                     "type": "string",
                     "minLength": 1,
-                    "description": "Project-relative path to the technical_qc report for this exact render."
+                    "description": "Saved technical_qc JSON for this render; checkpoint writes verify input_sha256 and canonical findings. Accepts project-relative, projects/<id>/..., or in-project absolute paths."
                   },
                   "scan_status": {
                     "type": "string",
@@ -195,7 +195,7 @@
               "type": "array",
               "items": { "type": "string" }
             },
-            "black_frames_detected": { "type": "boolean" },
+            "black_frames_detected": { "type": "boolean", "description": "Factual primary-output observation. A passing ad-video review with true requires evidence-backed intentional black_segment findings for that output." },
             "broken_overlays": { "type": "boolean" },
             "missing_assets": { "type": "boolean" },
             "unreadable_text": { "type": "boolean" },

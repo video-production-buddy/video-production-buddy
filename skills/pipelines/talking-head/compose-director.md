@@ -470,6 +470,11 @@ reported interval.
   intentional warning may be recorded only after
   its interval evidence and matching scene/edit/audio context have actually
   been inspected.
+- Keep `final_review.output_path` inside the rendered and reviewed output set.
+  Save reports with the tool's `report_path` option; checkpoint writes verify
+  their `input_sha256`, canonical results, and individual warning coverage.
+  Rerun the scan after any render replacement or when an old report lacks the
+  fingerprint. Do not round copied warning timestamps.
 - If no registered tool answers a remaining project-specific question, follow
   `skills/meta/capability-extension.md` for a project-scoped diagnostic. Record
   it as supplemental evidence; it cannot override a canonical technical

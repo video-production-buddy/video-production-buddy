@@ -2175,6 +2175,15 @@ def _validate_contextual_technical_qc_review(
                 "final_review output_path (" + "; ".join(details) + ")"
             )
 
+    primary_output_path = final_review.get("output_path")
+    if (
+        not isinstance(primary_output_path, str)
+        or primary_output_path.strip() not in reviewed_paths
+    ):
+        raise jsonschema.ValidationError(
+            f"{pipeline_type} final_review.output_path must belong to the reviewed outputs"
+        )
+
     for output_path, rendered in rendered_by_path.items():
         reviewed_variant = review_by_path[output_path].get("variant")
         rendered_variant = rendered.get("variant")
@@ -2553,8 +2562,26 @@ def _validate_ad_video_final_review(
             "ad-video final_review.checks.visual_spotcheck.frame_paths "
             "must include at least four non-empty paths"
         )
+    if require_bool(visual_spotcheck, "visual_spotcheck", "black_frames_detected"):
+        technical_review = checks.get("technical_qc_review", {})
+        black_findings = [
+            finding
+            for output in technical_review.get("outputs", [])
+            if output.get("output_path", "").strip() == data.get("output_path", "").strip()
+            for finding in output.get("findings", [])
+            if finding.get("code") == "black_segment"
+        ]
+        if not black_findings or any(
+            finding.get("disposition") != "intentional"
+            or finding.get("start_seconds") is None
+            or finding.get("end_seconds") is None
+            for finding in black_findings
+        ):
+            raise jsonschema.ValidationError(
+                "ad-video final_review.checks.visual_spotcheck.black_frames_detected "
+                "requires intentional black_segment findings for the primary output"
+            )
     for field in (
-        "black_frames_detected",
         "broken_overlays",
         "missing_assets",
         "unreadable_text",
@@ -2769,7 +2796,12 @@ def validate_artifact(
     related_artifacts: dict[str, Any] | None = None,
     validation_context: dict[str, Any] | None = None,
 ) -> None:
-    """Validate artifact data against its schema. Raises on failure."""
+    """Validate artifact structure and cross-artifact contracts.
+
+    Supplying validation_context['project_dir'] also verifies saved Technical QC
+    reports for a passing review. Without it this is structural validation only;
+    write_checkpoint always supplies that context before persisting a PASS.
+    """
     schema = load_schema(name)
     jsonschema.validate(instance=data, schema=schema, format_checker=FORMAT_CHECKER)
     if name == "enriched_brief" and _is_ad_video_enriched_brief(pipeline_type):
@@ -2822,6 +2854,15 @@ def validate_artifact(
             pipeline_type=pipeline_type,
             related_artifacts=related_artifacts,
         )
+        project_dir = (validation_context or {}).get("project_dir")
+        if (
+            project_dir is not None
+            and pipeline_type in {"ad-video", "talking-head"}
+            and data.get("status") == "pass"
+        ):
+            from lib.technical_qc_evidence import validate_saved_technical_qc
+
+            validate_saved_technical_qc(data, Path(project_dir))
     if name == "decision_log":
         _validate_decision_log(data)
 

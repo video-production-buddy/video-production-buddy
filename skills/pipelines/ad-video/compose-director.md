@@ -506,6 +506,11 @@ status is `revise` or `fail`.
 - [ ] No Technical QC failed; every context-sensitive warning has an evidence-backed disposition
 - [ ] `final_review.checks.technical_qc_review.outputs[]` covers every rendered output
 - [ ] Per-output and aggregate `technical_qc_review.unresolved_count == 0`
+- [ ] Every saved QC report has an `input_sha256` matching the current render;
+  rerun older reports without a fingerprint and never round warning timestamps
+- [ ] `visual_spotcheck.black_frames_detected` truthfully records primary-output
+  observations; any detected black frames have matching intentional
+  `black_segment` findings with evidence and approved context before PASS
 - [ ] `render_report.renderer` matches `EP_STATE.render_runtime`
 - [ ] `final_review.status == "pass"` and every required self-review check has evidence
 - [ ] `final_review.output_path` and probe/runtime evidence match `render_report`

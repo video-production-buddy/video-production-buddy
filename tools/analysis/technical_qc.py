@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from lib.ffmpeg_validation import STRICT_DECODE_ARGS, require_clean_decode
+from lib.technical_qc_evidence import media_sha256
 from tools.base_tool import (
     BaseTool,
     Determinism,
@@ -76,7 +77,7 @@ class TechnicalQC(BaseTool):
     """Scan a final render and return machine-readable technical evidence."""
 
     name = "technical_qc"
-    version = "0.1.0"
+    version = "0.1.1"
     tier = ToolTier.CORE
     capability = "analysis"
     provider = "ffmpeg"
@@ -264,6 +265,8 @@ class TechnicalQC(BaseTool):
         ],
         "properties": {
             "input": {"type": "string"},
+            "input_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "expected": {"type": "object"},
             "status": {
                 "type": "string",
                 "enum": ["pass", "pass_with_warnings", "fail"],
@@ -442,6 +445,7 @@ class TechnicalQC(BaseTool):
                     error="technical_qc: report_path must use the .json extension",
                 )
 
+            input_sha256 = media_sha256(input_path)
             media = self._probe(input_path)
             data = self._build_report(
                 input_path,
@@ -450,6 +454,10 @@ class TechnicalQC(BaseTool):
                 inputs.get("expected", {}),
                 media,
             )
+            if media_sha256(input_path) != input_sha256:
+                return ToolResult(success=False, error="technical_qc: input changed during scan; rerun the scan")
+            data["input_sha256"] = input_sha256
+            data["expected"] = dict(inputs.get("expected", {}))
 
             artifacts: list[str] = []
             if report_path is not None:

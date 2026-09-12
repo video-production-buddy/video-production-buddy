@@ -308,6 +308,8 @@ def _validate_artifacts_for_stage(
     status: str,
     artifacts: dict[str, Any],
     pipeline_type: str | None = None,
+    *,
+    project_dir: Path | None = None,
 ) -> None:
     required_artifact = _canonical_artifact_for_stage(stage, pipeline_type)
     required_artifacts = [required_artifact]
@@ -407,6 +409,7 @@ def _validate_artifacts_for_stage(
                 validation_context={
                     "checkpoint_stage": stage,
                     "checkpoint_status": status,
+                    "project_dir": project_dir,
                 },
             )
         except Exception as exc:
@@ -615,11 +618,15 @@ def _validate_ad_video_checkpoint_gate_state(checkpoint: dict[str, Any]) -> None
     _validate_ad_video_assets_cross_stage_contract(artifacts)
 
 
-def validate_checkpoint(checkpoint: dict[str, Any]) -> None:
+def validate_checkpoint(
+    checkpoint: dict[str, Any], *, project_dir: Path | None = None,
+) -> None:
     """Validate checkpoint structure and canonical artifact payloads.
 
     Uses pipeline_type (if present) to resolve the valid stage list.
     Falls back to ALL_KNOWN_STAGES when pipeline_type is absent.
+    Pass project_dir to verify saved QC evidence as well. Historical reads remain
+    structural so rerendering does not invalidate the previous checkpoint record.
     """
     stage = checkpoint.get("stage")
     status = checkpoint.get("status")
@@ -647,7 +654,9 @@ def validate_checkpoint(checkpoint: dict[str, Any]) -> None:
     if not isinstance(artifacts, dict):
         raise CheckpointValidationError("Checkpoint artifacts must be a dictionary")
 
-    _validate_artifacts_for_stage(stage, status, artifacts, pipeline_type)
+    _validate_artifacts_for_stage(
+        stage, status, artifacts, pipeline_type, project_dir=project_dir,
+    )
     _validate_ad_video_checkpoint_gate_state(checkpoint)
 
     try:
@@ -998,7 +1007,7 @@ def write_checkpoint(
 
     # Validate before any side effect such as merging decision_log.json. This
     # prevents rejected checkpoints from leaving a corrupted cumulative log.
-    validate_checkpoint(checkpoint)
+    validate_checkpoint(checkpoint, project_dir=pipeline_dir / project_id)
     _validate_manifest_genui_evidence_for_checkpoint(
         pipeline_dir,
         project_id,
